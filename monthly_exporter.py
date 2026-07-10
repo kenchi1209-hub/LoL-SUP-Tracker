@@ -7,13 +7,9 @@ MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
 PARTICIPANTS_CSV_PATH = "data/csv/participants.csv"
 MONTHLY_DIR = "data/csv/monthly"
 
-def get_month_key(date_text):
-    # date例：2026-07-06 02:03:51
-    return date_text[:7]
 
 def read_csv_rows(csv_path):
     if not os.path.exists(csv_path):
-        print(f"CSVが見つかりません: {csv_path}")
         return [], []
 
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
@@ -23,6 +19,7 @@ def read_csv_rows(csv_path):
 
     return rows, fieldnames
 
+
 def write_csv_rows(csv_path, rows, fieldnames):
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
@@ -31,50 +28,73 @@ def write_csv_rows(csv_path, rows, fieldnames):
         writer.writeheader()
         writer.writerows(rows)
 
-def export_my_matches_monthly(
-    my_matches_csv_path=MY_MATCHES_CSV_PATH,
-    monthly_dir=MONTHLY_DIR,
-):
-    rows, fieldnames = read_csv_rows(my_matches_csv_path)
 
-    if not rows:
-        print("月別my_matches.csvを作成できませんでした")
+def get_month_key(date_text):
+    # date例: 2026-07-10 23:12:34
+    if not date_text:
+        return None
+
+    return date_text[:7]
+
+
+def clear_old_monthly_outputs():
+    if not os.path.exists(MONTHLY_DIR):
+        os.makedirs(MONTHLY_DIR, exist_ok=True)
         return
+
+    for filename in os.listdir(MONTHLY_DIR):
+        if filename.endswith(".csv") or filename.endswith(".txt"):
+            os.remove(os.path.join(MONTHLY_DIR, filename))
+
+
+def export_my_matches_monthly():
+    rows, fieldnames = read_csv_rows(MY_MATCHES_CSV_PATH)
 
     grouped = defaultdict(list)
 
     for row in rows:
-        month_key = get_month_key(row["date"])
+        month_key = get_month_key(row.get("date", ""))
+        if not month_key:
+            continue
+
         grouped[month_key].append(row)
 
     for month_key, month_rows in grouped.items():
-        month_rows.sort(key=lambda r: r["date"], reverse=True)
-        output_path = f"{monthly_dir}/{month_key}_my_matches.csv"
+        month_rows.sort(key=lambda r: r.get("date", ""), reverse=True)
+
+        output_path = f"{MONTHLY_DIR}/{month_key}_my_matches.csv"
         write_csv_rows(output_path, month_rows, fieldnames)
 
     print(f"月別my_matches.csv 出力完了: {len(grouped)}か月分")
 
-def export_participants_monthly(
-    my_matches_csv_path=MY_MATCHES_CSV_PATH,
-    participants_csv_path=PARTICIPANTS_CSV_PATH,
-    monthly_dir=MONTHLY_DIR,
-):
-    my_rows, _ = read_csv_rows(my_matches_csv_path)
-    participant_rows, participant_fieldnames = read_csv_rows(participants_csv_path)
+    return grouped
 
-    if not my_rows or not participant_rows:
-        print("月別participants.csvを作成できませんでした")
-        return
 
-    match_id_to_month = {
-        row["match_id"]: get_month_key(row["date"])
-        for row in my_rows
-    }
+def build_match_id_to_month(my_match_rows):
+    match_id_to_month = {}
+
+    for row in my_match_rows:
+        match_id = row.get("match_id")
+        month_key = get_month_key(row.get("date", ""))
+
+        if not match_id or not month_key:
+            continue
+
+        match_id_to_month[match_id] = month_key
+
+    return match_id_to_month
+
+
+def export_participants_monthly():
+    my_match_rows, _ = read_csv_rows(MY_MATCHES_CSV_PATH)
+    participant_rows, participant_fieldnames = read_csv_rows(PARTICIPANTS_CSV_PATH)
+
+    match_id_to_month = build_match_id_to_month(my_match_rows)
 
     grouped = defaultdict(list)
 
     for row in participant_rows:
-        match_id = row["match_id"]
+        match_id = row.get("match_id")
         month_key = match_id_to_month.get(match_id)
 
         if not month_key:
@@ -83,37 +103,37 @@ def export_participants_monthly(
         grouped[month_key].append(row)
 
     for month_key, month_rows in grouped.items():
-        output_path = f"{monthly_dir}/{month_key}_participants.csv"
+        output_path = f"{MONTHLY_DIR}/{month_key}_participants.csv"
         write_csv_rows(output_path, month_rows, participant_fieldnames)
 
     print(f"月別participants.csv 出力完了: {len(grouped)}か月分")
 
-def export_monthly_summaries(monthly_dir=MONTHLY_DIR):
-    if not os.path.exists(monthly_dir):
-        print(f"monthlyフォルダが見つかりません: {monthly_dir}")
-        return
-    files = os.listdir(monthly_dir)
-    my_match_files = [
-        f for f in files
-        if f.endswith("_my_matches.csv")
-    ]
-    if not my_match_files:
-        print("月別summary.txtを作成できませんでした")
-        return
+    return grouped
+
+
+def export_monthly_summaries():
     count = 0
-    for filename in sorted(my_match_files):
+
+    for filename in os.listdir(MONTHLY_DIR):
+        if not filename.endswith("_my_matches.csv"):
+            continue
+
         month_key = filename.replace("_my_matches.csv", "")
-        my_matches_path = f"{monthly_dir}/{filename}"
-        summary_path = f"{monthly_dir}/{month_key}_summary.txt"
+        my_matches_path = f"{MONTHLY_DIR}/{filename}"
+        summary_path = f"{MONTHLY_DIR}/{month_key}_summary.txt"
+
         export_summary(
             my_matches_csv_path=my_matches_path,
             summary_txt_path=summary_path,
         )
+
         count += 1
+
     print(f"月別summary.txt 出力完了: {count}か月分")
 
+
 def export_monthly_csvs():
+    clear_old_monthly_outputs()
     export_my_matches_monthly()
     export_participants_monthly()
     export_monthly_summaries()
-

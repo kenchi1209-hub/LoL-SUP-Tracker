@@ -1,0 +1,5 @@
+python main.py
+git status
+git add .
+git commit -m "Update LoL data YYYY-MM-DD"
+git push

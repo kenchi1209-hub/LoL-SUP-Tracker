@@ -11,15 +11,6 @@ RESULT_REPORT_COLUMNS = [
     "report_text",
 ]
 
-QUEUE_NAME_MAP = {
-    "400": "ドラフト",
-    "420": "ランク",
-    "430": "ブラインド",
-    "440": "フレックス",
-    "450": "ARAM",
-    "700": "Clash",
-    "1700": "アリーナ",
-}
 
 ROLE_NAME_MAP = {
     "TOP": "TOP",
@@ -40,15 +31,18 @@ def seconds_to_mmss(seconds):
 def win_to_wl(win_value):
     return "W" if str(win_value).lower() == "true" else "L"
 
-def queue_id_to_name(queue_id):
-    return QUEUE_NAME_MAP.get(str(queue_id), f"Queue{queue_id}")
-
 def role_to_name(role):
     return ROLE_NAME_MAP.get(role, role)
 
 def format_one_decimal(value):
     try:
         return f"{float(value):.1f}"
+    except (ValueError, TypeError):
+        return value
+    
+def format_two_decimal(value):
+    try:
+        return f"{float(value):.2f}"
     except (ValueError, TypeError):
         return value
 
@@ -70,14 +64,22 @@ def build_report_text(row):
 
     cs_per_min = format_one_decimal(row["cs_per_min"])
     cs = row["cs"]
+
     vision_score = row["vision_score"]
+    vision_score_per_min = format_two_decimal(row.get("vision_score_per_min", 0))
+
+    wards_placed = row.get("wards_placed", 0)
+    wards_killed = row.get("wards_killed", 0)
+    control_wards_bought = row.get("control_wards_bought", 0)
 
     return (
         f"{queue_name} / {wl} / {duration}\n"
         f"{role} / {champion}\n"
         f"{kills} / {deaths} / {assists} "
         f"({team_kills} / {team_deaths} / {team_assists}), "
-        f"{cs_per_min} , {cs} , {vision_score}"
+        f"{cs_per_min} , {cs}\n"
+        f"{vision_score} , {vision_score_per_min} , "
+        f"{wards_placed} , {wards_killed} , {control_wards_bought}"
     )
 
 def export_result_report(

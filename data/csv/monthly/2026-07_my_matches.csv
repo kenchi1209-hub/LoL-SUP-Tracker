@@ -1,4 +1,6 @@
 ﻿match_id,date,queue_id,game_mode,game_type,patch,role,champion,win,kills,deaths,assists,team_kills,team_deaths,team_assists,cs,cs_per_min,vision_score,vision_score_per_min,wards_placed,wards_killed,control_wards_bought,gold_earned,total_damage_to_champions,game_duration_seconds,game_duration_min
+JP1_593270722,2026-07-18 18:59:14,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Nami,False,1,8,11,23,34,31,26,0.78,99,2.96,44,4,13,8612,6830,2004,33.4
+JP1_593264876,2026-07-18 18:21:14,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Nami,False,0,8,8,23,33,28,30,0.91,100,3.05,41,4,11,8266,6359,1968,32.8
 JP1_592986902,2026-07-16 23:06:28,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Nami,True,1,3,22,33,15,49,30,0.84,112,3.13,50,15,20,10648,7417,2145,35.75
 JP1_592977857,2026-07-16 22:32:42,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Morgana,False,2,7,8,25,36,28,58,2.0,55,1.89,29,5,8,8407,14796,1743,29.05
 JP1_592855756,2026-07-16 00:40:48,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Morgana,True,3,8,14,42,37,45,38,1.11,88,2.58,47,6,10,10415,19046,2047,34.12

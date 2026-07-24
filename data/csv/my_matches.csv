@@ -1,4 +1,6 @@
 ﻿match_id,date,queue_id,game_mode,game_type,patch,role,champion,win,kills,deaths,assists,team_kills,team_deaths,team_assists,cs,cs_per_min,vision_score,vision_score_per_min,wards_placed,wards_killed,control_wards_bought,gold_earned,total_damage_to_champions,game_duration_seconds,game_duration_min
+JP1_594265922,2026-07-25 00:11:55,400,CLASSIC,MATCHED_GAME,16.14.794.9266,BOTTOM,Ashe,False,0,5,0,4,13,4,82,4.94,9,0.54,5,0,0,4365,3177,996,16.6
+JP1_594255355,2026-07-24 23:25:38,400,CLASSIC,MATCHED_GAME,16.14.794.9266,TOP,Illaoi,True,0,11,2,34,28,52,182,4.85,50,1.33,20,1,4,10446,21602,2253,37.55
 JP1_593845205,2026-07-22 00:17:56,420,CLASSIC,MATCHED_GAME,16.14.794.5912,MIDDLE,Galio,False,2,7,4,17,32,17,181,4.75,34,0.89,18,4,2,10122,18076,2288,38.13
 JP1_593840713,2026-07-22 00:04:35,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Nami,False,0,0,0,0,0,0,1,0.82,0,0.0,1,0,2,536,0,73,1.22
 JP1_593832544,2026-07-21 23:25:56,420,CLASSIC,MATCHED_GAME,16.14.794.5912,UTILITY,Nami,False,0,5,10,16,34,25,33,1.04,74,2.32,36,5,5,7516,5124,1913,31.88

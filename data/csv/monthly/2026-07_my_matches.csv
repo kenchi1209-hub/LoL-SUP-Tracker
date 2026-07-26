@@ -1,4 +1,6 @@
 ﻿match_id,date,queue_id,game_mode,game_type,patch,role,champion,win,kills,deaths,assists,team_kills,team_deaths,team_assists,cs,cs_per_min,vision_score,vision_score_per_min,wards_placed,wards_killed,control_wards_bought,gold_earned,total_damage_to_champions,game_duration_seconds,game_duration_min
+JP1_594648671,2026-07-27 01:21:51,420,CLASSIC,MATCHED_GAME,16.14.794.9266,UTILITY,Morgana,True,3,9,30,50,41,95,57,1.43,124,3.1,46,11,15,13879,22422,2398,39.97
+JP1_594642669,2026-07-27 00:43:02,400,CLASSIC,MATCHED_GAME,16.14.794.9266,UTILITY,Seraphine,True,2,0,11,33,15,36,49,1.6,84,2.74,33,5,8,8870,11237,1838,30.63
 JP1_594433929,2026-07-25 23:12:09,420,CLASSIC,MATCHED_GAME,16.14.794.9266,UTILITY,Seraphine,True,1,5,25,42,21,53,49,1.42,105,3.04,42,11,13,11195,15025,2074,34.57
 JP1_594423553,2026-07-25 22:30:57,400,CLASSIC,MATCHED_GAME,16.14.794.9266,UTILITY,Seraphine,True,2,6,18,37,18,57,29,0.85,93,2.71,38,1,12,9738,15565,2056,34.27
 JP1_594265922,2026-07-25 00:11:55,400,CLASSIC,MATCHED_GAME,16.14.794.9266,BOTTOM,Ashe,False,0,5,0,4,13,4,82,4.94,9,0.54,5,0,0,4365,3177,996,16.6

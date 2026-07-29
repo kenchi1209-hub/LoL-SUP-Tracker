@@ -1,5 +1,12 @@
+git switch build
+git pull origin build
 python main.py
 git status
 git add .
-git commit -m "Update LoL data $((Get-Date).AddHours(-5).ToString('yyyy-MM-dd'))"
-git push
+git diff --cached --quiet
+if ($LASTEXITCODE -eq 0) {
+  Write-Host "コミットする変更はありません"
+} else {
+  git commit -m "Update LoL data $((Get-Date).AddHours(-5).ToString('yyyy-MM-dd'))"
+  git push origin build
+}

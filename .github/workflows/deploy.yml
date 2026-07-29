@@ -1,0 +1,111 @@
+name: Build & Deploy site
+
+# トリガー:
+#  - push (buildブランチ): サイトコード/データを更新したら即再ビルド&デプロイ
+#  - schedule: 毎日 10:00 JST (= 01:00 UTC) に新しい試合データを取得
+#  - workflow_dispatch: Actionsタブから手動実行(テスト用)
+#
+# 前提: buildブランチを「既定ブランチ」にすること。
+#       GitHubの schedule(cron) は既定ブランチのワークフローでしか発火しないため。
+on:
+  push:
+    branches: [build]
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # データのcommit & push 用
+  pages: write      # GitHub Pages へのデプロイ用
+  id-token: write   # デプロイの認証(OIDC)用
+
+# 同時実行を1本に絞る(デプロイの競合を防ぐ)。実行中でもキャンセルしない。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # data/raw は .gitignore 対象(試合詳細JSONのローカルキャッシュ)。
+      # データ取得を伴う実行(schedule/手動)のときだけ、run間で復元して
+      # 毎回全試合をRiot APIから再取得しないようにする。
+      - name: Restore raw match cache
+        if: github.event_name != 'push'
+        uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: raw-matches-${{ github.run_id }}
+          restore-keys: |
+            raw-matches-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # push(サイト編集)では既存データからビルドするだけなのでAPIは叩かない。
+      # schedule/手動のときだけ最新データを取得する。
+      - name: Fetch latest match data
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
+          RIOT_GAME_NAME: ${{ secrets.RIOT_GAME_NAME }}
+          RIOT_TAG_LINE: ${{ secrets.RIOT_TAG_LINE }}
+        run: python main.py
+
+      # 取得したデータに差分があれば build ブランチへ commit する。
+      # GITHUB_TOKEN によるpushは新たなワークフローを再発火しない(無限ループ防止)。
+      # 同じrun内でこのあとサイトをビルド&デプロイするので反映は即時。
+      - name: Commit refreshed data
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data && git diff --cached --quiet -- data && \
+             [ -z "$(git ls-files --others --exclude-standard -- data)" ]; then
+            echo "データに変更なし。commitをスキップします"
+          else
+            git add data
+            git commit -m "Update LoL data $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - name: Build static site
+        env:
+          RIOT_GAME_NAME: ${{ secrets.RIOT_GAME_NAME }}
+          RIOT_TAG_LINE: ${{ secrets.RIOT_TAG_LINE }}
+        run: python build_site.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      # Excelレポートは従来通りArtifactとしても残す(保持30日)。
+      - name: Upload Excel report artifact
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lol-report
+          path: data/excel/lol_report.xlsx
+          if-no-files-found: warn
+          retention-days: 30
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

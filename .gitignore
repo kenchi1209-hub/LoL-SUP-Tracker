@@ -6,3 +6,5 @@ venv/
 .DS_Store
 data/raw/
 .idea/
+# 生成物(GitHub Actionsで都度ビルドするためコミット不要)
+public/

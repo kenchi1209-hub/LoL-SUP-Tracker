@@ -1,7 +1,8 @@
 # LoL SUP Tracker
 
-Riot APIから自分の対戦データを取得し、CSV / TXT / Excelのレポートに変換するツール。
-毎日10:00(JST)にGitHub Actionsで自動更新し、GitHubへpushする。
+Riot APIから自分の対戦データを取得し、CSV / TXT / Excelのレポートと
+成績Webサイトに変換するツール。毎日10:00(JST)にGitHub Actionsで自動更新し、
+GitHub Pagesにサイトを公開する。
 
 ## セットアップ
 
@@ -18,33 +19,61 @@ cp .env.example .env   # RIOT_API_KEY / RIOT_GAME_NAME / RIOT_TAG_LINE を設定
 .venv/bin/python main.py        # データ取得 + 全レポート生成（Excel含む）
 ```
 
-## 自動更新（GitHub Actions・毎日10:00 JST）
+## Webサイト公開（GitHub Pages）
 
-`.github/workflows/daily-update.yml` が cron (`0 1 * * *` UTC = 10:00 JST) で
-`main.py` を実行し、生成された `data/` の差分をcommit & pushする。
-`workflow_dispatch` にも対応しているので、GitHubの Actions タブから
-「Run workflow」で手動実行してテストできる。
+`data/csv/my_matches.csv` を集計して、成績サイト（`public/index.html`）を
+`build_site.py` が生成する。GitHub Actions がこれをビルドして
+**GitHub Pages**（`https://<ユーザー名>.github.io/<リポジトリ名>/`）に公開する。
+独自ドメインは不要。
 
-### 事前設定（リポジトリSecrets）
+### サイトのローカルプレビュー
 
-GitHub上で **Settings → Secrets and variables → Actions → New repository secret** から以下を登録する。
+```bash
+.venv/bin/python build_site.py     # public/index.html を生成
+open public/index.html             # ブラウザで確認（macOS）
+```
 
-| Secret名 | 内容 |
+## 自動ビルド & 自動更新（GitHub Actions）
+
+`.github/workflows/deploy.yml` が次の3つのトリガーで動く。
+
+| トリガー | 動作 |
 |---|---|
-| `RIOT_API_KEY` | Riot APIキー |
-| `RIOT_GAME_NAME` | Riot ID（ゲーム内の名前） |
-| `RIOT_TAG_LINE` | Riot ID（#以降のタグ） |
+| `build` ブランチへの **push** | サイトを再ビルドして Pages にデプロイ（データ取得はしない） |
+| **schedule**（`0 1 * * *` UTC = **10:00 JST**） | 最新データを取得 → `data/` を commit → サイトをビルド＆デプロイ |
+| **workflow_dispatch**（手動） | Actions タブの「Run workflow」からテスト実行 |
+
+### 事前設定（3ステップ）
+
+1. **`build` を既定（デフォルト）ブランチにする**
+   GitHub の **Settings → General → Default branch** で `build` に切り替える。
+   ※ cron（schedule）は既定ブランチのワークフローでしか発火しないため必須。
+
+2. **GitHub Pages を有効化**
+   **Settings → Pages → Build and deployment → Source** を **「GitHub Actions」** にする。
+
+3. **リポジトリSecretsを登録**
+   **Settings → Secrets and variables → Actions → New repository secret** から以下を登録する。
+
+   | Secret名 | 内容 |
+   |---|---|
+   | `RIOT_API_KEY` | Riot APIキー |
+   | `RIOT_GAME_NAME` | Riot ID（ゲーム内の名前） |
+   | `RIOT_TAG_LINE` | Riot ID（#以降のタグ） |
+
+設定後、`build` に push するか Actions から手動実行するとサイトが公開される。
 
 `MATCH_COUNT` / `START_DATE` / `END_DATE` は `config.py` のデフォルト値がそのまま使われる
-（変更したい場合は `.github/workflows/daily-update.yml` の `env` に追加するか、
-リポジトリVariablesとして登録して参照する）。
+（変更したい場合は `deploy.yml` の `env` に追加するか、リポジトリVariablesとして登録して参照する）。
 
-- ワークフローの実行結果（Excelレポート）は Actions の各実行ページから
+- 実行結果（Excelレポート）は Actions の各実行ページから
   Artifact（`lol-report`）としてダウンロードできる（保持期間30日）
 - `data/raw/*.json` は `.gitignore` 対象なのでリポジトリには積まず、
   `actions/cache` でrun間キャッシュして毎回全試合を再取得しないようにしている
-- `main.py` が失敗した場合はcommitされないため、既存データは壊れない
+- データ取得（`main.py`）が失敗した場合はcommitされないため、既存データは壊れない
 - `data` に変更がない場合はcommitをスキップする
+- GITHUB_TOKEN による自動pushは新たなワークフローを再発火しないため、
+  データ更新でデプロイが無限ループすることはない
 
 ## 出力ファイル
 

@@ -92,6 +92,8 @@ def load_matches():
         r["_vs"] = to_float(r.get("vision_score"))
         r["_vspm"] = to_float(r.get("vision_score_per_min"))
         r["_dmg"] = to_int(r.get("total_damage_to_champions"))
+    # 5分未満の試合はリメイク/即終了扱いとしてサイト集計から除外
+    rows = [r for r in rows if to_int(r.get("game_duration_seconds")) >= 300]
     # 日付降順（新しい順）
     rows.sort(key=lambda x: x.get("date", ""), reverse=True)
     return rows

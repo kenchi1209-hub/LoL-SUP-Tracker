@@ -143,6 +143,11 @@ def export_my_matches_from_raw(my_puuid, raw_dir="data/raw", csv_path=MY_MATCHES
 
         rows.append(row)
 
+    # data/raw が空（取得失敗・キャッシュ未作成）のとき既存CSVを空で上書きしない
+    if not rows and os.path.exists(csv_path):
+        print(f"対象試合が0件のため、my_matches.csvは更新しません（スキップ {skipped_count} 件）")
+        return
+
     rows.sort(key=lambda r: r["date"], reverse=True)
 
     with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:

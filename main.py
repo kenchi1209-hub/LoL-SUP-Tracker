@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from config import GAME_NAME, TAG_LINE, MATCH_COUNT, START_DATE, END_DATE
 from riot_api import get_puuid, get_match_ids_by_date_range, get_match_detail, save_match_json
 from csv_exporter import export_participants_from_raw
@@ -9,6 +10,7 @@ from final_report_exporter import export_final_report
 from summary_exporter import export_summary
 from monthly_exporter import export_monthly_csvs
 from yearly_exporter import export_yearly_summary
+from excel_exporter import export_excel_report
 
 puuid = get_puuid(GAME_NAME, TAG_LINE)
 print("PUUID")
@@ -59,4 +61,7 @@ print("\n月別CSVに出力します")
 export_monthly_csvs()
 
 print("\n年間summary.txtに出力します")
-export_yearly_summary("2026")
+export_yearly_summary(datetime.now().strftime("%Y"))
+
+print("\nExcelレポートに出力します")
+export_excel_report()

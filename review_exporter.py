@@ -116,6 +116,11 @@ def create_review_template(
     existing_reviews = load_existing_reviews(review_csv_path)
     my_match_rows = load_my_match_rows(my_matches_csv_path)
 
+    # 手入力したレビュー（memo/GOOD/BAD等）を自動実行で消さないための保護
+    if not my_match_rows:
+        print("my_matches.csvが空のため、review.csvは更新しません（既存レビューを保持）")
+        return
+
     output_rows = []
     added_count = 0
     updated_count = 0

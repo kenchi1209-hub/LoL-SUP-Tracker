@@ -5,3 +5,5 @@ __pycache__/
 venv/
 .DS_Store
 data/raw/
+data/csv/participants.csv
+data/csv/monthly/*_participants.csv

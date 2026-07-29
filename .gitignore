@@ -8,3 +8,6 @@ data/raw/
 .idea/
 # 生成物(GitHub Actionsで都度ビルドするためコミット不要)
 public/
+# 他プレイヤー情報を含むため公開しない
+data/csv/participants.csv
+data/csv/monthly/*_participants.csv

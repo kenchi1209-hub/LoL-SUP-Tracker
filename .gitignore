@@ -5,5 +5,6 @@ __pycache__/
 venv/
 .DS_Store
 data/raw/
+# 他プレイヤー情報を含むため公開しない
 data/csv/participants.csv
 data/csv/monthly/*_participants.csv

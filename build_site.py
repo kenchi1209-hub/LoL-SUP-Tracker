@@ -16,6 +16,7 @@ from champion_map import CHAMPION_JA_MAP
 from queue_map import queue_id_to_name
 
 MATCHES_CSV = "data/csv/my_matches.csv"
+LAST_UPDATED_TXT = "data/csv/last_updated.txt"
 OUT_DIR = "public"
 
 JST = timezone(timedelta(hours=9))
@@ -98,6 +99,11 @@ def load_matches():
     rows.sort(key=lambda x: x.get("date", ""), reverse=True)
     return rows
 
+def load_last_updated():
+    if not os.path.exists(LAST_UPDATED_TXT):
+        return "-"
+    with open(LAST_UPDATED_TXT, encoding="utf-8") as f:
+        return f.read().strip() or "-"
 
 def aggregate(rows):
     """試合リストから成績サマリーを計算する。"""
@@ -329,6 +335,7 @@ def build_html(rows, version):
     player = f"{game_name}#{tag_line}" if game_name else "LoL SUP Tracker"
 
     latest = rows[0].get("date", "")[:16] if rows else "-"
+    data_updated = load_last_updated()
     now_jst = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
     parts = [
@@ -344,10 +351,11 @@ def build_html(rows, version):
     return PAGE_TEMPLATE.format(
         player=esc(player),
         latest=esc(latest),
+        data_updated=esc(data_updated),
         now=esc(now_jst),
         games=all_agg["games"] if all_agg else 0,
         body="".join(parts),
-    )
+    ) 
 
 
 PAGE_TEMPLATE = """<!DOCTYPE html>
@@ -446,7 +454,8 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     <header class="hero">
       <h1>{player}</h1>
       <div class="meta">
-        通算 <b>{games}</b> 戦 &nbsp;·&nbsp; 最終試合 <b>{latest}</b>
+        分析対象 <b>{games}</b> 戦 &nbsp;·&nbsp; 最終試合 <b>{latest}</b>
+        &nbsp;·&nbsp; データ更新 <b>{data_updated}</b> (JST)
         &nbsp;·&nbsp; サイト更新 <b>{now}</b> (JST)
       </div>
     </header>

@@ -311,6 +311,48 @@ def render_form(rows, limit=20):
         f'<div class="form">{dots}</div></section>'
     )
 
+def render_overview_cards(rows):
+    """ページ上部の現在地カード。"""
+    agg = aggregate(rows)
+    if not agg:
+        return ""
+
+    recent = rows[:20]
+    recent_agg = aggregate(recent)
+    recent_wins = recent_agg["wins"] if recent_agg else 0
+    recent_losses = recent_agg["losses"] if recent_agg else 0
+    recent_kda = recent_agg["kda"] if recent_agg else 0
+    recent_vspm = recent_agg["avg_vspm"] if recent_agg else 0
+
+    wr = agg["winrate"]
+
+    cards = "".join([
+        stat_card(
+            "分析対象戦数",
+            f'{agg["games"]}<span class="unit">戦</span>',
+            "ドラフト / ランク・リメイク除外",
+        ),
+        stat_card(
+            "全体成績",
+            f'<span class="{wr_class(wr)}">{wr:.1f}<span class="unit">%</span></span>',
+            f'{agg["wins"]}勝 {agg["losses"]}敗',
+        ),
+        stat_card(
+            "直近20戦",
+            f'{recent_wins}勝 {recent_losses}敗',
+            f'KDA {recent_kda:.2f} / VS/m {recent_vspm:.2f}',
+        ),
+        stat_card(
+            "平均VS/m",
+            f'{agg["avg_vspm"]:.2f}',
+            f'平均VS {agg["avg_vs"]:.1f}',
+        ),
+    ])
+
+    return (
+        '<section class="block"><h2>現在地</h2>'
+        f'<div class="cards">{cards}</div></section>'
+    )
 
 def build_html(rows, version):
     all_agg = aggregate(rows)
@@ -339,6 +381,7 @@ def build_html(rows, version):
     now_jst = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
     parts = [
+        render_overview_cards(rows),
         stat_block("全体成績", all_agg),
         stat_block("SUP成績", sup_agg),
         render_form(rows),
@@ -346,7 +389,7 @@ def build_html(rows, version):
         render_simple_table("キュー別成績", queue_items),
         render_champion_table(champ_items, version),
         render_recent(rows, version),
-    ]
+  ]
 
     return PAGE_TEMPLATE.format(
         player=esc(player),

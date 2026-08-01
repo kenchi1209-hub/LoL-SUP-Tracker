@@ -140,6 +140,11 @@ def group_by(rows, keyfn):
 def wr_class(winrate):
     return "good" if winrate >= 50 else "bad"
 
+def is_ranked(row):
+    return str(row.get("queue_id", "")) == "420"
+
+def is_support(row):
+    return row.get("role") == "UTILITY"
 
 # ---------- HTML 生成 ----------
 
@@ -229,7 +234,10 @@ def render_simple_table(title, items):
     )
 
 
-def render_champion_table(items, version):
+def render_champion_table(items, version, title="チャンピオン別"):
+    if not items:
+        return ""
+    
     body = ""
     for it in items:
         champ = it["_key"]
@@ -253,7 +261,7 @@ def render_champion_table(items, version):
             "</tr>"
         )
     return (
-        '<section class="block"><h2>チャンピオン別</h2>'
+        f'<section class="block"><h2>{esc(title)}</h2>'
         '<div class="table-wrap"><table>'
         "<thead><tr>"
         "<th>チャンピオン</th><th>試合</th><th>勝敗</th><th>勝率</th>"
@@ -356,8 +364,15 @@ def render_overview_cards(rows):
 
 def build_html(rows, version):
     all_agg = aggregate(rows)
-    sup_rows = [r for r in rows if r.get("role") == "UTILITY"]
+
+    sup_rows = [r for r in rows if is_support(r)]
     sup_agg = aggregate(sup_rows)
+
+    ranked_rows = [r for r in rows if is_ranked(r)]
+    ranked_agg = aggregate(ranked_rows)
+
+    ranked_sup_rows = [r for r in ranked_rows if is_support(r)]
+    ranked_sup_agg = aggregate(ranked_sup_rows)
 
     # ロール別
     role_groups = group_by(rows, lambda r: r.get("role", ""))
@@ -372,6 +387,10 @@ def build_html(rows, version):
     champ_groups = group_by(rows, lambda r: r.get("champion", ""))
     champ_items = table_rows_for_groups(champ_groups, lambda k: k)
 
+    # ランク使用チャンピオン別
+    ranked_champ_groups = group_by(ranked_rows, lambda r: r.get("champion", ""))
+    ranked_champ_items = table_rows_for_groups(ranked_champ_groups, lambda k: k)
+
     game_name = os.getenv("RIOT_GAME_NAME", "")
     tag_line = os.getenv("RIOT_TAG_LINE", "")
     player = f"{game_name}#{tag_line}" if game_name else "LoL SUP Tracker"
@@ -382,12 +401,18 @@ def build_html(rows, version):
 
     parts = [
         render_overview_cards(rows),
+        render_form(rows),
+
         stat_block("全体成績", all_agg),
         stat_block("SUP成績", sup_agg),
-        render_form(rows),
+
+        stat_block("ランク全体", ranked_agg),
+        stat_block("ランクSUP戦績", ranked_sup_agg),
+        render_champion_table(ranked_champ_items, version, "ランク使用チャンピオン別（全ロール）"),
+
         render_simple_table("ロール別成績", role_items),
         render_simple_table("キュー別成績", queue_items),
-        render_champion_table(champ_items, version),
+        render_champion_table(champ_items, version, "チャンピオン別成績（全ロール）"),
         render_recent(rows, version),
   ]
 

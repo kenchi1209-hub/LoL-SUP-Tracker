@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from config import GAME_NAME, TAG_LINE, MATCH_COUNT, START_DATE, END_DATE
 from riot_api import get_puuid, get_match_ids_by_date_range, get_match_detail, save_match_json
 from csv_exporter import export_participants_from_raw
@@ -11,6 +11,15 @@ from summary_exporter import export_summary
 from monthly_exporter import export_monthly_csvs
 from yearly_exporter import export_yearly_summary
 from excel_exporter import export_excel_report
+
+JST = timezone(timedelta(hours=9))
+
+def write_last_updated():
+    os.makedirs("data/csv", exist_ok=True)
+    updated_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    with open("data/csv/last_updated.txt", "w", encoding="utf-8") as f:
+        f.write(updated_at)
+    print(f"データ更新日時 出力完了: {updated_at}")
 
 puuid = get_puuid(GAME_NAME, TAG_LINE)
 print("PUUID")
@@ -65,3 +74,6 @@ export_yearly_summary(datetime.now().strftime("%Y"))
 
 print("\nExcelレポートに出力します")
 export_excel_report()
+
+print("\nデータ更新日時を出力します")
+write_last_updated()

@@ -1,4 +1,6 @@
 ﻿match_id,date,queue_id,game_mode,game_type,patch,role,champion,win,kills,deaths,assists,team_kills,team_deaths,team_assists,cs,cs_per_min,vision_score,vision_score_per_min,wards_placed,wards_killed,control_wards_bought,gold_earned,total_damage_to_champions,game_duration_seconds,game_duration_min
+JP1_595638404,2026-08-02 09:45:07,420,CLASSIC,MATCHED_GAME,16.15.801.3452,UTILITY,Seraphine,False,1,7,13,27,50,46,85,1.82,134,2.87,70,9,16,12497,10483,2804,46.73
+JP1_595635152,2026-08-02 09:20:05,400,CLASSIC,MATCHED_GAME,16.15.801.3452,UTILITY,Nami,True,2,4,4,18,12,13,13,0.85,33,2.15,14,1,7,4551,3180,921,15.35
 JP1_595629512,2026-08-02 08:49:32,400,CLASSIC,MATCHED_GAME,16.15.801.3452,UTILITY,Seraphine,False,2,4,2,9,24,12,39,1.52,57,2.23,28,5,9,6752,8217,1536,25.6
 JP1_595551229,2026-08-01 18:33:03,420,CLASSIC,MATCHED_GAME,16.15.801.3452,UTILITY,Seraphine,True,1,1,9,21,8,21,23,0.98,60,2.54,27,4,9,7115,6335,1415,23.58
 JP1_595544302,2026-08-01 17:39:30,420,CLASSIC,MATCHED_GAME,16.15.801.3452,UTILITY,Seraphine,False,2,8,21,39,42,56,50,1.11,120,2.66,52,9,9,12898,17029,2705,45.08

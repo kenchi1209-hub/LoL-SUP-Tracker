@@ -342,12 +342,16 @@ def render_overview_cards(rows):
     if not agg:
         return ""
 
+    ranked_rows = [r for r in rows if is_ranked(r)]
+    ranked_agg = aggregate(ranked_rows)
+    
     recent = rows[:20]
     recent_agg = aggregate(recent)
     recent_wins = recent_agg["wins"] if recent_agg else 0
     recent_losses = recent_agg["losses"] if recent_agg else 0
     recent_kda = recent_agg["kda"] if recent_agg else 0
     recent_vspm = recent_agg["avg_vspm"] if recent_agg else 0
+    
 
     wr = agg["winrate"]
 
@@ -368,9 +372,16 @@ def render_overview_cards(rows):
             f'KDA {recent_kda:.2f} / VS/m {recent_vspm:.2f}',
         ),
         stat_card(
-            "平均VS/m",
-            f'{agg["avg_vspm"]:.2f}',
-            f'平均VS {agg["avg_vs"]:.1f}',
+           "ランク勝率",
+           (
+                f'<span class="{wr_class(ranked_agg["winrate"])}">'
+                f'{ranked_agg["winrate"]:.1f}<span class="unit">%</span></span>'
+                if ranked_agg else "-"
+           ),
+           (
+                f'{ranked_agg["wins"]}勝 {ranked_agg["losses"]}敗'
+                if ranked_agg else "ランク戦なし"
+           ),
         ),
     ])
 

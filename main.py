@@ -1,7 +1,14 @@
 import os
+import json
 from datetime import datetime, timedelta, timezone
 from config import GAME_NAME, TAG_LINE, MATCH_COUNT, START_DATE, END_DATE
-from riot_api import get_puuid, get_match_ids_by_date_range, get_match_detail, save_match_json
+from riot_api import (
+    get_puuid,
+    get_match_ids_by_date_range,
+    get_match_detail,
+    save_match_json,
+    get_current_solo_rank,
+)
 from csv_exporter import export_participants_from_raw
 from my_exporter import export_my_matches_from_raw
 from report_exporter import export_result_report
@@ -20,6 +27,21 @@ def write_last_updated():
     with open("data/csv/last_updated.txt", "w", encoding="utf-8") as f:
         f.write(updated_at)
     print(f"データ更新日時 出力完了: {updated_at}")
+
+def write_current_rank(puuid):
+    rank = get_current_solo_rank(puuid)
+    os.makedirs("data/csv", exist_ok=True)
+
+    with open("data/csv/current_rank.json", "w", encoding="utf-8") as f:
+        json.dump(rank, f, ensure_ascii=False, indent=2)
+
+    if rank:
+        print(
+            f'現在ランク: {rank["tier"]} {rank["rank"]} '
+            f'{rank["leaguePoints"]}LP'
+        )
+    else:
+        print("現在ランク: Unranked")
 
 puuid = get_puuid(GAME_NAME, TAG_LINE)
 print("PUUID")
@@ -77,3 +99,6 @@ export_excel_report()
 
 print("\nデータ更新日時を出力します")
 write_last_updated()
+
+print("\n現在ランクを出力します")
+write_current_rank(puuid)

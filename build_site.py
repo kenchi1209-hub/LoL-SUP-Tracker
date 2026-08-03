@@ -70,7 +70,6 @@ def to_float(v, default=0.0):
     except (TypeError, ValueError):
         return default
 
-
 def to_int(v, default=0):
     try:
         return int(float(v))
@@ -114,10 +113,20 @@ def aggregate(rows):
     n = len(rows)
     if n == 0:
         return None
+
     wins = sum(1 for r in rows if r["_win"])
     sumk = sum(r["_k"] for r in rows)
     sumd = sum(r["_d"] for r in rows)
     suma = sum(r["_a"] for r in rows)
+
+    total_cs = sum(r["_cs"] for r in rows)
+    total_vs = sum(r["_vs"] for r in rows)
+    total_seconds = sum(
+        to_int(r.get("game_duration_seconds"))
+        for r in rows
+    )
+    total_minutes = total_seconds / 60 if total_seconds else 0
+
     return {
         "games": n,
         "wins": wins,
@@ -127,10 +136,10 @@ def aggregate(rows):
         "avg_d": sumd / n,
         "avg_a": suma / n,
         "kda": (sumk + suma) / max(sumd, 1),
-        "avg_cs": sum(r["_cs"] for r in rows) / n,
-        "avg_cspm": sum(r["_cspm"] for r in rows) / n,
-        "avg_vs": sum(r["_vs"] for r in rows) / n,
-        "avg_vspm": sum(r["_vspm"] for r in rows) / n,
+        "avg_cs": total_cs / n,
+        "avg_cspm": total_cs / total_minutes if total_minutes else 0,
+        "avg_vs": total_vs / n,
+        "avg_vspm": total_vs / total_minutes if total_minutes else 0,
     }
 
 

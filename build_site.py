@@ -17,6 +17,7 @@ from queue_map import queue_id_to_name
 
 MATCHES_CSV = "data/csv/my_matches.csv"
 LAST_UPDATED_TXT = "data/csv/last_updated.txt"
+CURRENT_RANK_JSON = "data/csv/current_rank.json"
 OUT_DIR = "public"
 
 JST = timezone(timedelta(hours=9))
@@ -107,6 +108,35 @@ def load_last_updated():
         return "-"
     with open(LAST_UPDATED_TXT, encoding="utf-8") as f:
         return f.read().strip() or "-"
+
+def load_current_rank():
+    if not os.path.exists(CURRENT_RANK_JSON):
+        return None
+    try:
+        with open(CURRENT_RANK_JSON, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+def format_rank_name(rank_data):
+    if not rank_data:
+        return "UNRANKED"
+    tier = str(rank_data.get("tier", "")).upper()
+    division = str(rank_data.get("rank", ""))
+    tier_labels = {
+        "IRON": "IRON",
+        "BRONZE": "BRONZE",
+        "SILVER": "SILVER",
+        "GOLD": "GOLD",
+        "PLATINUM": "PLATINUM",
+        "EMERALD": "EMERALD",
+        "DIAMOND": "DIAMOND",
+        "MASTER": "MASTER",
+        "GRANDMASTER": "GRANDMASTER",
+        "CHALLENGER": "CHALLENGER",
+    }
+    label = tier_labels.get(tier, tier)
+    return f"{label} {division}".strip()
 
 def aggregate(rows):
     """試合リストから成績サマリーを計算する。"""
@@ -344,6 +374,10 @@ def render_overview_cards(rows):
 
     ranked_rows = [r for r in rows if is_ranked(r)]
     ranked_agg = aggregate(ranked_rows)
+
+    current_rank = load_current_rank()
+    rank_name = format_rank_name(current_rank)
+    rank_lp = current_rank.get("leaguePoints", 0) if current_rank else 0
     
     recent = rows[:20]
     recent_agg = aggregate(recent)
@@ -383,6 +417,14 @@ def render_overview_cards(rows):
                 if ranked_agg else "ランク戦なし"
            ),
         ),
+        stat_card(
+    　　　　"現在ランク",
+    　　　　f'{esc(rank_name)} <span class="unit">{rank_lp}LP</span>',
+    　　　　(
+        　　　　f'{current_rank.get("wins", 0)}勝 {current_rank.get("losses", 0)}敗'
+        　　　　if current_rank else "ランク情報なし"
+   　　　　　),
+　　　　　),
     ])
 
     return (

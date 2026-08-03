@@ -39,6 +39,17 @@ def get_puuid(game_name, tag_line):
     return response.json()["puuid"]
 
 
+def get_current_solo_rank(puuid):
+    url = f"https://jp1.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    entries = response.json()
+    for entry in entries:
+        if entry.get("queueType") == "RANKED_SOLO_5x5":
+            return entry
+    return None
+
+
 def get_match_ids(puuid, count=10):
     url = f"https://asia.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?start=0&count={count}"
     response = requests.get(url, headers=HEADERS)

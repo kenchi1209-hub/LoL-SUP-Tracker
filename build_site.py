@@ -418,13 +418,13 @@ def render_overview_cards(rows):
            ),
         ),
         stat_card(
-    　　　　"現在ランク",
-    　　　　f'{esc(rank_name)} <span class="unit">{rank_lp}LP</span>',
-    　　　　(
-        　　　　f'{current_rank.get("wins", 0)}勝 {current_rank.get("losses", 0)}敗'
-        　　　　if current_rank else "ランク情報なし"
-   　　　　　),
-　　　　　),
+           "現在ランク",
+           f'{esc(rank_name)} <span class="unit">{rank_lp}LP</span>',
+           (
+               f'{current_rank.get("wins", 0)}勝 {current_rank.get("losses", 0)}敗'
+               if current_rank else "ランク情報なし"
+           ),
+        ),
     ])
 
     return (

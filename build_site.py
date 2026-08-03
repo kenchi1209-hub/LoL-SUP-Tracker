@@ -76,7 +76,11 @@ def to_int(v, default=0):
         return int(float(v))
     except (TypeError, ValueError):
         return default
-
+def seconds_to_mmss(seconds):
+    seconds = to_int(seconds)
+    minutes = seconds // 60
+    remaining_seconds = seconds % 60
+    return f"{minutes}:{remaining_seconds:02d}"
 
 def load_matches():
     if not os.path.exists(MATCHES_CSV):
@@ -286,6 +290,7 @@ def render_recent(rows, version, limit=20):
         role = ROLE_LABEL.get(r.get("role", ""), r.get("role", ""))
         queue = queue_id_to_name(r.get("queue_id", ""))
         date = r.get("date", "")[:16]
+        duration = seconds_to_mmss(r.get("game_duration_seconds"))
         body += (
             f'<div class="match {result_cls}">'
             f'<div class="m-result">{result_txt}</div>'
@@ -295,7 +300,10 @@ def render_recent(rows, version, limit=20):
             f'<div><div class="m-champ-name">{esc(ja)}</div>'
             f'<div class="m-meta">{esc(role)} · {esc(queue)}</div></div></div>'
             f'<div class="m-kda">{r["_k"]} / {r["_d"]} / {r["_a"]}</div>'
-            f'<div class="m-stats">CS {int(r["_cs"])} · VS {int(r["_vs"])}</div>'
+            f'<div class="m-stats">'
+            f'CS {int(r["_cs"])} ({r["_cspm"]:.1f}/m) · '
+            f'VS {int(r["_vs"])} ({r["_vspm"]:.2f}/m) · '
+            f'Time {duration}'f'</div>'
             f'<div class="m-date">{esc(date)}</div>'
             "</div>"
         )

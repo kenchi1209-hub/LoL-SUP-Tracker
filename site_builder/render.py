@@ -23,6 +23,29 @@ ROLE_LABEL = {
 }
 ROLE_ORDER = ["UTILITY", "MIDDLE", "BOTTOM", "JUNGLE", "TOP"]
 
+NAV_ITEMS = (
+    ("overview", "Overview", "index.html"),
+    ("support", "SUP", "support.html"),
+    ("mid", "MID", "mid.html"),
+    ("top", "TOP", "top.html"),
+    ("adc", "ADC", "adc.html"),
+    ("jungle", "JG", "jungle.html"),
+)
+
+NAV_STYLES = """/* navigation */
+.site-nav {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px;
+}
+.site-nav a {
+  color: var(--muted); text-decoration: none; border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px; font-size: .84rem;
+}
+.site-nav a:hover { color: var(--text); border-color: var(--accent); }
+.site-nav a.active {
+  color: var(--text); background: var(--panel2); border-color: var(--accent);
+}
+/* /navigation */"""
+
 
 def champ_icon_id(champion):
     """CSV上の英語チャンピオン名を Data Dragon の画像ID表記に寄せる。"""
@@ -47,6 +70,21 @@ def wr_class(winrate):
 
 def esc(s):
     return html.escape(str(s))
+
+
+def render_navigation(active_page):
+    links = []
+    for page_id, label, href in NAV_ITEMS:
+        active = page_id == active_page
+        class_name = "nav-link active" if active else "nav-link"
+        current = ' aria-current="page"' if active else ""
+        links.append(
+            f'<a class="{class_name}" href="{href}"{current}>{label}</a>'
+        )
+    return (
+        '<nav class="site-nav" aria-label="サイトナビゲーション">'
+        f'{"".join(links)}</nav>'
+    )
 
 
 def stat_card(label, value, sub=""):
@@ -368,6 +406,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     .match {{ grid-template-columns: 48px 1.4fr 1fr; row-gap: 4px; }}
     .m-stats, .m-date {{ display: none; }}
   }}
+{navigation_styles}
 </style>
 </head>
 <body>
@@ -380,6 +419,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
         &nbsp;·&nbsp; サイト更新 <b>{now}</b> (JST)
       </div>
     </header>
+    {navigation}
     {body}
     <footer>
       Riot API のデータを基に自動生成 · GitHub Actions + GitHub Pages<br>

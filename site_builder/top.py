@@ -13,6 +13,7 @@ from site_builder.data import (
     table_rows_for_groups,
 )
 from site_builder.render import (
+    NAV_STYLES,
     PAGE_TEMPLATE,
     ROLE_LABEL,
     ROLE_ORDER,
@@ -20,6 +21,7 @@ from site_builder.render import (
     render_champion_table,
     render_form,
     render_overview_cards,
+    render_navigation,
     render_recent,
     render_simple_table,
     stat_block,
@@ -89,5 +91,7 @@ def build_html(rows, version):
         data_updated=esc(data_updated),
         now=esc(now_jst),
         games=all_agg["games"] if all_agg else 0,
+        navigation=render_navigation("overview"),
+        navigation_styles=NAV_STYLES,
         body="".join(parts),
     )

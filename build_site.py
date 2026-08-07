@@ -10,6 +10,7 @@ import os
 import urllib.request
 
 from site_builder.data import load_matches
+from site_builder.role import build_role_pages
 from site_builder.top import build_html
 
 OUT_DIR = "public"
@@ -41,6 +42,9 @@ def main():
     out_path = os.path.join(OUT_DIR, "index.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_out)
+    for filename, role_html in build_role_pages().items():
+        with open(os.path.join(OUT_DIR, filename), "w", encoding="utf-8") as f:
+            f.write(role_html)
     # .nojekyll: GitHub Pages の Jekyll 処理を無効化（保険）
     open(os.path.join(OUT_DIR, ".nojekyll"), "w").close()
     print(f"生成完了: {out_path} ({len(rows)}戦)")

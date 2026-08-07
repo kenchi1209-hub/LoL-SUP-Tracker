@@ -87,6 +87,24 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   .dot.win {{ background: #38d39f; }}
   .dot.loss {{ background: #ff6b81; }}
   .form-summary {{ color: var(--muted); font-size: .82rem; margin-top: 8px; }}
+  .trend-controls {{
+    display: grid; grid-template-columns: repeat(2, minmax(150px, 220px));
+    gap: 12px; margin-bottom: 12px;
+  }}
+  .trend-panel {{
+    padding: 16px; background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 12px;
+  }}
+  .trend-summary {{ display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 10px; }}
+  .trend-summary strong {{ display: block; font-size: 1.2rem; }}
+  .trend-chart {{ width: 100%; min-height: 280px; overflow: hidden; }}
+  .trend-chart svg {{ display: block; width: 100%; height: auto; }}
+  .trend-empty {{
+    min-height: 280px; display: grid; place-items: center; color: var(--muted);
+  }}
+  @media (max-width: 520px) {{
+    .trend-controls {{ grid-template-columns: 1fr; }}
+  }}
 {navigation_styles}
 </style>
 </head>
@@ -182,6 +200,37 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
           <div id="recent-form-summary" class="form-summary">-</div>
         </div>
       </section>
+      <section class="overview performance-trend" aria-labelledby="performance-trend-heading">
+        <h2 id="performance-trend-heading">Performance Trend</h2>
+        <div class="trend-controls">
+          <div class="filter-field">
+            <label for="trend-metric">指標</label>
+            <select id="trend-metric">
+              <option value="winrate">勝率</option>
+              <option value="kda">KDA</option>
+              <option value="avgDeaths">Death</option>
+              <option value="cspm">CS/m</option>
+              <option value="vspm">VS/m</option>
+              <option value="damagePerMinute">Damage/m</option>
+            </select>
+          </div>
+          <div class="filter-field">
+            <label for="trend-grouping">集計</label>
+            <select id="trend-grouping">
+              <option value="moving5">5試合移動平均</option>
+              <option value="moving10">10試合移動平均</option>
+              <option value="monthly">月別</option>
+            </select>
+          </div>
+        </div>
+        <div class="trend-panel">
+          <div class="trend-summary">
+            <div><span class="stat-label" id="trend-current-label">現在</span><strong id="trend-current">-</strong></div>
+            <div><span class="stat-label">平均との差</span><strong id="trend-difference">-</strong></div>
+          </div>
+          <div id="trend-chart" class="trend-chart" role="img" aria-label="成績推移"></div>
+        </div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -192,6 +241,8 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   <script src="assets/role-specific-overview.js" defer></script>
   <script src="assets/role-streaks.js" defer></script>
   <script src="assets/role-form-streak.js" defer></script>
+  <script src="assets/role-trend-metrics.js" defer></script>
+  <script src="assets/role-performance-trend.js" defer></script>
 </body>
 </html>
 """

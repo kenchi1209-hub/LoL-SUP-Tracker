@@ -63,6 +63,21 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   .custom-period[hidden] {{ display: none; }}
   .filter-result {{ margin: 16px 0; color: var(--muted); }}
   .filter-result strong {{ color: var(--text); font-size: 1.2rem; }}
+  .overview {{ margin: 28px 0; }}
+  .overview h2 {{ margin: 0 0 14px; }}
+  .cards {{
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }}
+  .card {{
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+  }}
+  .stat-label {{ color: var(--muted); font-size: .78rem; margin-bottom: 6px; }}
+  .stat-value {{ font-size: 1.35rem; font-weight: 700; }}
+  .stat-sub {{ color: var(--muted); font-size: .78rem; margin-top: 4px; }}
+  .good {{ color: #38d39f; }}
+  .bad {{ color: #ff6b81; }}
 {navigation_styles}
 </style>
 </head>
@@ -111,11 +126,47 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
         </div>
       </div>
       <p class="filter-result">対象試合数: <strong id="filtered-match-count">{match_count}</strong></p>
+      <section class="overview" aria-labelledby="overview-heading">
+        <h2 id="overview-heading">Overview</h2>
+        <div class="cards">
+          <div class="card">
+            <div class="stat-label">試合数</div>
+            <div class="stat-value" data-overview="games">0戦</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">勝率</div>
+            <div class="stat-value" data-overview="winrate">-</div>
+            <div class="stat-sub" data-overview="record">0勝 0敗</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">平均K / D / A</div>
+            <div class="stat-value" data-overview="avg-kda">-</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">KDA</div>
+            <div class="stat-value" data-overview="kda">-</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">CS/m</div>
+            <div class="stat-value" data-overview="cspm">-</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">VS/m</div>
+            <div class="stat-value" data-overview="vspm">-</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">平均ゲーム時間</div>
+            <div class="stat-value" data-overview="duration">-</div>
+          </div>
+        </div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
   <script id="role-match-data" type="application/json" data-role="{role_code}">{match_data}</script>
   <script src="assets/role-filter.js" defer></script>
+  <script src="assets/role-metrics.js" defer></script>
+  <script src="assets/role-overview.js" defer></script>
 </body>
 </html>
 """
@@ -140,6 +191,13 @@ def role_match_data(rows):
             "champion": row.get("champion", ""),
             "queue_id": str(row.get("queue_id", "")),
             "role": row.get("role", ""),
+            "win": row.get("_win", False),
+            "kills": row.get("_k", 0),
+            "deaths": row.get("_d", 0),
+            "assists": row.get("_a", 0),
+            "cs": row.get("_cs", 0),
+            "vision_score": row.get("_vs", 0),
+            "game_duration_seconds": row.get("game_duration_seconds", 0),
         }
         for row in rows
     ]

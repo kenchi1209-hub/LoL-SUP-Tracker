@@ -48,10 +48,13 @@ def main():
             f.write(role_html)
     asset_dir = os.path.join(OUT_DIR, "assets")
     os.makedirs(asset_dir, exist_ok=True)
-    shutil.copyfile(
-        os.path.join(os.path.dirname(__file__), "site_builder", "assets", "role-filter.js"),
-        os.path.join(asset_dir, "role-filter.js"),
-    )
+    source_asset_dir = os.path.join(os.path.dirname(__file__), "site_builder", "assets")
+    for filename in sorted(os.listdir(source_asset_dir)):
+        if filename.endswith(".js"):
+            shutil.copyfile(
+                os.path.join(source_asset_dir, filename),
+                os.path.join(asset_dir, filename),
+            )
     # .nojekyll: GitHub Pages の Jekyll 処理を無効化（保険）
     open(os.path.join(OUT_DIR, ".nojekyll"), "w").close()
     print(f"生成完了: {out_path} ({len(rows)}戦)")

@@ -8,7 +8,6 @@ from site_builder.data import (
     aggregate,
     group_by,
     is_ranked,
-    is_support,
     load_last_updated,
     table_rows_for_groups,
 )
@@ -33,14 +32,8 @@ JST = timezone(timedelta(hours=9))
 def build_html(rows, version):
     all_agg = aggregate(rows)
 
-    sup_rows = [r for r in rows if is_support(r)]
-    sup_agg = aggregate(sup_rows)
-
     ranked_rows = [r for r in rows if is_ranked(r)]
     ranked_agg = aggregate(ranked_rows)
-
-    ranked_sup_rows = [r for r in ranked_rows if is_support(r)]
-    ranked_sup_agg = aggregate(ranked_sup_rows)
 
     # ロール別
     role_groups = group_by(rows, lambda r: r.get("role", ""))
@@ -72,10 +65,8 @@ def build_html(rows, version):
         render_form(rows),
 
         stat_block("全体成績", all_agg),
-        stat_block("SUP成績", sup_agg),
 
         stat_block("ランク全体", ranked_agg),
-        stat_block("ランクSUP戦績", ranked_sup_agg),
         render_champion_table(ranked_champ_items, version, "ランク使用チャンピオン別（全ロール）"),
 
         render_simple_table("ロール別成績", role_items),

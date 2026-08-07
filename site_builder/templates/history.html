@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{player} · LoL 実績</title>
+<title>Match History · {player}</title>
 <link rel="stylesheet" href="assets/common.css">
 <link rel="stylesheet" href="assets/top.css">
+<link rel="stylesheet" href="assets/match-history.css">
 </head>
 <body>
   <div class="wrap">
@@ -20,10 +21,13 @@
       </div>
     </header>
     {navigation}
-    {body}
+    <main>
+      <h1>Match History</h1>
+      {match_history}
+    </main>
     <footer>
       Riot API のデータを基に自動生成 · GitHub Actions + GitHub Pages<br>
-      このサイトは Riot Games が承認・後援するものではありません。
+      このサイトは Riot Games が承認または後援するものではありません。
     </footer>
   </div>
 </body>

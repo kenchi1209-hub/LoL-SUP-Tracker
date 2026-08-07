@@ -1,32 +1,23 @@
 """TOP ページの集計構成と HTML 組み立てを扱う。"""
 
-import os
-from datetime import datetime, timedelta, timezone
-
 from queue_map import queue_id_to_name
 from site_builder.data import (
     aggregate,
     group_by,
     is_ranked,
-    load_last_updated,
     table_rows_for_groups,
 )
 from site_builder.render import (
     PAGE_TEMPLATE,
     ROLE_LABEL,
     ROLE_ORDER,
-    esc,
+    page_header_context,
     render_champion_table,
     render_form,
-    render_overview_cards,
     render_navigation,
-    render_match_history,
     render_simple_table,
     stat_block,
 )
-
-
-JST = timezone(timedelta(hours=9))
 
 
 def build_html(rows, version):
@@ -52,35 +43,21 @@ def build_html(rows, version):
     ranked_champ_groups = group_by(ranked_rows, lambda r: r.get("champion", ""))
     ranked_champ_items = table_rows_for_groups(ranked_champ_groups, lambda k: k)
 
-    game_name = os.getenv("RIOT_GAME_NAME", "")
-    tag_line = os.getenv("RIOT_TAG_LINE", "")
-    player = f"{game_name}#{tag_line}" if game_name else "LoL SUP Tracker"
-
-    latest = rows[0].get("date", "")[:16] if rows else "-"
-    data_updated = load_last_updated()
-    now_jst = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
-
     parts = [
-        render_overview_cards(rows),
         render_form(rows),
 
         stat_block("全体成績", all_agg),
 
         stat_block("ランク全体", ranked_agg),
-        render_champion_table(ranked_champ_items, version, "ランク使用チャンピオン別（全ロール）"),
 
         render_simple_table("ロール別成績", role_items),
         render_simple_table("キュー別成績", queue_items),
+        render_champion_table(ranked_champ_items, version, "ランク使用チャンピオン別（全ロール）"),
         render_champion_table(champ_items, version, "チャンピオン別成績（全ロール）"),
-        render_match_history(rows, version, "top"),
     ]
 
     return PAGE_TEMPLATE.format(
-        player=esc(player),
-        latest=esc(latest),
-        data_updated=esc(data_updated),
-        now=esc(now_jst),
-        games=all_agg["games"] if all_agg else 0,
+        **page_header_context(rows),
         navigation=render_navigation("overview"),
         body="".join(parts),
     )

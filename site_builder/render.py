@@ -2,6 +2,8 @@
 
 import html
 import json
+import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from champion_map import CHAMPION_JA_MAP
@@ -12,15 +14,39 @@ from site_builder.data import (
     format_rank_name,
     is_ranked,
     load_current_rank,
+    load_last_updated,
 )
 from site_builder.patches import normalize_patch
 
 
 BASE_DIR = Path(__file__).resolve().parent
+JST = timezone(timedelta(hours=9))
 
 
 def load_template(name):
     return (BASE_DIR / "templates" / name).read_text(encoding="utf-8")
+
+
+def page_header_context(rows):
+    """TOP系ページで共有するヘッダー値を返す。"""
+    aggregate_all = aggregate(rows)
+    current_rank = load_current_rank()
+    game_name = os.getenv("RIOT_GAME_NAME", "")
+    tag_line = os.getenv("RIOT_TAG_LINE", "")
+    player = f"{game_name}#{tag_line}" if game_name else "LoL SUP Tracker"
+    return {
+        "player": esc(player),
+        "latest": esc(rows[0].get("date", "")[:16] if rows else "-"),
+        "data_updated": esc(load_last_updated()),
+        "now": esc(datetime.now(JST).strftime("%Y-%m-%d %H:%M")),
+        "games": aggregate_all["games"] if aggregate_all else 0,
+        "rank_name": esc(format_rank_name(current_rank) if current_rank else "-"),
+        "rank_lp": esc(current_rank.get("leaguePoints", 0) if current_rank else "-"),
+        "rank_record": esc(
+            f'{current_rank.get("wins", 0)}勝 {current_rank.get("losses", 0)}敗'
+            if current_rank else "-"
+        ),
+    }
 
 
 # 内部ロール名 -> 表示名
@@ -40,6 +66,7 @@ NAV_ITEMS = (
     ("top", "TOP", "top.html"),
     ("adc", "ADC", "adc.html"),
     ("jungle", "JG", "jungle.html"),
+    ("history", "Match History", "history.html"),
 )
 
 

@@ -11,6 +11,7 @@ import shutil
 import urllib.request
 
 from site_builder.data import load_matches
+from site_builder.history import build_history_html
 from site_builder.role import build_role_pages
 from site_builder.top import build_html
 
@@ -43,6 +44,8 @@ def main():
     out_path = os.path.join(OUT_DIR, "index.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_out)
+    with open(os.path.join(OUT_DIR, "history.html"), "w", encoding="utf-8") as f:
+        f.write(build_history_html(rows, version))
     for filename, role_html in build_role_pages(rows, version).items():
         with open(os.path.join(OUT_DIR, filename), "w", encoding="utf-8") as f:
             f.write(role_html)

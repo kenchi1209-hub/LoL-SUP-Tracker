@@ -22,26 +22,18 @@ h2 {
 .stat-sub { color: var(--muted); font-size: .78rem; margin-top: 4px; }
 .good { color: var(--good); }
 .bad { color: var(--bad); }
-.performance-summary-table table, .breakdown-table table { table-layout: fixed; }
-.performance-summary-table table { min-width: 650px; }
-.performance-summary-table .col-name { width: 14%; }
-.performance-summary-table .col-games { width: 10%; }
-.performance-summary-table .col-winrate { width: 22%; }
-.performance-summary-table .col-kda-line { width: 22%; }
-.performance-summary-table .col-metric { width: 10.666%; }
-.breakdown-table .col-name { width: 23%; }
-.breakdown-table .col-games { width: 8%; }
-.breakdown-table .col-record { width: 11%; }
-.breakdown-table .col-winrate { width: 22%; }
-.breakdown-table .col-kda-line { width: 18%; }
-.breakdown-table .col-kda, .breakdown-table .col-vspm { width: 9%; }
-.performance-summary-table .winrate-column,
-.breakdown-table .winrate-column { text-align: center; }
-.performance-summary-table .winrate-column .bar,
-.breakdown-table .winrate-column .bar { width: 100%; min-width: 0; }
-.performance-summary-table .performance-kda { min-width: 120px; white-space: nowrap; }
-.performance-summary-table .kda-column,
-.breakdown-table .kda-column { white-space: nowrap; }
+.statistics-table table { min-width: 760px; table-layout: fixed; }
+.statistics-table .col-name { width: 22%; }
+.statistics-table .col-games { width: 7%; }
+.statistics-table .col-record { width: 10%; }
+.statistics-table .col-winrate { width: 20%; }
+.statistics-table .col-kda-line { width: 17%; }
+.statistics-table .col-kda,
+.statistics-table .col-cspm,
+.statistics-table .col-vspm { width: 8%; }
+.statistics-table .winrate-column { text-align: center; }
+.statistics-table .winrate-column .bar { width: 100%; min-width: 0; }
+.statistics-table .kda-column { white-space: nowrap; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 560px; }
 thead th {

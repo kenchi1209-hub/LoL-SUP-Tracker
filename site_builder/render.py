@@ -59,16 +59,11 @@ ROLE_LABEL = {
 }
 ROLE_ORDER = ["UTILITY", "MIDDLE", "BOTTOM", "JUNGLE", "TOP"]
 
-PERFORMANCE_COLGROUP = (
-    '<colgroup><col class="col-name"><col class="col-games">'
-    '<col class="col-winrate"><col class="col-kda-line">'
-    '<col class="col-metric"><col class="col-metric"><col class="col-metric">'
-    '</colgroup>'
-)
-BREAKDOWN_COLGROUP = (
+STATISTICS_COLGROUP = (
     '<colgroup><col class="col-name"><col class="col-games">'
     '<col class="col-record"><col class="col-winrate">'
-    '<col class="col-kda-line"><col class="col-kda"><col class="col-vspm">'
+    '<col class="col-kda-line"><col class="col-kda">'
+    '<col class="col-cspm"><col class="col-vspm">'
     '</colgroup>'
 )
 
@@ -222,8 +217,9 @@ def render_performance_summary(overall, ranked):
             '<tr>'
             f'<td class="name">{esc(label)}</td>'
             f'<td class="num">{aggregate_result["games"]}</td>'
+            f'<td class="num">{aggregate_result["wins"]}-{aggregate_result["losses"]}</td>'
             f'<td class="wr winrate-column">{wr_bar(winrate)}</td>'
-            f'<td class="num performance-kda">{aggregate_result["avg_k"]:.1f}/{aggregate_result["avg_d"]:.1f}/{aggregate_result["avg_a"]:.1f}</td>'
+            f'<td class="num kda-column">{aggregate_result["avg_k"]:.1f}/{aggregate_result["avg_d"]:.1f}/{aggregate_result["avg_a"]:.1f}</td>'
             f'<td class="num">{aggregate_result["kda"]:.2f}</td>'
             f'<td class="num">{aggregate_result["avg_cspm"]:.2f}</td>'
             f'<td class="num">{aggregate_result["avg_vspm"]:.2f}</td>'
@@ -232,8 +228,8 @@ def render_performance_summary(overall, ranked):
     return (
         '<section class="block performance-summary">'
         '<h2>成績概要</h2>'
-        f'<div class="table-wrap performance-summary-table"><table>{PERFORMANCE_COLGROUP}'
-        '<thead><tr><th>区分</th><th>試合</th><th class="winrate-column">勝率</th><th class="kda-column">K/D/A</th>'
+        f'<div class="table-wrap statistics-table"><table>{STATISTICS_COLGROUP}'
+        '<thead><tr><th>区分</th><th>試合</th><th>勝敗</th><th class="winrate-column">勝率</th><th class="kda-column">K/D/A</th>'
         '<th>KDA</th><th>CS/m</th><th>VS/m</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
         '</section>'
@@ -261,15 +257,16 @@ def render_simple_table(title, items):
             f'<td class="wr winrate-column">{wr_bar(it["winrate"])}</td>'
             f'<td class="num kda-column">{it["avg_k"]:.1f}/{it["avg_d"]:.1f}/{it["avg_a"]:.1f}</td>'
             f'<td class="num">{it["kda"]:.2f}</td>'
+            f'<td class="num">{it["avg_cspm"]:.2f}</td>'
             f'<td class="num">{it["avg_vspm"]:.2f}</td>'
             "</tr>"
         )
     return (
         f'<section class="block"><h2>{esc(title)}</h2>'
-        f'<div class="table-wrap breakdown-table"><table>{BREAKDOWN_COLGROUP}'
+        f'<div class="table-wrap statistics-table"><table>{STATISTICS_COLGROUP}'
         "<thead><tr>"
         "<th>区分</th><th>試合</th><th>勝敗</th><th class=\"winrate-column\">勝率</th>"
-        "<th class=\"kda-column\">平均KDA</th><th>KDA</th><th>VS/m</th>"
+        "<th class=\"kda-column\">K/D/A</th><th>KDA</th><th>CS/m</th><th>VS/m</th>"
         "</tr></thead>"
         f"<tbody>{body}</tbody></table></div></section>"
     )
@@ -298,15 +295,16 @@ def render_champion_table(items, version, title="チャンピオン別"):
             f'<td class="wr winrate-column">{wr_bar(it["winrate"])}</td>'
             f'<td class="num kda-column">{it["avg_k"]:.1f}/{it["avg_d"]:.1f}/{it["avg_a"]:.1f}</td>'
             f'<td class="num">{it["kda"]:.2f}</td>'
+            f'<td class="num">{it["avg_cspm"]:.2f}</td>'
             f'<td class="num">{it["avg_vspm"]:.2f}</td>'
             "</tr>"
         )
     return (
         f'<section class="block"><h2>{esc(title)}</h2>'
-        f'<div class="table-wrap breakdown-table"><table>{BREAKDOWN_COLGROUP}'
+        f'<div class="table-wrap statistics-table"><table>{STATISTICS_COLGROUP}'
         "<thead><tr>"
         "<th>チャンピオン</th><th>試合</th><th>勝敗</th><th class=\"winrate-column\">勝率</th>"
-        "<th class=\"kda-column\">平均KDA</th><th>KDA</th><th>VS/m</th>"
+        "<th class=\"kda-column\">K/D/A</th><th>KDA</th><th>CS/m</th><th>VS/m</th>"
         "</tr></thead>"
         f"<tbody>{body}</tbody></table></div></section>"
     )

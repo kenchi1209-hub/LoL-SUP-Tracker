@@ -5,6 +5,10 @@
     return value ? value.replace(/-/g, "/") : "-";
   }
 
+  function championImageUrl(version, iconId) {
+    return `https://ddragon.leagueoflegends.com/cdn/${encodeURIComponent(version)}/img/champion/${encodeURIComponent(iconId)}.png`;
+  }
+
   function metricCell(value, digits, suffix) {
     const cell = global.document.createElement("td");
     cell.textContent = value === null || value === undefined
@@ -22,7 +26,7 @@
       item.className = "patch-champion";
       item.title = `${champion.name}\n${champion.games}戦\n勝率 ${global.RoleMetrics.formatDecimal(champion.winrate, 1)}%`;
       const image = global.document.createElement("img");
-      image.src = `https://ddragon.leagueoflegends.com/cdn/${encodeURIComponent(version)}/img/champion/${encodeURIComponent(champion.name)}.png`;
+      image.src = championImageUrl(version, champion.iconId);
       image.alt = champion.name;
       image.loading = "lazy";
       const count = global.document.createElement("span");
@@ -76,7 +80,7 @@
     });
   }
 
-  const api = { render: renderPatchAnalysis, formatDate };
+  const api = { render: renderPatchAnalysis, formatDate, championImageUrl };
   global.RolePatchAnalysis = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

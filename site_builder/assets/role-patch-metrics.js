@@ -23,7 +23,12 @@
     matches.forEach((match) => {
       const name = String(match.champion || "").trim();
       if (!name) return;
-      const current = champions.get(name) || { name, games: 0, wins: 0 };
+      const current = champions.get(name) || {
+        name,
+        iconId: String(match.champion_icon_id || name),
+        games: 0,
+        wins: 0,
+      };
       current.games += 1;
       current.wins += match.win ? 1 : 0;
       champions.set(name, current);

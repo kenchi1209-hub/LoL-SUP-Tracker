@@ -4,7 +4,7 @@ import json
 from collections import Counter
 
 from champion_map import CHAMPION_JA_MAP
-from site_builder.render import NAV_STYLES, esc, render_navigation
+from site_builder.render import NAV_STYLES, champ_icon_id, esc, render_navigation
 
 
 ROLE_PAGES = (
@@ -324,6 +324,7 @@ def role_match_data(rows):
             "date": row.get("date", ""),
             "patch": row.get("patch", row.get("gameVersion", "")),
             "champion": row.get("champion", ""),
+            "champion_icon_id": champ_icon_id(row.get("champion", "")),
             "queue_id": str(row.get("queue_id", "")),
             "role": row.get("role", ""),
             "win": row.get("_win", False),

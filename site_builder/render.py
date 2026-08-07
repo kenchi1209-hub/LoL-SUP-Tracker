@@ -52,6 +52,9 @@ def champ_icon_id(champion):
     special = {
         "Fiddlesticks": "Fiddlesticks",
         "Wukong": "MonkeyKing",
+        "Kai'Sa": "Kaisa",
+        "Vel'Koz": "Velkoz",
+        "Cho'Gath": "Chogath",
     }
     if champion in special:
         return special[champion]

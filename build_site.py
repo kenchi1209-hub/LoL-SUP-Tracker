@@ -43,7 +43,7 @@ def main():
     out_path = os.path.join(OUT_DIR, "index.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_out)
-    for filename, role_html in build_role_pages(rows).items():
+    for filename, role_html in build_role_pages(rows, version).items():
         with open(os.path.join(OUT_DIR, filename), "w", encoding="utf-8") as f:
             f.write(role_html)
     asset_dir = os.path.join(OUT_DIR, "assets")

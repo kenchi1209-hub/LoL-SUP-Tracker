@@ -117,6 +117,25 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   .comparison-table th:first-child, .comparison-table td:first-child {{ text-align: left; }}
   .comparison-table tbody tr:last-child td {{ border-bottom: 0; }}
   .comparison-table td:not(:first-child) {{ font-variant-numeric: tabular-nums; }}
+  .patch-table {{ min-width: 900px; }}
+  .patch-table .patch-label {{ white-space: normal; min-width: 210px; }}
+  .patch-reference {{ background: rgba(246, 200, 95, .07); }}
+  .patch-reference .patch-label::after {{
+    content: "参考"; display: inline-block; margin-left: 7px; padding: 1px 5px;
+    border: 1px solid #f6c85f; border-radius: 4px; color: #f6c85f;
+    font-size: .68rem; vertical-align: 1px;
+  }}
+  .patch-champions {{ display: flex; justify-content: flex-end; gap: 8px; }}
+  .patch-champion {{ position: relative; display: inline-flex; }}
+  .patch-champion img {{
+    width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--border);
+  }}
+  .patch-champion-count {{
+    position: absolute; right: -4px; bottom: -4px; min-width: 17px; padding: 0 4px;
+    border-radius: 8px; background: var(--bg); color: var(--text); font-size: .65rem;
+    line-height: 17px; text-align: center; border: 1px solid var(--border);
+  }}
+  .patch-empty {{ padding: 24px; color: var(--muted); text-align: center; }}
   @media (max-width: 520px) {{
     .trend-controls {{ grid-template-columns: 1fr; }}
   }}
@@ -256,6 +275,16 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
           </table>
         </div>
       </section>
+      <section class="overview patch-analysis" aria-labelledby="patch-analysis-heading" data-ddragon-version="{ddragon_version}">
+        <h2 id="patch-analysis-heading">Patch Analysis</h2>
+        <div class="comparison-panel">
+          <table class="comparison-table patch-table">
+            <thead><tr><th scope="col">Patch</th><th scope="col">Games</th><th scope="col">Winrate</th><th scope="col">KDA</th><th scope="col">CS/m</th><th scope="col">VS/m</th><th scope="col">Damage/m</th><th scope="col">主な使用チャンピオン</th></tr></thead>
+            <tbody id="patch-analysis-body"></tbody>
+          </table>
+          <div id="patch-analysis-empty" class="patch-empty" hidden>対象試合がありません</div>
+        </div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -270,6 +299,8 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   <script src="assets/role-performance-trend.js" defer></script>
   <script src="assets/role-win-loss-metrics.js" defer></script>
   <script src="assets/role-win-loss.js" defer></script>
+  <script src="assets/role-patch-metrics.js" defer></script>
+  <script src="assets/role-patch-analysis.js" defer></script>
 </body>
 </html>
 """
@@ -291,6 +322,7 @@ def role_match_data(rows):
     matches = [
         {
             "date": row.get("date", ""),
+            "patch": row.get("patch", row.get("gameVersion", "")),
             "champion": row.get("champion", ""),
             "queue_id": str(row.get("queue_id", "")),
             "role": row.get("role", ""),
@@ -314,7 +346,7 @@ def role_match_data(rows):
     )
 
 
-def build_role_html(page_id, role_name, role_code, rows):
+def build_role_html(page_id, role_name, role_code, rows, ddragon_version):
     page_title = f"{role_name} 詳細"
     role_rows = [
         row
@@ -331,11 +363,14 @@ def build_role_html(page_id, role_name, role_code, rows):
         match_count=len(role_rows),
         match_data=role_match_data(role_rows),
         role_code=esc(role_code),
+        ddragon_version=esc(ddragon_version),
     )
 
 
-def build_role_pages(rows):
+def build_role_pages(rows, ddragon_version):
     return {
-        filename: build_role_html(page_id, role_name, role_code, rows)
+        filename: build_role_html(
+            page_id, role_name, role_code, rows, ddragon_version
+        )
         for page_id, role_name, role_code, filename in ROLE_PAGES
     }

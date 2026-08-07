@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{page_title} · LoL 実績</title>
+<link rel="stylesheet" href="assets/common.css">
+<link rel="stylesheet" href="assets/role.css">
+<link rel="stylesheet" href="assets/match-history.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero"><h1>{page_title}</h1></header>
+    {navigation}
+    <main class="role-placeholder">
+      <h2>対象ロール: {role_name}</h2>
+      <div class="filters" aria-label="試合フィルター">
+        <div class="filter-field">
+          <label for="period-filter">期間</label>
+          <select id="period-filter">
+            <option value="season">シーズン</option>
+            <option value="two_months">直近2か月</option>
+            <option value="current_month">今月</option>
+            <option value="previous_month">前月</option>
+            <option value="recent20">直近20戦</option>
+            <option value="custom">カスタム期間</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="champ-filter">チャンピオン</label>
+          <select id="champ-filter"><option value="ALL">ALL</option>{champion_options}</select>
+        </div>
+        <div class="filter-field">
+          <label for="queue-filter">キュー</label>
+          <select id="queue-filter">
+            <option value="all">全体（ドラフト＋ランク）</option>
+            <option value="ranked">ランク</option>
+            <option value="draft">ドラフト</option>
+          </select>
+        </div>
+        <div id="custom-period" class="custom-period" hidden>
+          <div class="filter-field"><label for="custom-start">開始日</label><input id="custom-start" type="date"></div>
+          <div class="filter-field"><label for="custom-end">終了日</label><input id="custom-end" type="date"></div>
+        </div>
+      </div>
+      <p class="filter-result">対象試合数: <strong id="filtered-match-count">{match_count}</strong></p>
+      <section class="overview" aria-labelledby="overview-heading">
+        <h2 id="overview-heading">Overview</h2>
+        <div class="cards">
+          <div class="card"><div class="stat-label">試合数</div><div class="stat-value" data-overview="games">0戦</div></div>
+          <div class="card"><div class="stat-label">勝率</div><div class="stat-value" data-overview="winrate">-</div><div class="stat-sub" data-overview="record">0勝 0敗</div></div>
+          <div class="card"><div class="stat-label">平均K / D / A</div><div class="stat-value" data-overview="avg-kda">-</div></div>
+          <div class="card"><div class="stat-label">KDA</div><div class="stat-value" data-overview="kda">-</div></div>
+          <div class="card"><div class="stat-label">CS/m</div><div class="stat-value" data-overview="cspm">-</div></div>
+          <div class="card"><div class="stat-label">VS/m</div><div class="stat-value" data-overview="vspm">-</div></div>
+          <div class="card"><div class="stat-label">平均ゲーム時間</div><div class="stat-value" data-overview="duration">-</div></div>
+        </div>
+      </section>
+      <section class="overview role-overview" data-role-overview="{role_code}">
+        <h2>Overview - {role_name}</h2><div id="role-overview-cards" class="cards"></div>
+      </section>
+      <section class="overview form-streak" aria-labelledby="form-streak-heading">
+        <h2 id="form-streak-heading">Form &amp; Streak</h2>
+        <div id="form-streak-cards" class="cards"></div>
+        <div class="form-panel">
+          <div class="stat-label">直近20戦フォーム</div>
+          <div id="recent-form" class="form"></div>
+          <div id="recent-form-summary" class="form-summary">-</div>
+        </div>
+      </section>
+      <section class="overview performance-trend" aria-labelledby="performance-trend-heading">
+        <h2 id="performance-trend-heading">Performance Trend</h2>
+        <div class="trend-controls">
+          <div class="filter-field"><label for="trend-metric">指標</label><select id="trend-metric">
+            <option value="winrate">勝率</option><option value="kda">KDA</option><option value="avgDeaths">Death</option>
+            <option value="cspm">CS/m</option><option value="vspm">VS/m</option><option value="damagePerMinute">Damage/m</option>
+          </select></div>
+          <div class="filter-field"><label for="trend-grouping">集計</label><select id="trend-grouping">
+            <option value="moving5">5試合移動平均</option><option value="moving10">10試合移動平均</option><option value="monthly">月別</option>
+          </select></div>
+        </div>
+        <div class="trend-panel">
+          <div class="trend-summary">
+            <div><span class="stat-label" id="trend-current-label">現在</span><strong id="trend-current">-</strong></div>
+            <div><span class="stat-label">平均との差</span><strong id="trend-difference">-</strong></div>
+          </div>
+          <div id="trend-chart" class="trend-chart" role="img" aria-label="成績推移"></div>
+          <div id="trend-accessible-series" class="sr-only" aria-live="polite"></div>
+        </div>
+      </section>
+      <section class="overview win-loss-comparison" aria-labelledby="win-loss-heading" data-win-loss-role="{role_code}">
+        <h2 id="win-loss-heading">Win / Loss Comparison</h2>
+        <p id="win-loss-counts" class="comparison-counts">勝利時 0戦 / 敗北時 0戦</p>
+        <div class="comparison-panel"><table class="comparison-table">
+          <thead><tr><th scope="col">指標</th><th scope="col">勝利時</th><th scope="col">敗北時</th><th scope="col">差分</th></tr></thead>
+          <tbody id="win-loss-body"></tbody>
+        </table></div>
+      </section>
+      <section class="overview patch-analysis" aria-labelledby="patch-analysis-heading" data-ddragon-version="{ddragon_version}">
+        <h2 id="patch-analysis-heading">Patch Analysis</h2>
+        <div class="comparison-panel"><table class="comparison-table patch-table">
+          <thead><tr><th scope="col">Patch</th><th scope="col">Games</th><th scope="col">Winrate</th><th scope="col">KDA</th><th scope="col">CS/m</th><th scope="col">VS/m</th><th scope="col">Damage/m</th><th scope="col">主な使用チャンピオン</th></tr></thead>
+          <tbody id="patch-analysis-body"></tbody>
+        </table><div id="patch-analysis-empty" class="patch-empty" hidden>対象試合がありません</div></div>
+      </section>
+      <section class="overview records-analysis" aria-labelledby="records-heading" data-ddragon-version="{ddragon_version}">
+        <h2 id="records-heading">Records</h2><div id="records-grid" class="records-grid"></div>
+      </section>
+      {match_history}
+      <a href="index.html">TOPへ戻る</a>
+    </main>
+  </div>
+  <script id="role-match-data" type="application/json" data-role="{role_code}">{match_data}</script>
+  <script src="assets/role-metrics.js" defer></script>
+  <script src="assets/role-overview.js" defer></script>
+  <script src="assets/role-specific-overview.js" defer></script>
+  <script src="assets/role-streaks.js" defer></script>
+  <script src="assets/role-form-streak.js" defer></script>
+  <script src="assets/role-trend-metrics.js" defer></script>
+  <script src="assets/role-performance-trend.js" defer></script>
+  <script src="assets/role-win-loss-metrics.js" defer></script>
+  <script src="assets/role-win-loss.js" defer></script>
+  <script src="assets/role-patch-metrics.js" defer></script>
+  <script src="assets/role-patch-analysis.js" defer></script>
+  <script src="assets/role-records-metrics.js" defer></script>
+  <script src="assets/role-records.js" defer></script>
+  <script src="assets/role-filter.js" defer></script>
+</body>
+</html>

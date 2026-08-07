@@ -102,6 +102,21 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   .trend-empty {{
     min-height: 280px; display: grid; place-items: center; color: var(--muted);
   }}
+  .neutral {{ color: var(--muted); }}
+  .comparison-panel {{
+    overflow-x: auto; background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 12px;
+  }}
+  .comparison-counts {{ color: var(--muted); margin: 0 0 10px; }}
+  .comparison-table {{ width: 100%; min-width: 560px; border-collapse: collapse; }}
+  .comparison-table th, .comparison-table td {{
+    padding: 11px 14px; border-bottom: 1px solid var(--border); text-align: right;
+    white-space: nowrap;
+  }}
+  .comparison-table th {{ color: var(--muted); font-size: .78rem; font-weight: 600; }}
+  .comparison-table th:first-child, .comparison-table td:first-child {{ text-align: left; }}
+  .comparison-table tbody tr:last-child td {{ border-bottom: 0; }}
+  .comparison-table td:not(:first-child) {{ font-variant-numeric: tabular-nums; }}
   @media (max-width: 520px) {{
     .trend-controls {{ grid-template-columns: 1fr; }}
   }}
@@ -231,6 +246,16 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
           <div id="trend-chart" class="trend-chart" role="img" aria-label="成績推移"></div>
         </div>
       </section>
+      <section class="overview win-loss-comparison" aria-labelledby="win-loss-heading" data-win-loss-role="{role_code}">
+        <h2 id="win-loss-heading">Win / Loss Comparison</h2>
+        <p id="win-loss-counts" class="comparison-counts">勝利時 0戦 / 敗北時 0戦</p>
+        <div class="comparison-panel">
+          <table class="comparison-table">
+            <thead><tr><th scope="col">指標</th><th scope="col">勝利時</th><th scope="col">敗北時</th><th scope="col">差分</th></tr></thead>
+            <tbody id="win-loss-body"></tbody>
+          </table>
+        </div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -243,6 +268,8 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   <script src="assets/role-form-streak.js" defer></script>
   <script src="assets/role-trend-metrics.js" defer></script>
   <script src="assets/role-performance-trend.js" defer></script>
+  <script src="assets/role-win-loss-metrics.js" defer></script>
+  <script src="assets/role-win-loss.js" defer></script>
 </body>
 </html>
 """

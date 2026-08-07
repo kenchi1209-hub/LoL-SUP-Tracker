@@ -136,6 +136,24 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
     line-height: 17px; text-align: center; border: 1px solid var(--border);
   }}
   .patch-empty {{ padding: 24px; color: var(--muted); text-align: center; }}
+  .records-grid {{
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+  }}
+  .record-card {{ padding: 12px 14px; }}
+  .record-card .stat-value {{ font-size: 1.18rem; }}
+  .record-main {{ min-height: 48px; }}
+  .record-ties {{ margin-top: 8px; }}
+  .record-ties summary {{ color: var(--accent); cursor: pointer; font-size: .78rem; }}
+  .record-detail-list {{ margin-top: 8px; display: grid; gap: 7px; }}
+  .record-detail {{
+    padding: 8px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--panel); font-size: .72rem;
+  }}
+  .record-detail-head {{ display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }}
+  .record-detail img {{ width: 24px; height: 24px; border-radius: 5px; }}
+  .record-detail-value {{ color: #f6c85f; font-weight: 700; }}
+  .record-detail-stats {{ color: var(--muted); line-height: 1.45; }}
   @media (max-width: 520px) {{
     .trend-controls {{ grid-template-columns: 1fr; }}
   }}
@@ -285,6 +303,10 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
           <div id="patch-analysis-empty" class="patch-empty" hidden>対象試合がありません</div>
         </div>
       </section>
+      <section class="overview records-analysis" aria-labelledby="records-heading" data-ddragon-version="{ddragon_version}">
+        <h2 id="records-heading">Records</h2>
+        <div id="records-grid" class="records-grid"></div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -301,6 +323,8 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   <script src="assets/role-win-loss.js" defer></script>
   <script src="assets/role-patch-metrics.js" defer></script>
   <script src="assets/role-patch-analysis.js" defer></script>
+  <script src="assets/role-records-metrics.js" defer></script>
+  <script src="assets/role-records.js" defer></script>
 </body>
 </html>
 """
@@ -321,6 +345,7 @@ def champion_options(rows):
 def role_match_data(rows):
     matches = [
         {
+            "match_id": row.get("match_id", ""),
             "date": row.get("date", ""),
             "patch": row.get("patch", row.get("gameVersion", "")),
             "champion": row.get("champion", ""),

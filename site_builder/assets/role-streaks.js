@@ -20,6 +20,17 @@
     return segments;
   }
 
+  function streakRuns(matches) {
+    const chronological = chronologicalMatches(matches);
+    const segments = streakSegments(chronological.map((match) => Boolean(match.win)));
+    let offset = 0;
+    return segments.map((segment) => {
+      const runMatches = chronological.slice(offset, offset + segment.length);
+      offset += segment.length;
+      return { ...segment, matches: runMatches };
+    });
+  }
+
   function averageLongStreak(segments, win) {
     const lengths = segments
       .filter((segment) => segment.win === win && segment.length >= 2)
@@ -105,7 +116,7 @@
     };
   }
 
-  const api = { analyzeForm, classifyForm, streakSegments };
+  const api = { analyzeForm, classifyForm, streakSegments, streakRuns };
   global.RoleStreaks = api;
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

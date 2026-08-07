@@ -199,31 +199,30 @@ def stat_block(title, agg):
 
 
 def render_performance_summary(overall, ranked):
-    """TOPの全体・ランク集計を高密度な2レコードで表示する。"""
-    records = []
+    """TOPの全体・ランク集計を比較表で表示する。"""
+    rows = []
     for label, aggregate_result in (("全体", overall), ("ランク", ranked)):
         if not aggregate_result:
             continue
         winrate = aggregate_result["winrate"]
-        records.append(
-            '<article class="performance-record">'
-            '<div class="performance-main">'
-            f'<strong class="performance-kind">{esc(label)}</strong>'
-            f'<span><strong>{aggregate_result["games"]}</strong>戦</span>'
-            f'<span class="{wr_class(winrate)}"><strong>{winrate:.1f}</strong>%</span>'
-            f'<span>KDA <strong>{aggregate_result["kda"]:.2f}</strong></span>'
-            '</div>'
-            '<div class="performance-detail">'
-            f'<span class="performance-kda">K/D/A <strong>{aggregate_result["avg_k"]:.1f}/{aggregate_result["avg_d"]:.1f}/{aggregate_result["avg_a"]:.1f}</strong></span>'
-            f'<span>CS/m <strong>{aggregate_result["avg_cspm"]:.2f}</strong></span>'
-            f'<span>VS/m <strong>{aggregate_result["avg_vspm"]:.2f}</strong></span>'
-            '</div>'
-            '</article>'
+        rows.append(
+            '<tr>'
+            f'<td class="name">{esc(label)}</td>'
+            f'<td class="num">{aggregate_result["games"]}</td>'
+            f'<td class="wr">{wr_bar(winrate)}</td>'
+            f'<td class="num performance-kda">{aggregate_result["avg_k"]:.1f}/{aggregate_result["avg_d"]:.1f}/{aggregate_result["avg_a"]:.1f}</td>'
+            f'<td class="num">{aggregate_result["kda"]:.2f}</td>'
+            f'<td class="num">{aggregate_result["avg_cspm"]:.2f}</td>'
+            f'<td class="num">{aggregate_result["avg_vspm"]:.2f}</td>'
+            '</tr>'
         )
     return (
         '<section class="block performance-summary">'
-        '<h2>成績サマリー</h2>'
-        f'<div class="performance-records">{"".join(records)}</div>'
+        '<h2>成績概要</h2>'
+        '<div class="table-wrap performance-summary-table"><table>'
+        '<thead><tr><th>区分</th><th>試合</th><th>勝率</th><th>K/D/A</th>'
+        '<th>KDA</th><th>CS/m</th><th>VS/m</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
         '</section>'
     )
 

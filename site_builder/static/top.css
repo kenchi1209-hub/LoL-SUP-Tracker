@@ -22,32 +22,8 @@ h2 {
 .stat-sub { color: var(--muted); font-size: .78rem; margin-top: 4px; }
 .good { color: var(--good); }
 .bad { color: var(--bad); }
-.performance-records {
-  width: min(100%, 680px); border: 1px solid var(--border); border-radius: 12px;
-  overflow: hidden; background: var(--panel);
-}
-.performance-record { padding: 10px 14px; }
-.performance-record + .performance-record { border-top: 1px solid var(--border); }
-.performance-main, .performance-detail {
-  display: grid; align-items: baseline; column-gap: 12px; white-space: nowrap;
-}
-.performance-main {
-  grid-template-columns: minmax(44px, .7fr) repeat(3, minmax(0, 1fr));
-  font-size: .9rem;
-}
-.performance-kind { color: var(--text); }
-.performance-detail {
-  grid-template-columns: minmax(136px, 1.6fr) repeat(2, minmax(70px, .8fr));
-  margin-top: 3px; color: var(--muted); font-size: .78rem;
-}
-.performance-detail strong { color: var(--text); font-weight: 600; }
-.performance-kda { white-space: nowrap; }
-@media (max-width: 440px) {
-  .performance-record { padding: 9px 10px; }
-  .performance-main, .performance-detail { column-gap: 7px; }
-  .performance-main { grid-template-columns: 44px repeat(3, minmax(0, 1fr)); font-size: .82rem; }
-  .performance-detail { grid-template-columns: minmax(126px, 1.55fr) repeat(2, minmax(62px, .75fr)); font-size: .72rem; }
-}
+.performance-summary-table table { min-width: 650px; }
+.performance-summary-table .performance-kda { min-width: 120px; white-space: nowrap; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 560px; }
 thead th {

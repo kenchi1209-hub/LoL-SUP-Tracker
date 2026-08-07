@@ -78,6 +78,15 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   .stat-sub {{ color: var(--muted); font-size: .78rem; margin-top: 4px; }}
   .good {{ color: #38d39f; }}
   .bad {{ color: #ff6b81; }}
+  .form-panel {{
+    margin-top: 12px; padding: 16px; background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 12px;
+  }}
+  .form {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }}
+  .dot {{ width: 20px; height: 20px; border-radius: 5px; }}
+  .dot.win {{ background: #38d39f; }}
+  .dot.loss {{ background: #ff6b81; }}
+  .form-summary {{ color: var(--muted); font-size: .82rem; margin-top: 8px; }}
 {navigation_styles}
 </style>
 </head>
@@ -164,6 +173,15 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
         <h2>Overview - {role_name}</h2>
         <div id="role-overview-cards" class="cards"></div>
       </section>
+      <section class="overview form-streak" aria-labelledby="form-streak-heading">
+        <h2 id="form-streak-heading">Form &amp; Streak</h2>
+        <div id="form-streak-cards" class="cards"></div>
+        <div class="form-panel">
+          <div class="stat-label">直近20戦フォーム</div>
+          <div id="recent-form" class="form"></div>
+          <div id="recent-form-summary" class="form-summary">-</div>
+        </div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -172,6 +190,8 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   <script src="assets/role-metrics.js" defer></script>
   <script src="assets/role-overview.js" defer></script>
   <script src="assets/role-specific-overview.js" defer></script>
+  <script src="assets/role-streaks.js" defer></script>
+  <script src="assets/role-form-streak.js" defer></script>
 </body>
 </html>
 """

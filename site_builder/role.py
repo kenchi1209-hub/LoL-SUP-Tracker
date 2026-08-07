@@ -1,10 +1,16 @@
 """ロール詳細ページの共通プレースホルダを生成する。"""
 
-import json
 from collections import Counter
 
 from champion_map import CHAMPION_JA_MAP
-from site_builder.render import NAV_STYLES, champ_icon_id, esc, render_navigation
+from site_builder.render import (
+    MATCH_HISTORY_STYLES,
+    NAV_STYLES,
+    esc,
+    match_history_data,
+    render_match_history,
+    render_navigation,
+)
 
 
 ROLE_PAGES = (
@@ -158,6 +164,7 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
     .trend-controls {{ grid-template-columns: 1fr; }}
   }}
 {navigation_styles}
+{match_history_styles}
 </style>
 </head>
 <body>
@@ -307,6 +314,7 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
         <h2 id="records-heading">Records</h2>
         <div id="records-grid" class="records-grid"></div>
       </section>
+      {match_history}
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -342,36 +350,6 @@ def champion_options(rows):
     )
 
 
-def role_match_data(rows):
-    matches = [
-        {
-            "match_id": row.get("match_id", ""),
-            "date": row.get("date", ""),
-            "patch": row.get("patch", row.get("gameVersion", "")),
-            "champion": row.get("champion", ""),
-            "champion_icon_id": champ_icon_id(row.get("champion", "")),
-            "queue_id": str(row.get("queue_id", "")),
-            "role": row.get("role", ""),
-            "win": row.get("_win", False),
-            "kills": row.get("_k", 0),
-            "deaths": row.get("_d", 0),
-            "assists": row.get("_a", 0),
-            "cs": row.get("_cs", 0),
-            "vision_score": row.get("_vs", 0),
-            "wards_placed": row.get("wards_placed", 0),
-            "wards_killed": row.get("wards_killed", 0),
-            "control_wards_bought": row.get("control_wards_bought", 0),
-            "damage_to_champions": row.get("_dmg", 0),
-            "team_kills": row.get("team_kills", 0),
-            "game_duration_seconds": row.get("game_duration_seconds", 0),
-        }
-        for row in rows
-    ]
-    return json.dumps(matches, ensure_ascii=False, separators=(",", ":")).replace(
-        "<", "\\u003c"
-    )
-
-
 def build_role_html(page_id, role_name, role_code, rows, ddragon_version):
     page_title = f"{role_name} 詳細"
     role_rows = [
@@ -385,9 +363,11 @@ def build_role_html(page_id, role_name, role_code, rows, ddragon_version):
         role_name=esc(role_name),
         navigation=render_navigation(page_id),
         navigation_styles=NAV_STYLES,
+        match_history_styles=MATCH_HISTORY_STYLES,
         champion_options=champion_options(role_rows),
         match_count=len(role_rows),
-        match_data=role_match_data(role_rows),
+        match_data=match_history_data(role_rows),
+        match_history=render_match_history(role_rows, ddragon_version, "role"),
         role_code=esc(role_code),
         ddragon_version=esc(ddragon_version),
     )

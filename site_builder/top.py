@@ -14,6 +14,7 @@ from site_builder.data import (
 )
 from site_builder.render import (
     NAV_STYLES,
+    MATCH_HISTORY_STYLES,
     PAGE_TEMPLATE,
     ROLE_LABEL,
     ROLE_ORDER,
@@ -22,7 +23,7 @@ from site_builder.render import (
     render_form,
     render_overview_cards,
     render_navigation,
-    render_recent,
+    render_match_history,
     render_simple_table,
     stat_block,
 )
@@ -82,7 +83,7 @@ def build_html(rows, version):
         render_simple_table("ロール別成績", role_items),
         render_simple_table("キュー別成績", queue_items),
         render_champion_table(champ_items, version, "チャンピオン別成績（全ロール）"),
-        render_recent(rows, version),
+        render_match_history(rows, version, "top"),
     ]
 
     return PAGE_TEMPLATE.format(
@@ -93,5 +94,6 @@ def build_html(rows, version):
         games=all_agg["games"] if all_agg else 0,
         navigation=render_navigation("overview"),
         navigation_styles=NAV_STYLES,
+        match_history_styles=MATCH_HISTORY_STYLES,
         body="".join(parts),
     )

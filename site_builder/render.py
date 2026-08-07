@@ -1,6 +1,7 @@
 """GitHub Pages 向けの HTML 部品とページテンプレートを扱う。"""
 
 import html
+import json
 
 from champion_map import CHAMPION_JA_MAP
 from queue_map import queue_id_to_name
@@ -46,6 +47,49 @@ NAV_STYLES = """/* navigation */
 }
 /* /navigation */"""
 
+MATCH_HISTORY_STYLES = """/* shared match history */
+.match-history-controls {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.match-history-field { display: flex; flex-direction: column; gap: 5px; }
+.match-history-field label { color: var(--muted); font-size: .75rem; }
+.match-history-field select, .match-history-field input {
+  width: 100%; color: var(--text); background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px; font: inherit;
+}
+.match-history-custom { display: contents; }
+.match-history-custom[hidden] { display: none; }
+.match-history-summary { color: var(--muted); font-size: .82rem; margin: 0 0 10px; }
+.matches { display: flex; flex-direction: column; gap: 8px; }
+.match {
+  display: grid; grid-template-columns: 56px minmax(170px,1.4fr) minmax(105px,.7fr) minmax(250px,1.7fr) minmax(145px,.9fr);
+  align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border);
+  border-left-width: 4px; border-radius: 10px; padding: 10px 12px;
+}
+.match.win { border-left-color: var(--good, #38d39f); }
+.match.loss { border-left-color: var(--bad, #ff6b81); }
+.m-result { font-weight: 700; font-size: .78rem; }
+.match.win .m-result { color: var(--good, #38d39f); }
+.match.loss .m-result { color: var(--bad, #ff6b81); }
+.m-champ { display: flex; align-items: center; gap: 8px; }
+.m-champ img { width: 34px; height: 34px; border-radius: 7px; }
+.m-champ-name, .m-kda { font-weight: 600; }
+.m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
+.m-stats { line-height: 1.5; }
+.m-date { text-align: right; }
+.match-history-empty { color: var(--muted); padding: 24px; text-align: center; }
+.match-history-more {
+  display: block; margin: 14px auto 0; padding: 8px 18px; color: var(--text);
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+}
+.match-history-more[hidden], .match-history-empty[hidden] { display: none; }
+@media (max-width: 760px) {
+  .match { grid-template-columns: 48px 1.4fr 1fr; row-gap: 4px; }
+  .m-stats, .m-date { grid-column: 2 / -1; text-align: left; }
+}
+/* /shared match history */"""
+
 
 def champ_icon_id(champion):
     """CSV上の英語チャンピオン名を Data Dragon の画像ID表記に寄せる。"""
@@ -65,6 +109,86 @@ def champ_icon_id(champion):
         .replace(" ", "")
         .replace("&", "")
     )
+
+
+def match_history_data(rows):
+    """TOP/ロール共通Match History用のJSONを生成する。"""
+    matches = [
+        {
+            "match_id": row.get("match_id", ""),
+            "date": row.get("date", ""),
+            "patch": row.get("patch", row.get("gameVersion", "")),
+            "champion": row.get("champion", ""),
+            "champion_name": CHAMPION_JA_MAP.get(
+                row.get("champion", ""), row.get("champion", "")
+            ),
+            "champion_icon_id": champ_icon_id(row.get("champion", "")),
+            "queue_id": str(row.get("queue_id", "")),
+            "queue_name": queue_id_to_name(row.get("queue_id", "")),
+            "role": row.get("role", ""),
+            "win": row.get("_win", False),
+            "kills": row.get("_k", 0),
+            "deaths": row.get("_d", 0),
+            "assists": row.get("_a", 0),
+            "cs": row.get("_cs", 0),
+            "vision_score": row.get("_vs", 0),
+            "wards_placed": row.get("wards_placed", 0),
+            "wards_killed": row.get("wards_killed", 0),
+            "control_wards_bought": row.get("control_wards_bought", 0),
+            "damage_to_champions": row.get("_dmg", 0),
+            "team_kills": row.get("team_kills", 0),
+            "game_duration_seconds": row.get("game_duration_seconds", 0),
+        }
+        for row in rows
+    ]
+    return json.dumps(matches, ensure_ascii=False, separators=(",", ":")).replace(
+        "<", "\\u003c"
+    )
+
+
+def match_history_champion_options(rows):
+    champions = sorted({row.get("champion", "") for row in rows if row.get("champion")})
+    return "".join(
+        f'<option value="{esc(champion)}">{esc(CHAMPION_JA_MAP.get(champion, champion))}</option>'
+        for champion in champions
+    )
+
+
+def render_match_history(rows, version, mode="top"):
+    top_controls = ""
+    data = ""
+    if mode == "top":
+        top_controls = f"""
+        <div class="match-history-field"><label for="mh-period">期間</label><select id="mh-period">
+          <option value="season">シーズン</option><option value="two_months">直近2か月</option>
+          <option value="current_month">今月</option><option value="previous_month">前月</option>
+          <option value="recent20">直近20戦</option><option value="custom">カスタム期間</option>
+        </select></div>
+        <div class="match-history-field"><label for="mh-champion">チャンピオン</label><select id="mh-champion"><option value="ALL">ALL</option>{match_history_champion_options(rows)}</select></div>
+        <div class="match-history-field"><label for="mh-queue">キュー</label><select id="mh-queue"><option value="all">全体</option><option value="ranked">ランク</option><option value="draft">ドラフト</option></select></div>
+        <div class="match-history-field"><label for="mh-role">ロール</label><select id="mh-role"><option value="ALL">ALL</option><option value="UTILITY">SUP</option><option value="MIDDLE">MID</option><option value="TOP">TOP</option><option value="BOTTOM">ADC</option><option value="JUNGLE">JG</option></select></div>
+        <div id="mh-custom" class="match-history-custom" hidden>
+          <div class="match-history-field"><label for="mh-start">開始日</label><input id="mh-start" type="date"></div>
+          <div class="match-history-field"><label for="mh-end">終了日</label><input id="mh-end" type="date"></div>
+        </div>"""
+        data = f'<script id="match-history-data" type="application/json">{match_history_data(rows)}</script>'
+    return f"""
+    <section class="block match-history" data-match-history-mode="{mode}" data-ddragon-version="{esc(version)}">
+      <h2>Match History</h2>
+      <div class="match-history-controls">
+        {top_controls}
+        <div class="match-history-field"><label for="mh-result-{mode}">勝敗</label><select id="mh-result-{mode}" data-match-history-result><option value="ALL">ALL</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option></select></div>
+        <div class="match-history-field"><label for="mh-sort-{mode}">並び順</label><select id="mh-sort-{mode}" data-match-history-sort></select></div>
+        <div class="match-history-field"><label for="mh-direction-{mode}">方向</label><select id="mh-direction-{mode}" data-match-history-direction><option value="desc">降順</option><option value="asc">昇順</option></select></div>
+      </div>
+      <p class="match-history-summary" data-match-history-summary></p>
+      <div class="matches" data-match-history-list></div>
+      <div class="match-history-empty" data-match-history-empty hidden>条件に一致する試合がありません</div>
+      <button class="match-history-more" type="button" data-match-history-more hidden>さらに20件表示</button>
+    </section>
+    {data}
+    <script src="assets/match-history-metrics.js" defer></script>
+    <script src="assets/match-history.js" defer></script>"""
 
 
 def wr_class(winrate):
@@ -410,6 +534,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     .m-stats, .m-date {{ display: none; }}
   }}
 {navigation_styles}
+{match_history_styles}
 </style>
 </head>
 <body>

@@ -1,14 +1,18 @@
 """ロール詳細ページの共通プレースホルダを生成する。"""
 
+import json
+from collections import Counter
+
+from champion_map import CHAMPION_JA_MAP
 from site_builder.render import NAV_STYLES, esc, render_navigation
 
 
 ROLE_PAGES = (
-    ("support", "SUP", "support.html"),
-    ("mid", "MID", "mid.html"),
-    ("top", "TOP", "top.html"),
-    ("adc", "ADC", "adc.html"),
-    ("jungle", "JG", "jungle.html"),
+    ("support", "SUP", "UTILITY", "support.html"),
+    ("mid", "MID", "MIDDLE", "mid.html"),
+    ("top", "TOP", "TOP", "top.html"),
+    ("adc", "ADC", "BOTTOM", "adc.html"),
+    ("jungle", "JG", "JUNGLE", "jungle.html"),
 )
 
 
@@ -41,6 +45,24 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
     background: var(--panel);
   }}
   .role-placeholder h2 {{ margin: 0 0 12px; }}
+  .filters {{
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px; margin: 20px 0;
+  }}
+  .filter-field {{ display: flex; flex-direction: column; gap: 6px; }}
+  .filter-field label {{ color: var(--muted); font-size: .78rem; }}
+  .filter-field select, .filter-field input {{
+    width: 100%; color: var(--text); background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px;
+    font: inherit;
+  }}
+  .custom-period {{
+    display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr));
+    gap: 14px; grid-column: 1 / -1;
+  }}
+  .custom-period[hidden] {{ display: none; }}
+  .filter-result {{ margin: 16px 0; color: var(--muted); }}
+  .filter-result strong {{ color: var(--text); font-size: 1.2rem; }}
 {navigation_styles}
 </style>
 </head>
@@ -50,26 +72,104 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
     {navigation}
     <main class="role-placeholder">
       <h2>対象ロール: {role_name}</h2>
+      <div class="filters" aria-label="試合フィルター">
+        <div class="filter-field">
+          <label for="period-filter">期間</label>
+          <select id="period-filter">
+            <option value="season">シーズン</option>
+            <option value="two_months">直近2か月</option>
+            <option value="current_month">今月</option>
+            <option value="previous_month">前月</option>
+            <option value="recent20">直近20戦</option>
+            <option value="custom">カスタム期間</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="champ-filter">チャンピオン</label>
+          <select id="champ-filter">
+            <option value="ALL">ALL</option>
+            {champion_options}
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="queue-filter">キュー</label>
+          <select id="queue-filter">
+            <option value="all">全体（ドラフト＋ランク）</option>
+            <option value="ranked">ランク</option>
+            <option value="draft">ドラフト</option>
+          </select>
+        </div>
+        <div id="custom-period" class="custom-period" hidden>
+          <div class="filter-field">
+            <label for="custom-start">開始日</label>
+            <input id="custom-start" type="date">
+          </div>
+          <div class="filter-field">
+            <label for="custom-end">終了日</label>
+            <input id="custom-end" type="date">
+          </div>
+        </div>
+      </div>
+      <p class="filter-result">対象試合数: <strong id="filtered-match-count">{match_count}</strong></p>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
+  <script id="role-match-data" type="application/json" data-role="{role_code}">{match_data}</script>
+  <script src="assets/role-filter.js" defer></script>
 </body>
 </html>
 """
 
 
-def build_role_html(page_id, role_name):
+def champion_options(rows):
+    counts = Counter(row.get("champion", "") for row in rows)
+    champions = sorted(counts, key=lambda champion: (-counts[champion], champion))
+    return "".join(
+        f'<option value="{esc(champion)}">'
+        f'{esc(CHAMPION_JA_MAP.get(champion, champion))} ({counts[champion]})'
+        "</option>"
+        for champion in champions
+        if champion
+    )
+
+
+def role_match_data(rows):
+    matches = [
+        {
+            "date": row.get("date", ""),
+            "champion": row.get("champion", ""),
+            "queue_id": str(row.get("queue_id", "")),
+            "role": row.get("role", ""),
+        }
+        for row in rows
+    ]
+    return json.dumps(matches, ensure_ascii=False, separators=(",", ":")).replace(
+        "<", "\\u003c"
+    )
+
+
+def build_role_html(page_id, role_name, role_code, rows):
     page_title = f"{role_name} 詳細"
+    role_rows = [
+        row
+        for row in rows
+        if row.get("role") == role_code
+        and str(row.get("queue_id", "")) in {"400", "420"}
+    ]
     return ROLE_PAGE_TEMPLATE.format(
         page_title=esc(page_title),
         role_name=esc(role_name),
         navigation=render_navigation(page_id),
         navigation_styles=NAV_STYLES,
+        champion_options=champion_options(role_rows),
+        match_count=len(role_rows),
+        match_data=role_match_data(role_rows),
+        role_code=esc(role_code),
     )
 
 
-def build_role_pages():
+def build_role_pages(rows):
     return {
-        filename: build_role_html(page_id, role_name)
-        for page_id, role_name, filename in ROLE_PAGES
+        filename: build_role_html(page_id, role_name, role_code, rows)
+        for page_id, role_name, role_code, filename in ROLE_PAGES
     }

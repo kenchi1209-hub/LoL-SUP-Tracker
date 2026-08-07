@@ -7,6 +7,7 @@ Data Dragon CDN を参照）。
 """
 import json
 import os
+import shutil
 import urllib.request
 
 from site_builder.data import load_matches
@@ -42,9 +43,15 @@ def main():
     out_path = os.path.join(OUT_DIR, "index.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_out)
-    for filename, role_html in build_role_pages().items():
+    for filename, role_html in build_role_pages(rows).items():
         with open(os.path.join(OUT_DIR, filename), "w", encoding="utf-8") as f:
             f.write(role_html)
+    asset_dir = os.path.join(OUT_DIR, "assets")
+    os.makedirs(asset_dir, exist_ok=True)
+    shutil.copyfile(
+        os.path.join(os.path.dirname(__file__), "site_builder", "assets", "role-filter.js"),
+        os.path.join(asset_dir, "role-filter.js"),
+    )
     # .nojekyll: GitHub Pages の Jekyll 処理を無効化（保険）
     open(os.path.join(OUT_DIR, ".nojekyll"), "w").close()
     print(f"生成完了: {out_path} ({len(rows)}戦)")

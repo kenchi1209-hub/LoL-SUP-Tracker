@@ -1,0 +1,17 @@
+<section class="block match-history" data-match-history-mode="{mode}" data-ddragon-version="{version}">
+  <h2>Match History</h2>
+  <div class="match-history-controls">
+    {top_controls}
+    <div class="match-history-field"><label for="mh-result-{mode}">勝敗</label><select id="mh-result-{mode}" data-match-history-result><option value="ALL">ALL</option><option value="WIN">WIN</option><option value="LOSS">LOSS</option></select></div>
+    <div class="match-history-field"><label for="mh-sort-{mode}">並び順</label><select id="mh-sort-{mode}" data-match-history-sort></select></div>
+    <div class="match-history-field"><label for="mh-direction-{mode}">方向</label><select id="mh-direction-{mode}" data-match-history-direction><option value="desc">降順</option><option value="asc">昇順</option></select></div>
+  </div>
+  <p class="match-history-summary" data-match-history-summary aria-live="polite"></p>
+  <div class="matches" data-match-history-list></div>
+  <div class="match-history-empty" data-match-history-empty hidden>条件に一致する試合がありません</div>
+  <button class="match-history-more" type="button" data-match-history-more hidden>さらに20件表示</button>
+</section>
+{data}
+<script src="assets/shared-utils.js" defer></script>
+<script src="assets/match-history-metrics.js" defer></script>
+<script src="assets/match-history.js" defer></script>

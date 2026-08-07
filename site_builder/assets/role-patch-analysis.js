@@ -5,10 +5,6 @@
     return value ? value.replace(/-/g, "/") : "-";
   }
 
-  function championImageUrl(version, iconId) {
-    return `https://ddragon.leagueoflegends.com/cdn/${encodeURIComponent(version)}/img/champion/${encodeURIComponent(iconId)}.png`;
-  }
-
   function metricCell(value, digits, suffix) {
     const cell = global.document.createElement("td");
     cell.textContent = value === null || value === undefined
@@ -24,14 +20,20 @@
     champions.forEach((champion) => {
       const item = global.document.createElement("span");
       item.className = "patch-champion";
-      item.title = `${champion.name}\n${champion.games}戦\n勝率 ${global.RoleMetrics.formatDecimal(champion.winrate, 1)}%`;
+      const description = `${champion.name}、${champion.games}戦、勝率 ${global.RoleMetrics.formatDecimal(champion.winrate, 1)}%`;
+      item.title = description;
+      item.tabIndex = 0;
+      item.setAttribute("role", "img");
+      item.setAttribute("aria-label", description);
       const image = global.document.createElement("img");
-      image.src = championImageUrl(version, champion.iconId);
-      image.alt = champion.name;
+      image.src = global.SiteUtils.championImageUrl(version, champion.iconId);
+      image.alt = "";
+      image.setAttribute("aria-hidden", "true");
       image.loading = "lazy";
       const count = global.document.createElement("span");
       count.className = "patch-champion-count";
       count.textContent = String(champion.games);
+      count.setAttribute("aria-hidden", "true");
       item.append(image, count);
       container.append(item);
     });
@@ -73,14 +75,9 @@
     global.document.addEventListener("role-filter:change", (event) =>
       renderPatchAnalysis(event.detail.matches)
     );
-    global.document.addEventListener("DOMContentLoaded", () => {
-      if (global.rolePageFilters) {
-        renderPatchAnalysis(global.rolePageFilters.getMatches());
-      }
-    });
   }
 
-  const api = { render: renderPatchAnalysis, formatDate, championImageUrl };
+  const api = { render: renderPatchAnalysis, formatDate };
   global.RolePatchAnalysis = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

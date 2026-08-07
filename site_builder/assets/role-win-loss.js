@@ -57,11 +57,6 @@
     global.document.addEventListener("role-filter:change", (event) => {
       renderWinLoss(event.detail.matches);
     });
-    global.document.addEventListener("DOMContentLoaded", () => {
-      if (global.rolePageFilters) {
-        renderWinLoss(global.rolePageFilters.getMatches());
-      }
-    });
   }
 
   const api = { render: renderWinLoss, formatDifference, formatValue };

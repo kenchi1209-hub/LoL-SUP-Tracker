@@ -1,11 +1,6 @@
 (function (global) {
   "use strict";
 
-  function normalizePatch(value) {
-    const match = String(value || "").trim().match(/^(\d+)\.(\d+)/);
-    return match ? `${Number(match[1])}.${Number(match[2])}` : "Unknown";
-  }
-
   function patchParts(patch) {
     const match = String(patch).match(/^(\d+)\.(\d+)$/);
     return match ? [Number(match[1]), Number(match[2])] : [-1, -1];
@@ -48,7 +43,7 @@
   function groupMatches(matches) {
     const groups = new Map();
     matches.forEach((match) => {
-      const patch = normalizePatch(match.patch || match.gameVersion);
+      const patch = String(match.patch || "Unknown");
       if (!groups.has(patch)) groups.set(patch, []);
       groups.get(patch).push(match);
     });
@@ -71,7 +66,7 @@
       .sort((left, right) => comparePatches(left.patch, right.patch));
   }
 
-  const api = { normalizePatch, comparePatches, topChampions, groupMatches };
+  const api = { comparePatches, topChampions, groupMatches };
   global.RolePatchMetrics = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

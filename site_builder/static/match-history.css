@@ -1,0 +1,40 @@
+.match-history-controls {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.match-history-field { display: flex; flex-direction: column; gap: 5px; }
+.match-history-field label { color: var(--muted); font-size: .75rem; }
+.match-history-field select, .match-history-field input {
+  width: 100%; color: var(--text); background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 9px; font: inherit;
+}
+.match-history-custom { display: contents; }
+.match-history-custom[hidden] { display: none; }
+.match-history-summary { color: var(--muted); font-size: .82rem; margin: 0 0 10px; }
+.matches { display: flex; flex-direction: column; gap: 8px; }
+.match {
+  display: grid; grid-template-columns: 56px minmax(170px,1.4fr) minmax(105px,.7fr) minmax(250px,1.7fr) minmax(145px,.9fr);
+  align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border);
+  border-left-width: 4px; border-radius: 10px; padding: 10px 12px;
+}
+.match.win { border-left-color: var(--good, #38d39f); }
+.match.loss { border-left-color: var(--bad, #ff6b81); }
+.m-result { font-weight: 700; font-size: .78rem; }
+.match.win .m-result { color: var(--good, #38d39f); }
+.match.loss .m-result { color: var(--bad, #ff6b81); }
+.m-champ { display: flex; align-items: center; gap: 8px; }
+.m-champ img { width: 34px; height: 34px; border-radius: 7px; }
+.m-champ-name, .m-kda { font-weight: 600; }
+.m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
+.m-stats { line-height: 1.5; }
+.m-date { text-align: right; }
+.match-history-empty { color: var(--muted); padding: 24px; text-align: center; }
+.match-history-more {
+  display: block; margin: 14px auto 0; padding: 8px 18px; color: var(--text);
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+}
+.match-history-more[hidden], .match-history-empty[hidden] { display: none; }
+@media (max-width: 760px) {
+  .match { grid-template-columns: 48px 1.4fr 1fr; row-gap: 4px; }
+  .m-stats, .m-date { grid-column: 2 / -1; text-align: left; }
+}

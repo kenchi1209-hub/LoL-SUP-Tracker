@@ -24,7 +24,7 @@
     const detail = text("div", "", "record-detail");
     const head = text("div", "", "record-detail-head");
     const image = global.document.createElement("img");
-    image.src = global.RolePatchAnalysis.championImageUrl(version, match.champion_icon_id);
+    image.src = global.SiteUtils.championImageUrl(version, match.champion_icon_id);
     image.alt = match.champion;
     head.append(image, text("span", `${date(match.date)} ${match.win ? "WIN" : "LOSS"} ${match.champion}`));
     const metrics = item.metrics;
@@ -89,9 +89,6 @@
 
   if (global.document) {
     global.document.addEventListener("role-filter:change", (event) => renderRecords(event.detail.matches));
-    global.document.addEventListener("DOMContentLoaded", () => {
-      if (global.rolePageFilters) renderRecords(global.rolePageFilters.getMatches());
-    });
   }
 
   const api = { render: renderRecords, valueText };

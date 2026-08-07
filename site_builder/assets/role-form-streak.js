@@ -97,10 +97,16 @@
   function renderRecentForm(form) {
     const container = global.document.getElementById("recent-form");
     container.replaceChildren(
-      ...form.matches.map((match) => {
+      ...form.matches.map((match, index) => {
         const dot = global.document.createElement("span");
         dot.className = `dot ${match.win ? "win" : "loss"}`;
-        dot.title = match.win ? "WIN" : "LOSS";
+        const result = match.win ? "WIN" : "LOSS";
+        const date = String(match.date || "").slice(0, 10).replace(/-/g, "/");
+        const champion = match.champion_name || match.champion || "Champion不明";
+        const label = `${index + 1}戦目、${result}、${date || "日付不明"}、${champion}`;
+        dot.title = label;
+        dot.setAttribute("role", "img");
+        dot.setAttribute("aria-label", label);
         return dot;
       })
     );
@@ -120,11 +126,6 @@
   if (global.document) {
     global.document.addEventListener("role-filter:change", (event) => {
       renderFormStreak(event.detail.matches);
-    });
-    global.document.addEventListener("DOMContentLoaded", () => {
-      if (global.rolePageFilters) {
-        renderFormStreak(global.rolePageFilters.getMatches());
-      }
     });
   }
 

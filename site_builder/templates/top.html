@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{player} · LoL 実績</title>
+<link rel="stylesheet" href="assets/common.css">
+<link rel="stylesheet" href="assets/top.css">
+<link rel="stylesheet" href="assets/match-history.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>{player}</h1>
+      <div class="meta">
+        分析対象 <b>{games}</b> 戦 &nbsp;·&nbsp; 最終試合 <b>{latest}</b>
+        &nbsp;·&nbsp; データ更新 <b>{data_updated}</b> (JST)
+        &nbsp;·&nbsp; サイト更新 <b>{now}</b> (JST)
+      </div>
+    </header>
+    {navigation}
+    {body}
+    <footer>
+      Riot API のデータを基に自動生成 · GitHub Actions + GitHub Pages<br>
+      このサイトは Riot Games が承認・後援するものではありません。
+    </footer>
+  </div>
+</body>
+</html>

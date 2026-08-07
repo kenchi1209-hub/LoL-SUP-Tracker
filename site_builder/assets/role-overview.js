@@ -42,11 +42,6 @@
     global.document.addEventListener("role-filter:change", (event) => {
       renderOverview(event.detail.matches);
     });
-    global.document.addEventListener("DOMContentLoaded", () => {
-      if (global.rolePageFilters) {
-        renderOverview(global.rolePageFilters.getMatches());
-      }
-    });
   }
 
   const api = { render: renderOverview };

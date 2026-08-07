@@ -50,9 +50,16 @@ def main():
     os.makedirs(asset_dir, exist_ok=True)
     source_asset_dir = os.path.join(os.path.dirname(__file__), "site_builder", "assets")
     for filename in sorted(os.listdir(source_asset_dir)):
-        if filename.endswith(".js"):
+        if filename.endswith((".js", ".css")):
             shutil.copyfile(
                 os.path.join(source_asset_dir, filename),
+                os.path.join(asset_dir, filename),
+            )
+    source_static_dir = os.path.join(os.path.dirname(__file__), "site_builder", "static")
+    for filename in sorted(os.listdir(source_static_dir)):
+        if filename.endswith(".css"):
+            shutil.copyfile(
+                os.path.join(source_static_dir, filename),
                 os.path.join(asset_dir, filename),
             )
     # .nojekyll: GitHub Pages の Jekyll 処理を無効化（保険）

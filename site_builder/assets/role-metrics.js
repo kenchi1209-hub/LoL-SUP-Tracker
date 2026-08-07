@@ -2,8 +2,7 @@
   "use strict";
 
   function numberValue(value) {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
+    return global.SiteUtils.numberValue(value);
   }
 
   function aggregateMatches(matches) {
@@ -93,17 +92,7 @@
   }
 
   function formatDecimal(value, digits) {
-    const factor = 10 ** digits;
-    const scaled = numberValue(value) * factor;
-    const lower = Math.floor(scaled);
-    const fraction = scaled - lower;
-    let rounded;
-    if (Math.abs(fraction - 0.5) < 1e-9) {
-      rounded = lower % 2 === 0 ? lower : lower + 1;
-    } else {
-      rounded = Math.round(scaled);
-    }
-    return (rounded / factor).toFixed(digits);
+    return global.SiteUtils.formatDecimal(value, digits);
   }
 
   function formatDuration(seconds) {

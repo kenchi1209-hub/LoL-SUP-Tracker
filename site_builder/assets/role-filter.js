@@ -188,7 +188,5 @@
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   }
-  if (global.document) {
-    global.document.addEventListener("DOMContentLoaded", initRoleFilters);
-  }
+  if (global.document) initRoleFilters();
 })(typeof window !== "undefined" ? window : globalThis);

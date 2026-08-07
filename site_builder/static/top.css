@@ -1,0 +1,47 @@
+header.hero {
+  background: linear-gradient(135deg, #1b2a4a, #131a2b);
+  border: 1px solid var(--border); border-radius: 16px;
+  padding: 28px 24px; margin-bottom: 24px;
+}
+.hero h1 { margin: 0 0 6px; font-size: 1.7rem; letter-spacing: .3px; }
+.hero .meta { color: var(--muted); font-size: .88rem; }
+.hero .meta b { color: var(--text); font-weight: 600; }
+h2 {
+  font-size: 1.05rem; margin: 0 0 14px; display: flex; align-items: baseline;
+  gap: 10px; color: #cdd6e6;
+}
+.block { margin-bottom: 30px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 16px;
+}
+.stat-label { color: var(--muted); font-size: .78rem; margin-bottom: 6px; }
+.stat-value { font-size: 1.5rem; font-weight: 700; }
+.stat-value .unit { font-size: .8rem; color: var(--muted); font-weight: 500; margin-left: 2px; }
+.stat-sub { color: var(--muted); font-size: .78rem; margin-top: 4px; }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 560px; }
+thead th {
+  background: var(--panel2); color: var(--muted); font-weight: 600;
+  text-align: right; padding: 10px 12px; white-space: nowrap; font-size: .8rem;
+}
+thead th:first-child { text-align: left; }
+tbody td { padding: 10px 12px; border-top: 1px solid var(--border); text-align: right; }
+tbody td.name { text-align: left; font-weight: 600; }
+tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
+td.champ { display: flex; align-items: center; gap: 8px; }
+td.champ img { width: 26px; height: 26px; border-radius: 6px; }
+.bar { position: relative; height: 20px; background: var(--panel2); border-radius: 6px; overflow: hidden; min-width: 110px; }
+.bar-fill { position: absolute; left: 0; top: 0; bottom: 0; opacity: .35; }
+.bar-fill.good { background: var(--good); }
+.bar-fill.bad { background: var(--bad); }
+.bar-text { position: relative; display: block; text-align: center; font-size: .8rem; line-height: 20px; }
+.form { display: flex; flex-wrap: wrap; gap: 6px; }
+.dot { width: 20px; height: 20px; border-radius: 5px; }
+.dot.win { background: var(--good); }
+.dot.loss { background: var(--bad); }
+.form-sub { color: var(--muted); font-size: .8rem; font-weight: 400; }
+footer { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 40px; }

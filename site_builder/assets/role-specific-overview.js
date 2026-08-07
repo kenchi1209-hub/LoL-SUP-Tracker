@@ -60,11 +60,6 @@
     global.document.addEventListener("role-filter:change", (event) => {
       renderRoleOverview(event.detail.matches);
     });
-    global.document.addEventListener("DOMContentLoaded", () => {
-      if (global.rolePageFilters) {
-        renderRoleOverview(global.rolePageFilters.getMatches());
-      }
-    });
   }
 
   const api = { render: renderRoleOverview };

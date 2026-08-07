@@ -141,6 +141,21 @@
     container.replaceChildren(svg);
   }
 
+  function renderAccessibleSeries(container, trend) {
+    const definition = global.RoleTrendMetrics.METRICS[trend.metric];
+    const heading = global.document.createElement("h3");
+    heading.textContent = `${definition.label}系列データ`;
+    const summary = global.document.createElement("p");
+    summary.textContent = `現在値 ${formatMetric(trend.metric, trend.current)}、期間平均との差 ${formatDifference(trend.metric, trend.difference)}`;
+    const list = global.document.createElement("ol");
+    trend.points.forEach((point) => {
+      const item = global.document.createElement("li");
+      item.textContent = `${point.label}: ${formatMetric(trend.metric, point.value)}、${point.games}戦、${point.wins}勝${point.losses}敗`;
+      list.append(item);
+    });
+    container.replaceChildren(heading, summary, list);
+  }
+
   function updateGroupingAvailability(groupingControl, games) {
     const moving5 = groupingControl.querySelector('option[value="moving5"]');
     const moving10 = groupingControl.querySelector('option[value="moving10"]');
@@ -156,7 +171,8 @@
     const metricControl = global.document.getElementById("trend-metric");
     const groupingControl = global.document.getElementById("trend-grouping");
     const chart = global.document.getElementById("trend-chart");
-    if (!dataElement || !metricControl || !groupingControl || !chart) return;
+    const accessibleSeries = global.document.getElementById("trend-accessible-series");
+    if (!dataElement || !metricControl || !groupingControl || !chart || !accessibleSeries) return;
 
     metricControl.value =
       global.RoleTrendMetrics.DEFAULT_METRICS[dataElement.dataset.role] || "winrate";
@@ -185,6 +201,7 @@
         `${definition.label}の成績推移。期間平均 ${formatMetric(trend.metric, trend.overall)}`
       );
       renderChart(chart, trend);
+      renderAccessibleSeries(accessibleSeries, trend);
       return trend;
     }
 
@@ -193,11 +210,8 @@
     global.document.addEventListener("role-filter:change", (event) =>
       render(event.detail.matches)
     );
-    if (global.rolePageFilters) render(global.rolePageFilters.getMatches());
     global.RolePerformanceTrend = { render };
   }
 
-  if (global.document) {
-    global.document.addEventListener("DOMContentLoaded", initPerformanceTrend);
-  }
+  if (global.document) initPerformanceTrend();
 })(typeof window !== "undefined" ? window : globalThis);

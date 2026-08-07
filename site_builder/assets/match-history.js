@@ -9,7 +9,7 @@
     if (className) element.className = className;
     return element;
   };
-  const decimal = (value, digits) => Number(value || 0).toFixed(digits);
+  const decimal = (value, digits) => global.SiteUtils.formatDecimal(value, digits);
   const duration = (seconds) => {
     const value = Math.max(0, Math.round(Number(seconds) || 0));
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
@@ -22,7 +22,7 @@
     const champion = text("div", "", "m-champ");
     const image = global.document.createElement("img");
     image.loading = "lazy";
-    image.src = `https://ddragon.leagueoflegends.com/cdn/${encodeURIComponent(version)}/img/champion/${encodeURIComponent(match.champion_icon_id)}.png`;
+    image.src = global.SiteUtils.championImageUrl(version, match.champion_icon_id);
     image.alt = match.champion_name || match.champion;
     const identity = text("div", "");
     identity.append(
@@ -102,17 +102,17 @@
     if (!section) return;
     const mode = section.dataset.matchHistoryMode;
     const data = mode === "top" ? global.document.getElementById("match-history-data") : global.document.getElementById("role-match-data");
-    const initial = mode === "role" && global.rolePageFilters
-      ? global.rolePageFilters.getMatches() : JSON.parse(data.textContent);
+    const initial = mode === "role" ? [] : JSON.parse(data.textContent);
     const component = create(section, initial);
-    component.render(true);
     global.MatchHistory = component;
     if (mode === "role") {
       global.document.addEventListener("role-filter:change", (event) => component.setMatches(event.detail.matches));
+    } else {
+      component.render(true);
     }
   }
 
-  if (global.document) global.document.addEventListener("DOMContentLoaded", init);
+  if (global.document) init();
   const api = { PAGE_SIZE, card, create };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

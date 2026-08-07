@@ -160,6 +160,10 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
           </div>
         </div>
       </section>
+      <section class="overview role-overview" data-role-overview="{role_code}">
+        <h2>Overview - {role_name}</h2>
+        <div id="role-overview-cards" class="cards"></div>
+      </section>
       <a href="index.html">TOPへ戻る</a>
     </main>
   </div>
@@ -167,6 +171,7 @@ ROLE_PAGE_TEMPLATE = """<!DOCTYPE html>
   <script src="assets/role-filter.js" defer></script>
   <script src="assets/role-metrics.js" defer></script>
   <script src="assets/role-overview.js" defer></script>
+  <script src="assets/role-specific-overview.js" defer></script>
 </body>
 </html>
 """
@@ -197,6 +202,11 @@ def role_match_data(rows):
             "assists": row.get("_a", 0),
             "cs": row.get("_cs", 0),
             "vision_score": row.get("_vs", 0),
+            "wards_placed": row.get("wards_placed", 0),
+            "wards_killed": row.get("wards_killed", 0),
+            "control_wards_bought": row.get("control_wards_bought", 0),
+            "damage_to_champions": row.get("_dmg", 0),
+            "team_kills": row.get("team_kills", 0),
             "game_duration_seconds": row.get("game_duration_seconds", 0),
         }
         for row in rows

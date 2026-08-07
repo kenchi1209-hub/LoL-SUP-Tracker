@@ -20,6 +20,12 @@
         kda: null,
         cspm: null,
         vspm: null,
+        avgVisionScore: null,
+        avgWardsPlaced: null,
+        avgWardsKilled: null,
+        avgControlWardsBought: null,
+        damagePerMinute: null,
+        killParticipation: null,
         avgDurationSeconds: null,
       };
     }
@@ -32,7 +38,17 @@
         result.assists += numberValue(match.assists);
         result.cs += numberValue(match.cs);
         result.visionScore += numberValue(match.vision_score);
+        result.wardsPlaced += numberValue(match.wards_placed);
+        result.wardsKilled += numberValue(match.wards_killed);
+        result.controlWardsBought += numberValue(match.control_wards_bought);
+        result.damageToChampions += numberValue(match.damage_to_champions);
         result.durationSeconds += numberValue(match.game_duration_seconds);
+        const teamKills = numberValue(match.team_kills);
+        if (teamKills > 0) {
+          result.killParticipationTotal +=
+            (numberValue(match.kills) + numberValue(match.assists)) / teamKills;
+          result.killParticipationGames += 1;
+        }
         return result;
       },
       {
@@ -42,7 +58,13 @@
         assists: 0,
         cs: 0,
         visionScore: 0,
+        wardsPlaced: 0,
+        wardsKilled: 0,
+        controlWardsBought: 0,
+        damageToChampions: 0,
         durationSeconds: 0,
+        killParticipationTotal: 0,
+        killParticipationGames: 0,
       }
     );
     const totalMinutes = totals.durationSeconds / 60;
@@ -58,6 +80,14 @@
       kda: (totals.kills + totals.assists) / Math.max(totals.deaths, 1),
       cspm: totalMinutes ? totals.cs / totalMinutes : 0,
       vspm: totalMinutes ? totals.visionScore / totalMinutes : 0,
+      avgVisionScore: totals.visionScore / games,
+      avgWardsPlaced: totals.wardsPlaced / games,
+      avgWardsKilled: totals.wardsKilled / games,
+      avgControlWardsBought: totals.controlWardsBought / games,
+      damagePerMinute: totalMinutes ? totals.damageToChampions / totalMinutes : 0,
+      killParticipation: totals.killParticipationGames
+        ? (totals.killParticipationTotal / totals.killParticipationGames) * 100
+        : null,
       avgDurationSeconds: totals.durationSeconds / games,
     };
   }

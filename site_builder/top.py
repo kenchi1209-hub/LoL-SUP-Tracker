@@ -15,8 +15,8 @@ from site_builder.render import (
     render_champion_table,
     render_form,
     render_navigation,
+    render_performance_summary,
     render_simple_table,
-    stat_block,
 )
 
 
@@ -46,9 +46,7 @@ def build_html(rows, version):
     parts = [
         render_form(rows),
 
-        stat_block("全体成績", all_agg),
-
-        stat_block("ランク全体", ranked_agg),
+        render_performance_summary(all_agg, ranked_agg),
 
         render_simple_table("ロール別成績", role_items),
         render_simple_table("キュー別成績", queue_items),

@@ -1,8 +1,14 @@
 (function (global) {
   "use strict";
 
-  function formatValue(value, definition) {
+  function formatValue(value, definition, aggregate) {
     if (value === null || value === undefined) return "-";
+    if (definition.format === "kdaDetails") {
+      const averageKda = [aggregate.avgKills, aggregate.avgDeaths, aggregate.avgAssists]
+        .map((item) => global.RoleMetrics.formatDecimal(item, 1))
+        .join(" / ");
+      return `${averageKda}（${global.RoleMetrics.formatDecimal(value, definition.digits)}）`;
+    }
     if (definition.format === "duration") {
       return global.RoleMetrics.formatDuration(value);
     }
@@ -43,8 +49,8 @@
         tableRow.dataset.comparisonMetric = row.definition.key;
         tableRow.append(
           cell(row.definition.label),
-          cell(formatValue(row.winValue, row.definition)),
-          cell(formatValue(row.lossValue, row.definition)),
+          cell(formatValue(row.winValue, row.definition, row.winAggregate)),
+          cell(formatValue(row.lossValue, row.definition, row.lossAggregate)),
           cell(formatDifference(row.difference, row.definition), row.tone)
         );
         return tableRow;

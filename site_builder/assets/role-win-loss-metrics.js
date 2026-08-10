@@ -2,7 +2,7 @@
   "use strict";
 
   const SUPPORT_METRICS = [
-    { key: "kda", label: "KDA", digits: 2, direction: "high" },
+    { key: "kda", label: "K/D/A（KDA）", digits: 2, format: "kdaDetails", direction: "high" },
     { key: "avgDeaths", label: "Death", digits: 1, direction: "low" },
     { key: "vspm", label: "VS/m", digits: 2, direction: "high" },
     { key: "avgVisionScore", label: "Vision Score", digits: 1, direction: "high" },
@@ -14,7 +14,7 @@
     { key: "avgDurationSeconds", label: "平均ゲーム時間", format: "duration", direction: "neutral" },
   ];
   const LANE_METRICS = [
-    { key: "kda", label: "KDA", digits: 2, direction: "high" },
+    { key: "kda", label: "K/D/A（KDA）", digits: 2, format: "kdaDetails", direction: "high" },
     { key: "avgDeaths", label: "Death", digits: 1, direction: "low" },
     { key: "cspm", label: "CS/m", digits: 2, direction: "high" },
     { key: "damagePerMinute", label: "Damage/m", digits: 0, direction: "high" },
@@ -56,6 +56,8 @@
         definition,
         winValue,
         lossValue,
+        winAggregate: wins,
+        lossAggregate: losses,
         difference,
         tone: differenceTone(difference, definition.direction),
       };

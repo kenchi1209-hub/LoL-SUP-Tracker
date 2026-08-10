@@ -7,7 +7,7 @@
       const averageKda = [aggregate.avgKills, aggregate.avgDeaths, aggregate.avgAssists]
         .map((item) => global.RoleMetrics.formatDecimal(item, 1))
         .join(" / ");
-      return `${averageKda}（${global.RoleMetrics.formatDecimal(value, definition.digits)}）`;
+      return `${averageKda} (${global.RoleMetrics.formatDecimal(value, definition.digits)})`;
     }
     if (definition.format === "duration") {
       return global.RoleMetrics.formatDuration(value);

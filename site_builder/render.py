@@ -3,7 +3,6 @@
 import html
 import json
 import os
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from champion_map import CHAMPION_JA_MAP
@@ -17,10 +16,10 @@ from site_builder.data import (
     load_last_updated,
 )
 from site_builder.patches import normalize_patch
+from timezone_utils import now_jst
 
 
 BASE_DIR = Path(__file__).resolve().parent
-JST = timezone(timedelta(hours=9))
 
 
 def load_template(name):
@@ -38,7 +37,7 @@ def page_header_context(rows):
         "player": esc(player),
         "latest": esc(rows[0].get("date", "")[:16] if rows else "-"),
         "data_updated": esc(load_last_updated()),
-        "now": esc(datetime.now(JST).strftime("%Y-%m-%d %H:%M")),
+        "now": esc(now_jst().strftime("%Y-%m-%d %H:%M")),
         "games": aggregate_all["games"] if aggregate_all else 0,
         "rank_name": esc(format_rank_name(current_rank) if current_rank else "-"),
         "rank_lp": esc(current_rank.get("leaguePoints", 0) if current_rank else "-"),

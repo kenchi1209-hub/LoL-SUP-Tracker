@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 
 from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule
@@ -18,6 +17,7 @@ from summary_exporter import (
     to_float,
     to_int,
 )
+from timezone_utils import now_jst
 from report_exporter import role_to_name, win_to_wl
 
 MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
@@ -189,7 +189,7 @@ def build_summary_sheet(worksheet, rows, support_rows):
     worksheet.cell(
         row=3,
         column=1,
-        value=f"出力日時：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        value=f"出力日時：{now_jst().strftime('%Y-%m-%d %H:%M:%S')}",
     )
 
     next_row = write_summary_block(worksheet, 5, "■ 全体成績", summarize_overall(rows))

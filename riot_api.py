@@ -2,15 +2,20 @@ import requests
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from config import HEADERS
+from timezone_utils import parse_jst_date
+
+
 def date_to_unix_seconds(date_text):
-    dt = datetime.strptime(date_text, "%Y-%m-%d")
+    dt = parse_jst_date(date_text)
     return int(dt.timestamp())
+
+
 def get_match_ids_by_date_range(puuid, start_date, end_date, page_size=100):
     start_time = date_to_unix_seconds(start_date)
     # end_date当日いっぱいまで含めるため、翌日の0:00をendTimeにする
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    end_dt = parse_jst_date(end_date) + timedelta(days=1)
     end_time = int(end_dt.timestamp())
     all_match_ids = []
     start = 0

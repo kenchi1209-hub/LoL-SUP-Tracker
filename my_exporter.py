@@ -5,6 +5,7 @@ from glob import glob
 from datetime import datetime
 from queue_map import is_allowed_queue_id
 from config import GAME_NAME, TAG_LINE
+from timezone_utils import JST
 
 MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
 
@@ -38,7 +39,7 @@ MY_MATCH_COLUMNS = [
 ]
 
 def format_game_date(game_creation_ms):
-    dt = datetime.fromtimestamp(game_creation_ms / 1000)
+    dt = datetime.fromtimestamp(game_creation_ms / 1000, tz=JST)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 def get_team_totals(participants, team_id):

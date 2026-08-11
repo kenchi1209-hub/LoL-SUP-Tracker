@@ -28,6 +28,43 @@
 .m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
 .m-stats { line-height: 1.5; }
 .m-date { text-align: right; }
+.m-fight-toggle {
+  margin-top: 6px; padding: 4px 8px; color: var(--text); background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: .72rem;
+  cursor: pointer;
+}
+.m-fight-toggle:hover, .m-fight-toggle[aria-expanded="true"] { border-color: var(--accent, #6ea8fe); }
+.fight-detail {
+  grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px;
+  margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.fight-detail[hidden] { display: none; }
+.fight-item {
+  padding: 9px 10px; background: var(--panel2); border: 1px solid var(--border);
+  border-left: 3px solid var(--border); border-radius: 8px; font-size: .76rem;
+}
+.fight-item-win { border-left-color: var(--good, #38d39f); }
+.fight-item-loss { border-left-color: var(--bad, #ff6b81); }
+.fight-item-even { border-left-color: #e5b95c; }
+.fight-item-header, .fight-metrics {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+}
+.fight-item-header { margin-bottom: 7px; }
+.fight-title { font-size: .82rem; }
+.fight-time, .fight-participants, .fight-empty { color: var(--muted); }
+.fight-badge {
+  padding: 2px 6px; background: rgba(255,255,255,.04); border: 1px solid var(--border);
+  border-radius: 999px; font-size: .67rem; font-weight: 700;
+}
+.fight-result-win { color: var(--good, #38d39f); }
+.fight-result-loss, .fight-survival-died { color: var(--bad, #ff6b81); }
+.fight-result-even { color: #e5b95c; }
+.fight-metrics { margin-bottom: 6px; }
+.fight-participants { margin-bottom: 7px; overflow-wrap: anywhere; }
+.fight-subsection + .fight-subsection { margin-top: 7px; }
+.fight-subheading { display: block; margin-bottom: 3px; }
+.fight-event-list { display: grid; gap: 2px; color: var(--muted); line-height: 1.45; }
+.fight-objective-context { margin-bottom: 3px; color: var(--muted); }
 .match-history-empty { color: var(--muted); padding: 24px; text-align: center; }
 .match-history-more {
   display: block; margin: 14px auto 0; padding: 8px 18px; color: var(--text);
@@ -37,4 +74,6 @@
 @media (max-width: 760px) {
   .match { grid-template-columns: 48px 1.4fr 1fr; row-gap: 4px; }
   .m-stats, .m-date { grid-column: 2 / -1; text-align: left; }
+  .fight-detail { grid-column: 1 / -1; }
+  .fight-item-header, .fight-metrics { align-items: flex-start; flex-direction: column; gap: 4px; }
 }

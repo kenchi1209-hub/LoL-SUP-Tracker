@@ -76,9 +76,31 @@ def get_match_detail(match_id):
         response.raise_for_status()
         return response.json()
 
+
+def get_match_timeline(match_id):
+    url = f"https://asia.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+    while True:
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 429:
+            retry_after = int(response.headers.get("Retry-After", "10"))
+            print(f"429 Rate Limit: {retry_after}秒待機します {match_id}")
+            time.sleep(retry_after)
+            continue
+        response.raise_for_status()
+        return response.json()
+
+
 def save_match_json(match_id, data):
     os.makedirs("data/raw", exist_ok=True)
     path = f"data/raw/{match_id}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def save_match_timeline_json(match_id, data, timeline_dir="data/raw/timeline"):
+    os.makedirs(timeline_dir, exist_ok=True)
+    path = os.path.join(timeline_dir, f"{match_id}_timeline.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return path

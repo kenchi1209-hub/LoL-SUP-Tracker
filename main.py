@@ -31,6 +31,7 @@ from yearly_exporter import export_yearly_summary
 from excel_exporter import export_excel_report
 from timezone_utils import now_jst
 from timeline_summary_exporter import export_timeline_summary
+from fight_detail_exporter import export_fight_details
 
 
 def write_last_updated():
@@ -250,6 +251,9 @@ print(
     "\nTimeline Summary CSVに出力します"
 )
 export_timeline_summary()
+
+print("\nExporting Fight Detail JSON")
+export_fight_details()
 
 # ============================================================
 # Existing exports

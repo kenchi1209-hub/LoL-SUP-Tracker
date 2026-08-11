@@ -21,110 +21,30 @@ from timezone_utils import now_jst
 
 
 BASE_DIR = Path(__file__).resolve().parent
-TIMELINE_DIR = Path("data/raw/timeline")
+FIGHT_DETAILS_PATH = Path("data/csv/fight_details.json")
 
 
 def load_template(name):
     return (BASE_DIR / "templates" / name).read_text(encoding="utf-8")
 
 
-def compact_fight_person(person):
-    if not isinstance(person, dict):
-        return {"champion": "Unknown", "champion_name": "Unknown"}
-    champion = person.get("champion") or "Unknown"
-    return {
-        "champion": champion,
-        "champion_name": CHAMPION_JA_MAP.get(champion, champion),
-    }
-
-
-def compact_objective(objective):
-    return {
-        key: objective.get(key)
-        for key in (
-            "type",
-            "timestamp",
-            "relation",
-            "monster_type",
-            "monster_sub_type",
-            "building_type",
-            "lane_type",
-        )
-        if objective.get(key) is not None
-    }
-
-
-def compact_review_fight(fight):
-    events = []
-    for event in fight.get("events", []) or []:
-        if not isinstance(event, dict) or event.get("type") != "CHAMPION_KILL":
-            continue
-        events.append(
-            {
-                "type": "CHAMPION_KILL",
-                "timestamp": event.get("timestamp", 0),
-                "killer": compact_fight_person(event.get("killer")),
-                "victim": compact_fight_person(event.get("victim")),
-                "assists": [
-                    compact_fight_person(person)
-                    for person in event.get("assists", []) or []
-                    if isinstance(person, dict)
-                ],
-            }
-        )
-
-    return {
-        "fight_id": fight.get("fight_id"),
-        "phase": fight.get("phase", ""),
-        "scale": fight.get("scale", ""),
-        "survival": fight.get("survival", ""),
-        "result": fight.get("result", ""),
-        "start_timestamp": fight.get("start_timestamp", 0),
-        "end_timestamp": fight.get("end_timestamp", 0),
-        "duration_ms": fight.get("duration_ms", 0),
-        "participant_count": fight.get("participant_count", 0),
-        "participants": [
-            compact_fight_person(person)
-            for person in fight.get("participants", []) or []
-            if isinstance(person, dict)
-        ],
-        "my_kda": fight.get("my_kda") or {},
-        "friendly_kills": fight.get("friendly_kills", 0),
-        "enemy_kills": fight.get("enemy_kills", 0),
-        "objective_context": fight.get("objective_context") or {},
-        "objectives_before": [
-            compact_objective(objective)
-            for objective in fight.get("objectives_before", []) or []
-            if isinstance(objective, dict)
-        ],
-        "objectives_during": [
-            compact_objective(objective)
-            for objective in fight.get("objectives_during", []) or []
-            if isinstance(objective, dict)
-        ],
-        "objectives_after": [
-            compact_objective(objective)
-            for objective in fight.get("objectives_after", []) or []
-            if isinstance(objective, dict)
-        ],
-        "events": events,
-    }
-
-
-@lru_cache(maxsize=None)
-def load_review_fights(match_id):
-    path = TIMELINE_DIR / f"{match_id}_combat_timeline.json"
+@lru_cache(maxsize=1)
+def load_fight_details():
     try:
-        with path.open("r", encoding="utf-8") as file:
+        with FIGHT_DETAILS_PATH.open("r", encoding="utf-8") as file:
             data = json.load(file)
     except (OSError, json.JSONDecodeError):
-        return []
+        return {}
     if not isinstance(data, dict):
-        return []
-    fights = data.get("review_fights", [])
+        return {}
+    return data
+
+
+def load_review_fights(match_id):
+    fights = load_fight_details().get(match_id, [])
     if not isinstance(fights, list):
         return []
-    return [compact_review_fight(fight) for fight in fights if isinstance(fight, dict)]
+    return fights
 
 
 def page_header_context(rows):

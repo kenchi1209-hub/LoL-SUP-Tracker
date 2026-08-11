@@ -11,3 +11,6 @@ public/
 # 他プレイヤー情報を含むため公開しない
 data/csv/participants.csv
 data/csv/monthly/*_participants.csv
+
+# Public, lightweight Fight Detail data used by GitHub Pages builds.
+!data/csv/fight_details.json

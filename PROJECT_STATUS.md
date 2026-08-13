@@ -172,16 +172,22 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 端末間・セッション間の運用ルール
 
+`PROJECT_STATUS.md`をChatGPT / Codex間の「現在地の共有メモリ」、`DEV_LOG.md`を実装履歴・経緯確認用の共有ログとして扱います。
+
 ### 作業開始時
 
-1. `git pull`
-2. `PROJECT_STATUS.md`を読む
-3. 必要に応じて`DEV_LOG.md`の最新日付を読む
+1. Codexは必ず`git pull`を実行する
+2. `PROJECT_STATUS.md`を確認する
+3. 必要に応じて`DEV_LOG.md`の最新エントリも確認する
 
-### 作業終了時
+### 実装単位の完了時
 
-1. `PROJECT_STATUS.md`を最新状態へ更新
-2. `DEV_LOG.md`へ当日の作業内容を追記
-3. コード変更と一緒にcommit / push
+1. 実装結果に合わせて`PROJECT_STATUS.md`を最新状態へ更新する
+2. `DEV_LOG.md`へ作業内容を追記する
+3. コード変更とドキュメント更新を一緒にcommit / pushする
+
+未実装の仕様は「予定」「合意済み方針」などと明示し、実装済みの内容と混同しません。実装によって仕様・ファイル構成・データ構造・現在値が変わった場合は、コードだけを更新して`PROJECT_STATUS.md`を古い状態のまま残しません。
+
+ChatGPT側は開発相談の再開時、必要に応じてGitHub上の最新`PROJECT_STATUS.md`と`DEV_LOG.md`を参照して現在地を同期します。Gitへpushされていないローカル変更はChatGPT側から確認できないため、作業途中の状態は必要に応じてユーザーが共有します。
 
 `PROJECT_STATUS.md`は常に最新状態だけを残します。`DEV_LOG.md`は日付単位の追記型履歴です。同じ説明を両方へ過度に重複させず、現状はStatus、経緯はLogへ記録します。

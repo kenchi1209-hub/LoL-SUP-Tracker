@@ -1247,15 +1247,11 @@ def export_fight_context(
 
         lines.append(
             "Time: "
-            f"{format_timestamp(
-                fight['start_timestamp']
-            )}"
+            f"{format_timestamp(fight['start_timestamp'])}"
             " - "
-            f"{format_timestamp(
-                fight['end_timestamp']
-            )}"
+            f"{format_timestamp(fight['end_timestamp'])}"
         )
-
+        
         lines.append(
             "Duration: "
             f"{fight['duration_ms'] / 1000:.1f}s"

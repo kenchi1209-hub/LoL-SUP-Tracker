@@ -1334,9 +1334,7 @@ def export_fight_context(
 
             event_text = (
                 f"  "
-                f"{format_timestamp(
-                    event['timestamp']
-                )} "
+                f"{format_timestamp(event['timestamp'])} "
                 f"{killer_name}"
                 " -> "
                 f"{victim_name}"
@@ -1380,9 +1378,7 @@ def export_fight_context(
 
                 objective_text = (
                     f"  "
-                    f"{format_timestamp(
-                        objective['timestamp']
-                    )} "
+                    f"{format_timestamp(objective['timestamp'])} "
                     f"[{relation}] "
                     f"{label}"
                 )

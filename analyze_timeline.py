@@ -1614,9 +1614,7 @@ def export_fight_review_context(
 
             sequence_text = (
                 f"  "
-                f"{format_timestamp(
-                    event['timestamp']
-                )} "
+                f"{format_timestamp(event['timestamp'])} "
                 f"{killer_name}"
                 " -> "
                 f"{victim_name}"

@@ -1507,13 +1507,9 @@ def export_fight_review_context(
         lines.append(
             (
                 "Time: "
-                f"{format_timestamp(
-                    fight['start_timestamp']
-                )}"
+                f"{format_timestamp(fight['start_timestamp'])}"
                 "-"
-                f"{format_timestamp(
-                    fight['end_timestamp']
-                )} "
+                f"{format_timestamp(fight['end_timestamp'])} "
                 "| Duration "
                 f"{fight['duration_ms'] / 1000:.1f}s"
             )

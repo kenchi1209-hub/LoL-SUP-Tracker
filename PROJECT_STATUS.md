@@ -1,6 +1,6 @@
 # LoL Analytics — Project Status
 
-最終更新: 2026-08-13
+最終更新: 2026-08-19
 
 ## プロジェクト概要
 
@@ -17,6 +17,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - サイト生成: Pythonで静的HTMLを生成し、JavaScriptでフィルタ・チャート・Fight Detailを制御
 - 配信: GitHub Actions + GitHub Pages
 - タイムゾーン: 共通utilityによるJST固定
+- raw端末間同期: PrivateData連携の第一段階を実装済み（実rawは未投入）
 - 現在のデータ:
   - `my_matches.csv`: 393戦
   - `timeline_summary.csv`: 458試合分
@@ -72,6 +73,17 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - Excelレポート生成
 - 現在Rank JSONと最終更新日時の出力
 
+### PrivateData連携
+
+- Private repository `LoL-SUP-Tracker-PrivateData`をrawデータのクラウド正本とする構成の第一段階を実装
+- `sync_private_data.py pull`でPrivateDataの`raw/`からPublicの`data/raw/`へ同期
+- `sync_private_data.py push`でPublicの`data/raw/`からPrivateDataの`raw/`へ同期
+- デフォルトはdry-runで、実コピーには`--apply`が必要
+- 同期は追加専用で、削除と内容競合の自動上書きを行わない
+- 同期スクリプトはGitのcommit / pull / pushを実行しない
+- 現時点ではPrivateDataに実rawは未投入
+- GitHub ActionsとのPrivateData連携は未実装。自動更新時のraw保持は従来どおりActions cacheを使用
+
 ## 主要データファイル
 
 | ファイル | 状態 | 用途 |
@@ -99,6 +111,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `analyze_timeline.py` | TimelineからFight・死亡・Objective等を解析 |
 | `timeline_summary_exporter.py` | combat timelineから試合単位集計CSVを生成 |
 | `fight_detail_exporter.py` | `review_fights`を公開用`fight_details.json`へ軽量化し、参加者の味方・敵関係を保持 |
+| `sync_private_data.py` | PublicとPrivateDataのrawを非破壊でローカル同期 |
 | `my_exporter.py` | Match Detailを自分の試合行へ変換し、Timeline SummaryをJOIN |
 | `monthly_exporter.py` / `yearly_exporter.py` | 月別・年別出力 |
 | `summary_exporter.py` | 全体・Role・Champion等のsummary生成 |
@@ -133,6 +146,8 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - UI日本語化は表示時マッピングで行い、EARLY / WIN等の内部値は変更しない。
 - Champion日本語名は既存`CHAMPION_JA_MAP`を再利用する。
 - Fight参加者の味方・敵判定はChampion名や表示順から推測せず、combat timeline内の自分と各参加者の`team_id`を比較する。
+- raw参照パスは引き続き`data/raw/`とし、端末間共有はsymlinkや参照先変更ではなくPrivateDataとの同期コピーで行う。
+- PrivateData同期は削除禁止、競合時停止、デフォルトdry-runとし、Git操作から分離する。
 - `.gitignore`の`data/raw/`と`public/`除外は維持する。
 
 ## 現在の未解決事項
@@ -143,6 +158,8 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - `main.py`など一部既存ソースの日本語コメント／ログに文字化けが残っている。機能は動作するが保守性の課題。
 - `fight_details.json`は約7.3MBあり、将来的に分割配信やオンデマンド取得を検討できる。
 - 現在のMac workspaceには`data/raw/`が存在しないため、既存`fight_details.json`への参加者`relation`反映は未完了。combat timelineを復元後、`fight_detail_exporter.py`で公開用JSONを再生成して検証する。
+- PrivateDataには雛形ディレクトリだけがあり、実rawの初回投入は未実施。
+- GitHub ActionsはPrivateDataをcheckout・同期していない。現在は`actions/cache`が自動更新時のraw保持手段。
 
 ## 直近で進行中の作業
 
@@ -159,12 +176,11 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 次にやること
 
-1. `rank_history.csv`の列設計と重複記録ルールを確定する。
-2. 日次更新時に現在Rankを履歴へ追記するexporterを実装する。
-3. Rank専用ページのPython builder、HTML template、CSS、JavaScriptを追加する。
-4. LP推移を最上部へ実装し、Role Filterから独立させる。
-5. Role Filter連動のSummary / Monthly / Champion / Fight / Match Historyを実装する。
-6. GitHub Actions環境でGit管理データだけを使ってRankページを生成できることを確認する。
+1. Windows端末の既存rawをPrivateDataへ初回投入し、別端末へのpullを検証する。
+2. PrivateDataへのActions認証方式と同時更新時の競合ルールを確定する。
+3. GitHub ActionsへPrivateData checkout・pull・pushを接続するか判断する。
+4. `rank_history.csv`の列設計と重複記録ルールを確定する。
+5. Rank専用ページとRole Filter連動分析を実装する。
 
 ## 注意事項
 

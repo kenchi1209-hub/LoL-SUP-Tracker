@@ -150,6 +150,39 @@
 - 現在のMac workspaceにはGit管理外のcombat timelineが0件であるため、`data/csv/fight_details.json`の参加者`relation`再生成は未完了。rawデータ復元後に全458試合分を再生成し、代表試合の味方・敵表示を最終確認する必要がある。
 - Rank専用ページは未実装のまま。
 
+## 2026-08-19
+
+### 今日やったこと
+
+- Public / Privateの2Repo間でrawを同期する`sync_private_data.py`を追加。
+- `pull`（PrivateDataからTracker）と`push`（TrackerからPrivateData）を、Git操作を伴わないローカルディレクトリ同期として実装。
+- dry-run既定、`--apply`必須、SHA-256比較、削除禁止、競合時の全コピー停止、symlink拒否、atomic copyを実装。
+- `--private-data-dir`、`LOL_PRIVATE_DATA_DIR`、sibling directoryの順でPrivateDataパスを選択する構成を実装。
+- Publicの`data/raw/`がGit ignore対象で、追跡ファイルがないことを実行前に検査する安全処理を追加。
+- PrivateData側へrawディレクトリ雛形と運用READMEを追加。
+
+### 変更ファイル
+
+- `sync_private_data.py`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+- PrivateData: `README.md`
+- PrivateData: `raw/.gitkeep`
+- PrivateData: `raw/timeline/.gitkeep`
+
+### 検証結果
+
+- 実rawは使用せず、一時ディレクトリ内の一時Git repositoryだけで13テストを実施し、全件成功。
+- COPY / SKIP / CONFLICT、競合時の全コピー停止、dry-run / apply、空・不存在・非Git・同一 / 入れ子・symlink拒否を確認。
+- destinationだけに存在するファイルが削除されないこと、pull / push両方向、Public raw追跡時の停止、パス指定優先順位を確認。
+- Python構文チェックと`git diff --check`を実施。
+
+### 未実装・次工程
+
+- PrivateDataへの実raw投入は未実施。Windows端末からの初回投入が次工程。
+- GitHub ActionsとのPrivateData連携は未実装。現在の自動更新rawは従来どおりActions cacheで保持する。
+- Actions連携前にPrivate repositoryの認証方式、競合処理、同時実行時の更新順序を確定する。
+
 ## 運用ルール
 
 ### 作業開始時

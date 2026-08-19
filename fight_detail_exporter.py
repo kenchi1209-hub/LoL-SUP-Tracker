@@ -9,14 +9,18 @@ TIMELINE_PATTERN = "data/raw/timeline/*_combat_timeline.json"
 OUTPUT_PATH = "data/csv/fight_details.json"
 
 
-def compact_fight_person(person):
+def compact_fight_person(person, player_team_id=None, include_relation=False):
     if not isinstance(person, dict):
         return {"champion": "Unknown", "champion_name": "Unknown"}
     champion = person.get("champion") or "Unknown"
-    return {
+    compact = {
         "champion": champion,
         "champion_name": CHAMPION_JA_MAP.get(champion, champion),
     }
+    team_id = person.get("team_id")
+    if include_relation and player_team_id is not None and team_id is not None:
+        compact["relation"] = "FRIENDLY" if team_id == player_team_id else "ENEMY"
+    return compact
 
 
 def compact_objective(objective):
@@ -35,7 +39,7 @@ def compact_objective(objective):
     }
 
 
-def compact_review_fight(fight):
+def compact_review_fight(fight, player_team_id=None):
     events = []
     for event in fight.get("events", []) or []:
         if not isinstance(event, dict) or event.get("type") != "CHAMPION_KILL":
@@ -65,7 +69,7 @@ def compact_review_fight(fight):
         "duration_ms": fight.get("duration_ms", 0),
         "participant_count": fight.get("participant_count", 0),
         "participants": [
-            compact_fight_person(person)
+            compact_fight_person(person, player_team_id, include_relation=True)
             for person in fight.get("participants", []) or []
             if isinstance(person, dict)
         ],
@@ -107,8 +111,9 @@ def export_fight_details(output_path=OUTPUT_PATH):
             fights = data.get("review_fights", [])
             if not isinstance(fights, list):
                 fights = []
+            player_team_id = (data.get("participant") or {}).get("team_id")
             details[match_id] = [
-                compact_review_fight(fight)
+                compact_review_fight(fight, player_team_id)
                 for fight in fights
                 if isinstance(fight, dict)
             ]

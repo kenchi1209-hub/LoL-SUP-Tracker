@@ -74,9 +74,27 @@
     );
 
     const participants = text("div", "", "fight-participants");
+    const participantGroups = text("div", "", "fight-participant-groups");
+    const people = fight.participants || [];
+    const participantRows = [
+      ["味方", people.filter((person) => person.relation === "FRIENDLY")],
+      ["敵", people.filter((person) => person.relation === "ENEMY")],
+    ];
+    const unknown = people.filter(
+      (person) => person.relation !== "FRIENDLY" && person.relation !== "ENEMY"
+    );
+    if (unknown.length) participantRows.push(["不明", unknown]);
+    participantRows.forEach(([label, members]) => {
+      const row = text("div", "", "fight-participant-row");
+      row.append(
+        text("strong", `${label}:`, "fight-participant-label"),
+        text("span", members.map(personName).join(" / ") || "-")
+      );
+      participantGroups.append(row);
+    });
     participants.append(
-      text("strong", "参加者: "),
-      text("span", (fight.participants || []).map(personName).join(", ") || "-")
+      text("strong", "参加者", "fight-participants-heading"),
+      participantGroups
     );
 
     const kills = text("div", "", "fight-subsection");
@@ -155,7 +173,11 @@
       text("div", `${ROLE_NAMES[match.role] || match.role} · ${match.queue_name || match.queue_id}`, "m-meta")
     );
     champion.append(image, identity);
-    const kda = text("div", `${match.kills} / ${match.deaths} / ${match.assists}`, "m-kda");
+    const kda = text(
+      "div",
+      `${match.kills} / ${match.deaths} / ${match.assists} (${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`,
+      "m-kda"
+    );
     const stats = text("div", "", "m-stats");
     stats.append(
       text(

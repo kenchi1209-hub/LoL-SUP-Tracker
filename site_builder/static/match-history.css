@@ -60,7 +60,20 @@
 .fight-result-loss, .fight-survival-died { color: var(--bad, #ff6b81); }
 .fight-result-even { color: #e5b95c; }
 .fight-metrics { margin-bottom: 6px; }
-.fight-participants { margin-bottom: 7px; overflow-wrap: anywhere; }
+.fight-participants {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 7px;
+  overflow-wrap: anywhere;
+}
+.fight-participant-groups { display: grid; gap: 2px; min-width: 0; }
+.fight-participant-row {
+  display: grid;
+  grid-template-columns: 2.5em minmax(0, 1fr);
+  gap: 4px;
+}
+.fight-participants-heading, .fight-participant-label { color: var(--text); }
 .fight-subsection + .fight-subsection { margin-top: 7px; }
 .fight-subheading { display: block; margin-bottom: 3px; }
 .fight-event-list { display: grid; gap: 2px; color: var(--muted); line-height: 1.45; }

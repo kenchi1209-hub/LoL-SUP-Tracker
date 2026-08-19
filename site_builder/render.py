@@ -124,6 +124,8 @@ def match_history_data(rows):
             "control_wards_bought": row.get("control_wards_bought", 0),
             "damage_to_champions": row.get("_dmg", 0),
             "team_kills": row.get("team_kills", 0),
+            "team_deaths": row.get("team_deaths", 0),
+            "team_assists": row.get("team_assists", 0),
             "game_duration_seconds": row.get("game_duration_seconds", 0),
             "my_fights": row.get("my_fights", 0),
             "fight_wins": row.get("fight_wins", 0),

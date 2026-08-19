@@ -6,7 +6,7 @@
 
 Riot APIから自分のLeague of Legends試合データを取得し、試合結果・Role・Champion・Patch・視界・戦闘内容を集計して、静的なGitHub PagesサイトとCSV／Excelレポートを生成する個人向け分析プロジェクトです。
 
-Match Detailを「試合終了時の結果」、Match Timelineを「結果に至る過程」としてMatch IDで結合し、SUPを中心にFightの結果、死亡、生存、参加者、キル経過、オブジェクト前後の価値を確認できる状態です。
+Match Detailを「試合終了時の結果」、Match Timelineを「結果に至る過程」としてMatch IDで結合し、SUPを中心にFightの結果、死亡、生存、味方・敵別の参加者、キル経過、オブジェクト前後の価値を確認できる構成です。
 
 ## 現在の構成
 
@@ -54,10 +54,13 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - 昇順／降順、20件ずつ追加表示
 - 一覧カードにFight Summary表示
   - 例: `戦闘 8W-2E-7L · 生存 7/17 · 集団戦 8`
+- 一覧カードの自分のK/D/Aに、CSV既存列を使ったTeam K/D/Aを併記
+  - 例: `5 / 10 / 21 (54 / 46 / 69)`
 - Fight Detailの展開表示
 - Fight Detailは初回展開時だけDOMを生成するlazy方式
 - 元の`fight_id`を維持（飛び番が正常）
 - Fightの時刻、phase、scale、result、survival、K/D/A、キル交換、参加者、キル経過、Objective Contextを表示
+- Fight参加者はcombat timelineの公式`team_id`を基に`FRIENDLY` / `ENEMY`へ分類し、公開用JSONの`relation`を使って味方・敵別に表示
 - Fight Detailの表示文言・Champion名・Objective名を日本語化
 - 未知の内部値・Champion名は元の値へフォールバック
 
@@ -95,7 +98,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `get_timeline.py` | 指定Match IDのTimeline単体取得 |
 | `analyze_timeline.py` | TimelineからFight・死亡・Objective等を解析 |
 | `timeline_summary_exporter.py` | combat timelineから試合単位集計CSVを生成 |
-| `fight_detail_exporter.py` | `review_fights`を公開用`fight_details.json`へ軽量化 |
+| `fight_detail_exporter.py` | `review_fights`を公開用`fight_details.json`へ軽量化し、参加者の味方・敵関係を保持 |
 | `my_exporter.py` | Match Detailを自分の試合行へ変換し、Timeline SummaryをJOIN |
 | `monthly_exporter.py` / `yearly_exporter.py` | 月別・年別出力 |
 | `summary_exporter.py` | 全体・Role・Champion等のsummary生成 |
@@ -129,6 +132,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - Fight Detailは初期表示性能のためlazy DOM生成とする。
 - UI日本語化は表示時マッピングで行い、EARLY / WIN等の内部値は変更しない。
 - Champion日本語名は既存`CHAMPION_JA_MAP`を再利用する。
+- Fight参加者の味方・敵判定はChampion名や表示順から推測せず、combat timeline内の自分と各参加者の`team_id`を比較する。
 - `.gitignore`の`data/raw/`と`public/`除外は維持する。
 
 ## 現在の未解決事項
@@ -138,6 +142,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - LP推移データがないため、現状は現在Rankのみ表示可能。
 - `main.py`など一部既存ソースの日本語コメント／ログに文字化けが残っている。機能は動作するが保守性の課題。
 - `fight_details.json`は約7.3MBあり、将来的に分割配信やオンデマンド取得を検討できる。
+- 現在のMac workspaceには`data/raw/`が存在しないため、既存`fight_details.json`への参加者`relation`反映は未完了。combat timelineを復元後、`fight_detail_exporter.py`で公開用JSONを再生成して検証する。
 
 ## 直近で進行中の作業
 

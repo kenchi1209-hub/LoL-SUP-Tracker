@@ -114,6 +114,42 @@
 3. LP推移を最上部に配置し、Role Filterから独立させる。
 4. Role Filter連動のSummary / Monthly / Champion / Fight / Match Historyを実装する。
 
+## 2026-08-13
+
+### 今日やったこと
+
+- Match Historyの自分のK/D/Aへ、`my_matches.csv`既存列のTeam K/D/Aを半角括弧で併記。
+- `fight_detail_exporter.py`でcombat timeline内の自分とFight参加者の`team_id`を比較し、公開用参加者データへ`FRIENDLY` / `ENEMY`の`relation`を保持する処理を実装。
+- Fight Detailの参加者表示を、既存のChampion日本語名を維持したまま味方・敵の2行へ分離。
+- 旧公開JSONのように`relation`がない参加者は誤分類せず「不明」と表示する互換処理を追加。
+
+### 変更ファイル
+
+- `fight_detail_exporter.py`
+- `site_builder/render.py`
+- `site_builder/assets/match-history.js`
+- `site_builder/static/match-history.css`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+
+### 検証結果
+
+- Python構文チェック、全JavaScriptの`node --check`、`python build_site.py`、`git diff --check`に成功。
+- Match Historyは381件を維持し、期間・Champion・Queue・Role・勝敗Filter、日時Sort、昇順／降順、20件追加表示を確認。
+- 代表試合`JP1_596841033`で`5 / 10 / 21 (54 / 46 / 69)`、Fight Detail 17件、Fight ID、`8W-2E-7L`、生存`7/17`、Teamfight 8を確認。
+- 複数Fight Detailの同時展開、lazy生成、Champion日本語表示、390px幅で横方向のはみ出しなし、console error / warningなしを確認。
+- syntheticな公式`team_id`入力で、自分のレオナを含む味方と敵が正しく分離されることを確認。
+
+### 設計判断
+
+- Team K/D/Aは既存CSV列を再利用し、表示層で再計算しない。
+- Fight参加者の陣営はChampion名、並び順、キル経過から推測しない。combat timelineの公式`team_id`だけを正とし、公開サイトは引き続き`data/csv/fight_details.json`だけを参照する。
+
+### 未完了
+
+- 現在のMac workspaceにはGit管理外のcombat timelineが0件であるため、`data/csv/fight_details.json`の参加者`relation`再生成は未完了。rawデータ復元後に全458試合分を再生成し、代表試合の味方・敵表示を最終確認する必要がある。
+- Rank専用ページは未実装のまま。
+
 ## 運用ルール
 
 ### 作業開始時

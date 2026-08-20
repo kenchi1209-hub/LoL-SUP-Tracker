@@ -245,6 +245,26 @@
 - Publicの定期workflowとPrivateDataの手動復元workflowは`private-raw-writer`という同一方針名を使用する。GitHubのconcurrencyはrepository単位のため、実際のcross-repository競合はremote SHA再確認とforceなしの通常pushで防止する。
 - 実Actions実行、Riot APIアクセス、raw更新、commit / pushは未実施。
 
+### 追加対応: 1 Match ID = 1 Directory移行基盤
+
+- rawの正式構造を`data/raw/{match_id}/match.json`、`timeline.json`、`combat_timeline.json`、`fight_context.txt`、`fight_review_context.txt`へ変更するコード基盤を実装した。
+- `raw_paths.py`へ全path生成、Match ID判定、detail / combat列挙、新構造優先・旧flat fallbackを集約した。新規writeは新構造だけに限定した。
+- Riot raw保存、Timeline解析、Fight Detail、Timeline Summary、my matches、participants、missing復元、完全性検証を共通path APIへ移行した。
+- `migrate_raw_layout.py`を追加した。dry-run既定、5種類揃ったMatchだけをcopy対象とし、欠損・競合・symlinkがあればapply前に停止する。copyは一時ファイルとatomic replaceを使用し、旧raw削除は行わない。
+- `JP1_596841033_death_analysis.json`はrepository内に生成元・読取元がない過去の補助成果物と確認した。必須5種類とmigration対象には含めず、旧位置へ保持する。
+- 一時領域で508 Matchを新構造へcopyし、必須2,540ファイルのSHA-256一致、Fight Detail 508件、missing 0、Timeline Summary 508件を確認した。
+- fixtureでdry-run無変更、apply、SKIP、CONFLICT、欠損拒否、source維持、特殊ファイル非移行、analyze、restore、sync pull / pushを確認した。
+- 実raw 2,541ファイルとPrivateData rawは未移行・無変更。commit / push、Actions実行、APIアクセスも未実施。
+
+### 追加対応: PrivateData実raw migration
+
+- PrivateDataの旧flat 508 Matchを基準化し、主要5種類各508、必須2,540ファイル、legacy `death_analysis` 1ファイルを確認した。
+- migration dry-run `COPY 2540 / CONFLICT 0 / INCOMPLETE 0`確認後、新構造へ主要5種類だけをcopyした。
+- 新旧2,540ファイルのSHA-256が全件一致し、旧flatの欠損・変更0、`death_analysis`が旧位置だけに残ることを確認した。
+- PrivateData commit `10f1300e`で新規2,540ファイルだけを追加し、削除・既存raw変更・README混入なしで`origin/main`へpushした。
+- PrivateData新構造だけを入力に、Fight Detail 508、combat timeline 508、missing / extra / 必須不足0、Timeline Summary 508、restore missing 0を確認した。
+- Public新構造対応コードの本番反映とworkflow_dispatchは、この時点では未実施。
+
 ## 運用ルール
 
 ### 作業開始時

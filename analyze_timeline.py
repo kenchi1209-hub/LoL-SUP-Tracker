@@ -2,6 +2,7 @@ import argparse
 import json
 import math
 import os
+from raw_paths import DEFAULT_RAW_ROOT, paths_for_match, readable_paths_for_match
 
 from config import GAME_NAME, TAG_LINE
 
@@ -1212,13 +1213,10 @@ def export_fight_context(
     match_id,
     player,
     my_fights,
+    raw_root=DEFAULT_RAW_ROOT,
 ):
-    output_path = os.path.join(
-        "data",
-        "raw",
-        "timeline",
-        f"{match_id}_fight_context.txt",
-    )
+    output_path = paths_for_match(match_id, raw_root).fight_context
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = [
         f"Match ID: {match_id}",
@@ -1454,16 +1452,10 @@ def export_fight_review_context(
     match_id,
     player,
     review_fights,
+    raw_root=DEFAULT_RAW_ROOT,
 ):
-    output_path = os.path.join(
-        "data",
-        "raw",
-        "timeline",
-        (
-            f"{match_id}"
-            "_fight_review_context.txt"
-        ),
-    )
+    output_path = paths_for_match(match_id, raw_root).fight_review_context
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = [
         f"Match ID: {match_id}",
@@ -1657,28 +1649,24 @@ def analyze_match_timeline(
     participant_id=None,
     champion=None,
     window_seconds=60,
+    raw_root=DEFAULT_RAW_ROOT,
 ):
     """
     1試合分の保存済みMatch JSON / Timeline JSONを読み込み、
     以下を生成する。
 
-    ・*_combat_timeline.json
-    ・*_fight_context.txt
-    ・*_fight_review_context.txt
+    ・combat_timeline.json
+    ・fight_context.txt
+    ・fight_review_context.txt
 
     main.pyからは基本的に
     analyze_match_timeline(match_id, puuid)
     で呼ぶ。
     """
 
-    match_path = (
-        f"data/raw/{match_id}.json"
-    )
-
-    timeline_path = (
-        "data/raw/timeline/"
-        f"{match_id}_timeline.json"
-    )
+    readable = readable_paths_for_match(match_id, raw_root)
+    match_path = readable.detail
+    timeline_path = readable.timeline
 
     if not os.path.exists(match_path):
         raise FileNotFoundError(
@@ -1823,15 +1811,8 @@ def analyze_match_timeline(
         ),
     }
 
-    output_path = os.path.join(
-        "data",
-        "raw",
-        "timeline",
-        (
-            f"{match_id}"
-            "_combat_timeline.json"
-        ),
-    )
+    output_path = paths_for_match(match_id, raw_root).combat
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(
         output_path,
@@ -1849,6 +1830,7 @@ def analyze_match_timeline(
         match_id,
         player,
         my_fights,
+        raw_root=raw_root,
     )
 
     review_context_path = (
@@ -1856,6 +1838,7 @@ def analyze_match_timeline(
             match_id,
             player,
             review_fights,
+            raw_root=raw_root,
         )
     )
 

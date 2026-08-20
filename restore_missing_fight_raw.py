@@ -2,37 +2,18 @@ import argparse
 import json
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
+from raw_paths import (
+    iter_combat_timeline_paths,
+    match_id_from_path,
+    paths_for_match,
+    readable_paths_for_match,
+    relative_paths_for_match,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 FIGHT_DETAILS_PATH = REPOSITORY_ROOT / "data/csv/fight_details.json"
 RAW_DIR = REPOSITORY_ROOT / "data/raw"
-TIMELINE_DIR = RAW_DIR / "timeline"
-COMBAT_SUFFIX = "_combat_timeline.json"
-
-
-@dataclass(frozen=True)
-class RawPaths:
-    detail: Path
-    timeline: Path
-    combat: Path
-    fight_context: Path
-    fight_review_context: Path
-
-
-def paths_for_match(match_id, raw_dir=RAW_DIR):
-    raw_dir = Path(raw_dir)
-    timeline_dir = raw_dir / "timeline"
-    return RawPaths(
-        detail=raw_dir / f"{match_id}.json",
-        timeline=timeline_dir / f"{match_id}_timeline.json",
-        combat=timeline_dir / f"{match_id}{COMBAT_SUFFIX}",
-        fight_context=timeline_dir / f"{match_id}_fight_context.txt",
-        fight_review_context=(
-            timeline_dir / f"{match_id}_fight_review_context.txt"
-        ),
-    )
 
 
 def load_published_match_ids(fight_details_path=FIGHT_DETAILS_PATH):
@@ -43,21 +24,17 @@ def load_published_match_ids(fight_details_path=FIGHT_DETAILS_PATH):
     return set(details)
 
 
-def load_combat_match_ids(timeline_dir=TIMELINE_DIR):
-    return {
-        path.name.removesuffix(COMBAT_SUFFIX)
-        for path in Path(timeline_dir).glob(f"*{COMBAT_SUFFIX}")
-        if path.is_file()
-    }
+def load_combat_match_ids(raw_dir=RAW_DIR):
+    return {match_id_from_path(path) for path in iter_combat_timeline_paths(raw_dir)}
 
 
 def find_missing_match_ids(
     fight_details_path=FIGHT_DETAILS_PATH,
-    timeline_dir=TIMELINE_DIR,
+    raw_dir=RAW_DIR,
 ):
     return sorted(
         load_published_match_ids(fight_details_path)
-        - load_combat_match_ids(timeline_dir)
+        - load_combat_match_ids(raw_dir)
     )
 
 
@@ -86,13 +63,7 @@ def select_match_ids(
 
 
 def raw_relative_paths(match_id):
-    return [
-        f"{match_id}.json",
-        f"timeline/{match_id}_timeline.json",
-        f"timeline/{match_id}_combat_timeline.json",
-        f"timeline/{match_id}_fight_context.txt",
-        f"timeline/{match_id}_fight_review_context.txt",
-    ]
+    return relative_paths_for_match(match_id)
 
 
 def write_text_atomic(path, text):
@@ -130,7 +101,7 @@ def write_result_files(result, result_file=None, raw_manifest=None):
 def scan_missing_raw(match_ids, raw_dir=RAW_DIR):
     states = []
     for match_id in match_ids:
-        paths = paths_for_match(match_id, raw_dir)
+        paths = readable_paths_for_match(match_id, raw_dir)
         states.append(
             {
                 "match_id": match_id,
@@ -219,7 +190,7 @@ def restore_matches(
     pending = []
 
     for match_id in match_ids:
-        paths = paths_for_match(match_id, raw_dir)
+        paths = readable_paths_for_match(match_id, raw_dir)
         if paths.combat.is_file():
             skipped.append(match_id)
             print(f"SKIP {match_id}: combat timeline already exists")
@@ -245,20 +216,18 @@ def restore_matches(
         return {"success": success, "failed": failed, "skipped": skipped}
 
     for match_id in pending:
-        paths = paths_for_match(match_id, raw_dir)
+        paths = readable_paths_for_match(match_id, raw_dir)
         try:
             if not paths.detail.is_file():
-                detail_saver(match_id, detail_getter(match_id))
+                detail_saver(match_id, detail_getter(match_id), raw_root=raw_dir)
             if not paths.timeline.is_file():
-                timeline_saver(
-                    match_id,
-                    timeline_getter(match_id),
-                    timeline_dir=str(paths.timeline.parent),
-                )
+                timeline_saver(match_id, timeline_getter(match_id), raw_root=raw_dir)
+            paths = readable_paths_for_match(match_id, raw_dir)
             if not paths.detail.is_file() or not paths.timeline.is_file():
                 raise FileNotFoundError("取得済みrawの保存確認に失敗しました")
 
-            analyzer(match_id, puuid=puuid)
+            analyzer(match_id, puuid=puuid, raw_root=raw_dir)
+            paths = readable_paths_for_match(match_id, raw_dir)
             expected = (
                 paths.combat,
                 paths.fight_context,
@@ -297,6 +266,18 @@ def parse_args(argv=None):
     )
     parser.add_argument("--result-file", type=Path, help="実行結果JSONの出力先")
     parser.add_argument(
+        "--fight-details",
+        type=Path,
+        default=FIGHT_DETAILS_PATH,
+        help="不足判定に使う公開Fight Detail JSON",
+    )
+    parser.add_argument(
+        "--raw-dir",
+        type=Path,
+        default=RAW_DIR,
+        help="復元対象raw root",
+    )
+    parser.add_argument(
         "--raw-manifest",
         type=Path,
         help="成功Matchの同期対象raw相対パス一覧の出力先",
@@ -308,8 +289,8 @@ def main(argv=None):
     args = parse_args(argv)
     os.chdir(REPOSITORY_ROOT)
     try:
-        published_ids = load_published_match_ids()
-        missing_ids = sorted(published_ids - load_combat_match_ids())
+        published_ids = load_published_match_ids(args.fight_details)
+        missing_ids = sorted(published_ids - load_combat_match_ids(args.raw_dir))
         selected_ids, pre_skipped = select_match_ids(
             missing_ids,
             match_id=args.match_id,
@@ -321,7 +302,7 @@ def main(argv=None):
         print(f"復元対象の確認に失敗しました: {safe_error_name(error)}")
         return 1
 
-    states = scan_missing_raw(selected_ids)
+    states = scan_missing_raw(selected_ids, args.raw_dir)
     print_scan(missing_ids, selected_ids, states, args.apply)
     for match_id in pre_skipped:
         print(f"SKIP {match_id} already restored")
@@ -341,7 +322,12 @@ def main(argv=None):
         print("Riot API認証設定が不足しているため、取得を開始しません")
         return 1
 
-    result = restore_matches(selected_ids, game_name=GAME_NAME, tag_line=TAG_LINE)
+    result = restore_matches(
+        selected_ids,
+        raw_dir=args.raw_dir,
+        game_name=GAME_NAME,
+        tag_line=TAG_LINE,
+    )
     result["skipped"] = pre_skipped + result["skipped"]
     write_result_files(result, args.result_file, args.raw_manifest)
     return 1 if result["failed"] else 0

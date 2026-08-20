@@ -68,8 +68,7 @@ open public/index.html             # ブラウザで確認（macOS）
 
 - 実行結果（Excelレポート）は Actions の各実行ページから
   Artifact（`lol-report`）としてダウンロードできる（保持期間30日）
-- `data/raw/*.json` は `.gitignore` 対象なのでリポジトリには積まず、
-  `actions/cache` でrun間キャッシュして毎回全試合を再取得しないようにしている
+- `data/raw/` は `.gitignore` 対象とし、PrivateData repositoryをrawの唯一のクラウド正本として使用する
 - データ取得（`main.py`）が失敗した場合はcommitされないため、既存データは壊れない
 - `data` に変更がない場合はcommitをスキップする
 - GITHUB_TOKEN による自動pushは新たなワークフローを再発火しないため、
@@ -79,7 +78,7 @@ open public/index.html             # ブラウザで確認（macOS）
 
 | パス | 内容 |
 |---|---|
-| `data/raw/*.json` | 試合詳細の生JSON（キャッシュ。gitignore対象） |
+| `data/raw/{match_id}/` | Match Detail・Timeline・Fight解析raw（gitignore対象） |
 | `data/csv/participants.csv` | 全参加者10人分の成績（追記型） |
 | `data/csv/my_matches.csv` | 自分の試合ごとの成績 |
 | `data/csv/result_report.csv` | 試合ごとの整形済みテキスト |

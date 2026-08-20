@@ -3,11 +3,12 @@ import glob
 import json
 import os
 import tempfile
+from pathlib import Path
 
 from champion_map import CHAMPION_JA_MAP
+from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_from_path
 
 
-TIMELINE_PATTERN = "data/raw/timeline/*_combat_timeline.json"
 OUTPUT_PATH = "data/csv/fight_details.json"
 
 
@@ -102,18 +103,21 @@ def compact_review_fight(fight, player_team_id=None):
     }
 
 
-def build_fight_details(timeline_pattern=TIMELINE_PATTERN):
+def build_fight_details(timeline_pattern=None, raw_root=DEFAULT_RAW_ROOT):
     details = {}
     failures = []
-    for path in sorted(glob.glob(timeline_pattern)):
+    paths = (
+        sorted(Path(path) for path in glob.glob(timeline_pattern))
+        if timeline_pattern
+        else sorted(iter_combat_timeline_paths(raw_root))
+    )
+    for path in paths:
         try:
             with open(path, "r", encoding="utf-8") as file:
                 data = json.load(file)
             if not isinstance(data, dict):
                 raise ValueError("combat timeline root must be an object")
-            match_id = data.get("match_id") or os.path.basename(path).removesuffix(
-                "_combat_timeline.json"
-            )
+            match_id = data.get("match_id") or match_id_from_path(path)
             if match_id in details:
                 raise ValueError(f"duplicate match_id: {match_id}")
             fights = data.get("review_fights", [])
@@ -170,9 +174,10 @@ def write_json_atomic(details, output_path):
 def export_fight_details(
     output_path=OUTPUT_PATH,
     allow_removals=False,
-    timeline_pattern=TIMELINE_PATTERN,
+    timeline_pattern=None,
+    raw_root=DEFAULT_RAW_ROOT,
 ):
-    details, failures = build_fight_details(timeline_pattern)
+    details, failures = build_fight_details(timeline_pattern, raw_root)
     existing_details = load_existing_fight_details(output_path)
     missing_ids = sorted(set(existing_details) - set(details))
 

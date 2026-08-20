@@ -1,12 +1,12 @@
 import csv
 import json
 import os
-from glob import glob
 from datetime import datetime
 
 from queue_map import is_allowed_queue_id
 from config import GAME_NAME, TAG_LINE
 from timezone_utils import JST
+from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths
 
 
 MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
@@ -469,7 +469,7 @@ def add_timeline_summary(
 
 def export_my_matches_from_raw(
     my_puuid,
-    raw_dir="data/raw",
+    raw_dir=DEFAULT_RAW_ROOT,
     csv_path=MY_MATCHES_CSV_PATH,
 ):
     os.makedirs(
@@ -481,9 +481,7 @@ def export_my_matches_from_raw(
         load_timeline_summary()
     )
 
-    json_paths = glob(
-        f"{raw_dir}/*.json"
-    )
+    json_paths = list(iter_match_detail_paths(raw_dir))
 
     rows = []
     skipped_count = 0

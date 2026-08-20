@@ -1,6 +1,12 @@
 import argparse
 import json
 from pathlib import Path
+from raw_paths import (
+    iter_combat_timeline_paths,
+    match_id_from_path,
+    paths_for_match,
+    readable_paths_for_match,
+)
 
 
 class VerificationError(RuntimeError):
@@ -14,29 +20,17 @@ def load_match_ids(path: Path) -> set[str]:
     return set(payload)
 
 
-def combat_match_ids(timeline_dir: Path) -> set[str]:
-    suffix = "_combat_timeline.json"
-    return {
-        path.name[: -len(suffix)]
-        for path in timeline_dir.glob(f"*{suffix}")
-        if path.is_file()
-    }
+def combat_match_ids(raw_dir: Path) -> set[str]:
+    return {match_id_from_path(path) for path in iter_combat_timeline_paths(raw_dir)}
 
 
 def required_paths(raw_dir: Path, match_id: str) -> tuple[Path, ...]:
-    timeline_dir = raw_dir / "timeline"
-    return (
-        raw_dir / f"{match_id}.json",
-        timeline_dir / f"{match_id}_timeline.json",
-        timeline_dir / f"{match_id}_combat_timeline.json",
-        timeline_dir / f"{match_id}_fight_context.txt",
-        timeline_dir / f"{match_id}_fight_review_context.txt",
-    )
+    return readable_paths_for_match(match_id, raw_dir).required()
 
 
 def verify(fight_details_path: Path, raw_dir: Path) -> dict[str, int]:
     existing_ids = load_match_ids(fight_details_path)
-    combat_ids = combat_match_ids(raw_dir / "timeline")
+    combat_ids = combat_match_ids(raw_dir)
     missing_combat = sorted(existing_ids - combat_ids)
     extra_combat = sorted(combat_ids - existing_ids)
     missing_files = [
@@ -45,12 +39,19 @@ def verify(fight_details_path: Path, raw_dir: Path) -> dict[str, int]:
         for path in required_paths(raw_dir, match_id)
         if not path.is_file()
     ]
+    incomplete_new_layout = {
+        match_id: [path for path in paths_for_match(match_id, raw_dir).required() if not path.is_file()]
+        for match_id in sorted(existing_ids)
+        if paths_for_match(match_id, raw_dir).directory.exists()
+        and not all(path.is_file() for path in paths_for_match(match_id, raw_dir).required())
+    }
 
     print(f"Fight Detail matches: {len(existing_ids)}")
     print(f"Combat timelines: {len(combat_ids)}")
     print(f"Missing combat timelines: {len(missing_combat)}")
     print(f"Extra combat timelines: {len(extra_combat)}")
     print(f"Missing required raw files: {len(missing_files)}")
+    print(f"Incomplete Match directories: {len(incomplete_new_layout)}")
 
     errors = []
     if missing_combat:
@@ -61,6 +62,14 @@ def verify(fight_details_path: Path, raw_dir: Path) -> dict[str, int]:
         errors.append(
             "Missing raw files: "
             + ", ".join(str(path.relative_to(raw_dir)) for path in missing_files)
+        )
+    if incomplete_new_layout:
+        errors.append(
+            "Incomplete Match directories: "
+            + ", ".join(
+                f"{match_id} ({', '.join(path.name for path in paths)})"
+                for match_id, paths in incomplete_new_layout.items()
+            )
         )
     if errors:
         raise VerificationError("\n".join(errors))

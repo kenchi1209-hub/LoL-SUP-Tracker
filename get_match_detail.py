@@ -1,7 +1,7 @@
 import os
-import json
 import requests
 from dotenv import load_dotenv
+from riot_api import save_match_json
 
 load_dotenv()
 
@@ -37,7 +37,5 @@ for p in data["info"]["participants"]:
     )
 
 # 生JSONを保存
-with open("data/raw/JP1_591434669.json", "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-
-print("保存完了: data/raw/JP1_591434669.json")
+path = save_match_json(MATCH_ID, data)
+print(f"保存完了: {path}")

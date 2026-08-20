@@ -1,10 +1,9 @@
 import csv
-import glob
 import json
 import os
 from queue_map import is_allowed_queue_id
+from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths
 
-RAW_DIR = "data/raw"
 CSV_PATH = "data/csv/participants.csv"
 
 FIELDNAMES = [
@@ -32,13 +31,13 @@ FIELDNAMES = [
 ]
 
 
-def load_existing_keys():
-    if not os.path.exists(CSV_PATH):
+def load_existing_keys(csv_path=CSV_PATH):
+    if not os.path.exists(csv_path):
         return set()
 
     existing_keys = set()
 
-    with open(CSV_PATH, "r", encoding="utf-8-sig", newline="") as f:
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
 
         for row in reader:
@@ -52,23 +51,23 @@ def load_existing_keys():
     return existing_keys
 
 
-def export_participants_from_raw():
-    os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
+def export_participants_from_raw(raw_root=DEFAULT_RAW_ROOT, csv_path=CSV_PATH):
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
-    existing_keys = load_existing_keys()
+    existing_keys = load_existing_keys(csv_path)
 
-    file_exists = os.path.exists(CSV_PATH)
+    file_exists = os.path.exists(csv_path)
 
     added_count = 0
     skipped_count = 0
 
-    with open(CSV_PATH, "a", encoding="utf-8-sig", newline="") as csvfile:
+    with open(csv_path, "a", encoding="utf-8-sig", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=FIELDNAMES)
 
         if not file_exists:
             writer.writeheader()
 
-        for json_path in glob.glob(f"{RAW_DIR}/*.json"):
+        for json_path in iter_match_detail_paths(raw_root):
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 

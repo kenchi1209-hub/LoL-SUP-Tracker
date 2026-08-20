@@ -1,7 +1,7 @@
 import json
-import glob
 from config import GAME_NAME, TAG_LINE
 from riot_api import get_puuid
+from raw_paths import iter_match_detail_paths
 
 puuid = get_puuid(GAME_NAME, TAG_LINE)
 allowed = {"400", "420", "440", "470"}
@@ -11,7 +11,7 @@ allowed_count = 0
 found = 0
 missing = []
 
-for path in glob.glob("data/raw/*.json"):
+for path in iter_match_detail_paths():
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 

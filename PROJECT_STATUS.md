@@ -91,6 +91,9 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - Publicの通常`build` pushではRiot APIやPrivateDataへアクセスせず、Git管理済みデータからサイト生成・Pages配信だけを行う
 - Public ActionsからPrivateDataへは`PRIVATE_DATA_TOKEN`を使用し、対象repositoryのContents read/writeだけを許可する
 - 定期更新と手動復元は`private-raw-writer` concurrency方針を共有し、push前のremote SHA照合と通常pushで競合時に停止する
+- rawの正式配置を`data/raw/{match_id}/`へ集約するコード移行とmigration基盤を実装。PrivateDataは508試合・2,540必須rawを新構造へcopy済みで、旧flatも保全中
+- 新規writeはMatch directory構造だけを使用し、readは移行期間中のみ新構造優先・旧構造fallbackとする
+- `migrate_raw_layout.py`はdry-run既定のcopy専用。全Match検証前に旧rawを削除する処理は持たない
 
 ## 主要データファイル
 
@@ -103,9 +106,11 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `data/csv/last_updated.txt` | Git管理 | データ更新日時 |
 | `data/csv/monthly/` | Git管理（一部除外） | 月別match・summary |
 | `data/excel/lol_report.xlsx` | Git管理 | Excelレポート |
-| `data/raw/{match_id}.json` | Git管理外 | Match Detail raw JSON |
-| `data/raw/timeline/{match_id}_timeline.json` | Git管理外 | Timeline raw JSON |
-| `data/raw/timeline/{match_id}_combat_timeline.json` | Git管理外 | Timeline解析の詳細成果物 |
+| `data/raw/{match_id}/match.json` | Git管理外 | Match Detail raw JSON |
+| `data/raw/{match_id}/timeline.json` | Git管理外 | Timeline raw JSON |
+| `data/raw/{match_id}/combat_timeline.json` | Git管理外 | Timeline解析の詳細成果物 |
+| `data/raw/{match_id}/fight_context.txt` | Git管理外 | Fight context |
+| `data/raw/{match_id}/fight_review_context.txt` | Git管理外 | Fight review context |
 
 `data/raw/`はサイズと非公開データのためGitへ追加しません。GitHub Pagesビルドはraw Timelineへ依存せず、`data/csv/fight_details.json`だけでFight Detailを生成します。
 
@@ -121,6 +126,8 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `fight_detail_exporter.py` | `review_fights`を公開用`fight_details.json`へ軽量化。既存Match減少・解析失敗時は書き込みを拒否し、成功時はatomic replace |
 | `restore_missing_fight_raw.py` | 公開Fight Detailとcombat timelineの差集合を算出し、不足rawを既存Riot API・Timeline解析で復元する専用CLI（dry-run既定） |
 | `sync_private_data.py` | PublicとPrivateDataのrawを非破壊でローカル同期 |
+| `raw_paths.py` | Match単位raw pathと移行期間中のread fallbackを一元管理 |
+| `migrate_raw_layout.py` | 旧flat rawを新Match directory構造へ非破壊copy |
 | `my_exporter.py` | Match Detailを自分の試合行へ変換し、Timeline SummaryをJOIN |
 | `monthly_exporter.py` / `yearly_exporter.py` | 月別・年別出力 |
 | `summary_exporter.py` | 全体・Role・Champion等のsummary生成 |
@@ -186,10 +193,11 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 次にやること
 
-1. Public repositoryへ`PRIVATE_DATA_TOKEN`を最小権限で登録する。
-2. 定期連携変更をcommit / pushし、workflow_dispatchでPrivateData pull / pushと公開データ更新順を検証する。
-3. 初回実行後、PrivateDataには新規rawだけ、Publicには生成データだけがcommitされたことを確認する。
-4. `rank_history.csv`の列設計とRank専用ページを実装する。
+1. PrivateData rawのmigration dry-runを再確認し、新構造へcopyする。
+2. 508 Matchの5種類・SHA-256・Fight Detail整合を確認してから、新構造対応コードをPublicへ反映する。
+3. workflow_dispatchで新構造のpull / update / pushを確認する。旧flat rawの削除は別工程として、バックアップと最終照合後だけ行う。
+4. migration完了後に旧path fallbackを削除する時期を決める。
+5. `rank_history.csv`の列設計とRank専用ページを実装する。
 
 ## 注意事項
 

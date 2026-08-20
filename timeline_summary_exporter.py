@@ -1,14 +1,8 @@
 import csv
-import glob
 import json
 import os
+from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths
 
-
-TIMELINE_DIR = os.path.join(
-    "data",
-    "raw",
-    "timeline",
-)
 
 OUTPUT_PATH = os.path.join(
     "data",
@@ -229,20 +223,13 @@ def build_summary_row(data):
     }
 
 
-def export_timeline_summary():
+def export_timeline_summary(raw_root=DEFAULT_RAW_ROOT, output_path=OUTPUT_PATH):
     os.makedirs(
         "data/csv",
         exist_ok=True,
     )
 
-    pattern = os.path.join(
-        TIMELINE_DIR,
-        "*_combat_timeline.json",
-    )
-
-    paths = sorted(
-        glob.glob(pattern)
-    )
+    paths = sorted(iter_combat_timeline_paths(raw_root))
 
     rows = []
 
@@ -265,7 +252,7 @@ def export_timeline_summary():
             )
 
     with open(
-        OUTPUT_PATH,
+        output_path,
         "w",
         newline="",
         encoding="utf-8-sig",
@@ -282,10 +269,10 @@ def export_timeline_summary():
         "timeline_summary.csv 出力完了: "
         f"{len(rows)}件 "
         f"/ 失敗 {failed}件 "
-        f"/ {OUTPUT_PATH}"
+        f"/ {output_path}"
     )
 
-    return OUTPUT_PATH
+    return output_path
 
 
 if __name__ == "__main__":

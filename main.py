@@ -1,5 +1,6 @@
 import json
 import os
+from raw_paths import readable_paths_for_match
 
 from config import (
     GAME_NAME,
@@ -136,9 +137,7 @@ print(
 )
 
 for match_id in match_ids:
-    raw_path = (
-        f"data/raw/{match_id}.json"
-    )
+    raw_path = readable_paths_for_match(match_id).detail
 
     if os.path.exists(raw_path):
         print(
@@ -169,12 +168,7 @@ print(
 )
 
 for match_id in match_ids:
-    timeline_path = os.path.join(
-        "data",
-        "raw",
-        "timeline",
-        f"{match_id}_timeline.json",
-    )
+    timeline_path = readable_paths_for_match(match_id).timeline
 
     if os.path.exists(
         timeline_path

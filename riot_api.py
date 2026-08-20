@@ -1,10 +1,10 @@
 import requests
 import json
-import os
 import time
 from datetime import timedelta
 from config import HEADERS
 from timezone_utils import parse_jst_date
+from raw_paths import DEFAULT_RAW_ROOT, paths_for_match
 
 
 def date_to_unix_seconds(date_text):
@@ -61,9 +61,6 @@ def get_match_ids(puuid, count=10):
     response.raise_for_status()
     return response.json()
 
-import json
-import os
-
 def get_match_detail(match_id):
     url = f"https://asia.api.riotgames.com/lol/match/v5/matches/{match_id}"
     while True:
@@ -90,17 +87,17 @@ def get_match_timeline(match_id):
         return response.json()
 
 
-def save_match_json(match_id, data):
-    os.makedirs("data/raw", exist_ok=True)
-    path = f"data/raw/{match_id}.json"
+def save_match_json(match_id, data, raw_root=DEFAULT_RAW_ROOT):
+    path = paths_for_match(match_id, raw_root).detail
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    return path
+    return str(path)
 
 
-def save_match_timeline_json(match_id, data, timeline_dir="data/raw/timeline"):
-    os.makedirs(timeline_dir, exist_ok=True)
-    path = os.path.join(timeline_dir, f"{match_id}_timeline.json")
+def save_match_timeline_json(match_id, data, raw_root=DEFAULT_RAW_ROOT):
+    path = paths_for_match(match_id, raw_root).timeline
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    return path
+    return str(path)

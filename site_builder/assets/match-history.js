@@ -173,10 +173,10 @@
       text("div", `${ROLE_NAMES[match.role] || match.role} · ${match.queue_name || match.queue_id}`, "m-meta")
     );
     champion.append(image, identity);
-    const kda = text(
-      "div",
-      `${match.kills} / ${match.deaths} / ${match.assists} (${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`,
-      "m-kda"
+    const kda = text("div", "", "m-kda");
+    kda.append(
+      text("div", `${match.kills} / ${match.deaths} / ${match.assists}`),
+      text("div", `(${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`)
     );
     const stats = text("div", "", "m-stats");
     stats.append(

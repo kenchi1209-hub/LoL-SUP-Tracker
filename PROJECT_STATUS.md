@@ -11,7 +11,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 ## 現在の構成
 
 - ブランチ: `build`
-- HEAD / `origin/build`: `ca9f6bf2b3f14677c69cc67e4f72b52d2f3bcd89`
+- HEAD / `origin/build`: `1823e52efadd0168b5dc8a7a9eaa22db653397c7`
 - working tree: clean（本ファイル作成前）
 - データ取得・解析: Python
 - サイト生成: Pythonで静的HTMLを生成し、JavaScriptでフィルタ・チャート・Fight Detailを制御
@@ -22,8 +22,8 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
   - `my_matches.csv`: 406戦
   - `timeline_summary.csv`: 508試合分
   - `fight_details.json`: 508試合分、約8.6MB
-  - PrivateData / Mac復元raw: 2,351ファイル
-  - combat timeline: 470試合分（公開Fight Detailに対して38試合不足）
+  - PrivateData / Mac復元raw: 2,356ファイル
+  - combat timeline: 471試合分（公開Fight Detailに対して37試合不足）
   - 現在Rank: Silver IV / 56 LP / 36勝49敗
 
 ## 実装済み機能
@@ -83,7 +83,8 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - 同期は追加専用で、削除と内容競合の自動上書きを行わない
 - 同期スクリプトはGitのcommit / pull / pushを実行しない
 - PrivateDataへ実raw 2,351ファイルを初回投入し、Macの`data/raw/`へrelative path + SHA-256完全一致で復元済み
-- PrivateData側に、不足Matchを1件ずつ復元する手動GitHub Actions workflowを実装済み。Repository Secretsをapply時だけ注入し、既定はAPIを呼ばないdry-run
+- PrivateData側に、不足Matchを復元する手動GitHub Actions workflowを実装済み。Repository Secretsをapply時だけ注入し、既定はAPIを呼ばないdry-run
+- 手動workflowは単一Matchに加えて`all_missing`一括復元へ対応。成功Matchの5 rawパスだけをmanifest経由で同期・stageし、一部失敗後も成功rawを保持する
 - 手動復元workflowは静的検証までで未実行。Public / PrivateData双方へ関連コードをcommit・pushした後に利用する
 - Publicの定期自動更新workflowとPrivateDataの連携は未実装。自動更新時のraw保持は従来どおりActions cacheを使用
 
@@ -162,10 +163,11 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - LP推移データがないため、現状は現在Rankのみ表示可能。
 - `main.py`など一部既存ソースの日本語コメント／ログに文字化けが残っている。機能は動作するが保守性の課題。
 - `fight_details.json`は約7.3MBあり、将来的に分割配信やオンデマンド取得を検討できる。
-- 公開`fight_details.json`は508試合ある一方、PrivateDataから復元済みのcombat timelineは470試合で、38試合のDetail / Timeline / combat timelineが不足している。
-- `restore_missing_fight_raw.py`のdry-runと安全試験は完了したが、不足38試合の実API取得は未実施。
+- `JP1_556572228`の5 rawはActionsで復元され、PrivateData正本とMacのPublic rawへ反映済み。
+- 公開`fight_details.json`は508試合ある一方、PrivateDataから復元済みのcombat timelineは471試合で、37試合のDetail / Timeline / combat timelineが不足している。
+- `restore_missing_fight_raw.py`の一括dry-runと安全試験は完了したが、残り37試合の実API取得は未実施。
 - Riot API認証情報はMacへ配置せず、PrivateData repositoryのActions Secretsから手動復元workflowへ注入する。
-- 不足38試合を復元するまで、参加者`relation`付き`fight_details.json`の508試合本番再生成は未完了。
+- 不足37試合を復元するまで、参加者`relation`付き`fight_details.json`の508試合本番再生成は未完了。
 - GitHub ActionsはPrivateDataをcheckout・同期していない。現在は`actions/cache`が自動更新時のraw保持手段。
 
 ## 直近で進行中の作業
@@ -184,8 +186,8 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 ## 次にやること
 
 1. Public / PrivateDataの復元基盤をcommit・pushし、PrivateDataの手動workflowを`apply: false`で確認する。
-2. `JP1_556572228`を`apply: true`で1件限定復元し、生成rawと解析値を検証する。
-3. 残り37試合を1件ずつ、または検証済みの限定単位で復元する。
+2. PrivateDataの手動workflowを`all_missing: true` / `apply: false`で一括dry-runする。
+3. 残り37試合を`all_missing: true` / `apply: true`で復元し、失敗試合があれば個別再実行する。
 4. combat timelineが508試合揃ったことを確認し、`fight_details.json`をrelation付きで再生成・回帰確認する。
 5. Public定期更新とPrivateDataの連携・同時更新時の競合ルールを確定する。
 6. `rank_history.csv`の列設計とRank専用ページを実装する。

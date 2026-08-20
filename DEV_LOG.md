@@ -223,6 +223,16 @@
 - workflowとSecrets連携は静的検証までで、実dispatchと実APIアクセスは未実施。
 - 次工程は両repoの関連変更をcommit・push後、workflowをdry-runし、`JP1_556572228`を1件限定で実復元すること。
 
+### 追加対応: 残りmissing一括復元基盤
+
+- Actionsで`JP1_556572228`の5 raw復元とPrivateData保存が成功したことを確認し、MacのPublic rawへ非破壊同期した。
+- 同期後は公開Fight Detail 508試合、combat timeline 471試合、missing 37試合。`JP1_556572228`はmissingから除外された。
+- 復元済みMatchを`--match-id`へ指定した場合は、エラーではなくAPIを呼ばない正常SKIPへ変更した。
+- `restore_missing_fight_raw.py`へ`--all-missing`、`--limit`併用、結果JSON、成功raw manifest出力を追加した。
+- `sync_private_data.py`へ同期対象相対パスmanifestを追加し、成功Matchの5 rawだけをPrivateDataへ同期できるようにした。
+- PrivateData workflowへ`all_missing`入力を追加し、apply時に一部API失敗があっても成功結果を同期・1 commitへまとめた後、最終結果を非zeroにする構成へ変更した。
+- 一括実API取得、workflow dispatch、公開`fight_details.json`再生成は未実施。
+
 ## 運用ルール
 
 ### 作業開始時

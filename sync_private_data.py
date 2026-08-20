@@ -117,7 +117,21 @@ def ensure_existing_components_are_not_symlinks(root, path, label):
             ensure_path_is_not_symlink(current, label)
 
 
-def source_files(source_root):
+def source_files(source_root, relative_paths=None):
+    if relative_paths is not None:
+        files = []
+        for relative_path in relative_paths:
+            path = source_root / relative_path
+            ensure_existing_components_are_not_symlinks(
+                source_root, path, "selected source"
+            )
+            if not path.is_file():
+                raise SyncError(f"Selected source file does not exist: {path}")
+            files.append(path)
+        if not files:
+            raise SyncError("Selected source manifest is empty")
+        return files
+
     files = []
     for current, directories, names in os.walk(source_root, followlinks=False):
         current_path = Path(current)
@@ -144,9 +158,9 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def build_plan(source_root, destination_root):
+def build_plan(source_root, destination_root, relative_paths=None):
     plan = []
-    for source in source_files(source_root):
+    for source in source_files(source_root, relative_paths):
         relative_path = source.relative_to(source_root)
         destination = destination_root / relative_path
         if destination.is_symlink():
@@ -162,6 +176,20 @@ def build_plan(source_root, destination_root):
             action = "CONFLICT"
         plan.append(SyncItem(action, relative_path, source, destination, size))
     return plan
+
+
+def fight_match_id(relative_path):
+    name = relative_path.name
+    for suffix in (
+        "_fight_review_context.txt",
+        "_combat_timeline.json",
+        "_fight_context.txt",
+        "_timeline.json",
+        ".json",
+    ):
+        if name.endswith(suffix):
+            return name.removesuffix(suffix)
+    return relative_path.as_posix()
 
 
 def atomic_copy(source, destination, destination_root):
@@ -201,7 +229,15 @@ def print_plan(mode, apply, source_root, destination_root, plan, output=print):
     output(f"Total bytes: {sum(item.size for item in plan if item.action == 'COPY')}")
 
 
-def synchronize(mode, tracker_dir, private_dir, apply=False, output=print):
+def synchronize(
+    mode,
+    tracker_dir,
+    private_dir,
+    apply=False,
+    output=print,
+    relative_paths=None,
+    continue_on_conflict=False,
+):
     if mode not in {"pull", "push"}:
         raise SyncError(f"Unsupported mode: {mode}")
     tracker_input = Path(os.path.abspath(os.path.expanduser(str(tracker_dir))))
@@ -236,13 +272,24 @@ def synchronize(mode, tracker_dir, private_dir, apply=False, output=print):
         "PrivateData raw",
     )
 
-    plan = build_plan(source_root, destination_root)
+    plan = build_plan(source_root, destination_root, relative_paths)
     print_plan(mode, apply, source_root, destination_root, plan, output)
-    if any(item.action == "CONFLICT" for item in plan):
+    conflict_groups = {
+        fight_match_id(item.relative_path)
+        for item in plan
+        if item.action == "CONFLICT"
+    }
+    if conflict_groups:
+        for match_id in sorted(conflict_groups):
+            output(f"FAILED {match_id}: raw content conflict")
+    if conflict_groups and not continue_on_conflict:
         raise SyncError("Conflicts found; no files were copied")
     if apply:
         for item in plan:
-            if item.action == "COPY":
+            if (
+                item.action == "COPY"
+                and fight_match_id(item.relative_path) not in conflict_groups
+            ):
                 atomic_copy(item.source, item.destination, destination_root)
     return plan
 
@@ -254,6 +301,16 @@ def parse_args(argv=None):
     parser.add_argument("mode", choices=("pull", "push"))
     parser.add_argument("--private-data-dir", type=Path)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--include-manifest",
+        type=Path,
+        help="同期対象raw相対パスを1行1件で指定します",
+    )
+    parser.add_argument(
+        "--continue-on-conflict",
+        action="store_true",
+        help="競合Matchを除外し、他Matchの同期を継続します",
+    )
     return parser.parse_args(argv)
 
 
@@ -266,21 +323,50 @@ def private_data_dir(args, tracker_dir):
     return tracker_dir.parent / PRIVATE_REPO_NAME
 
 
+def load_include_manifest(path):
+    if path is None:
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise SyncError(f"Unable to read include manifest: {path}") from error
+    relative_paths = []
+    seen = set()
+    for line in lines:
+        value = line.strip()
+        if not value:
+            continue
+        relative_path = Path(value)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise SyncError(f"Unsafe path in include manifest: {value}")
+        normalized = relative_path.as_posix()
+        if normalized in seen:
+            raise SyncError(f"Duplicate path in include manifest: {value}")
+        seen.add(normalized)
+        relative_paths.append(relative_path)
+    if not relative_paths:
+        raise SyncError(f"Include manifest is empty: {path}")
+    return relative_paths
+
+
 def main(argv=None):
     args = parse_args(argv)
     tracker_dir = Path(__file__).resolve().parent
     selected_private_dir = private_data_dir(args, tracker_dir)
     try:
-        synchronize(
+        relative_paths = load_include_manifest(args.include_manifest)
+        plan = synchronize(
             args.mode,
             tracker_dir,
             selected_private_dir,
             apply=args.apply,
+            relative_paths=relative_paths,
+            continue_on_conflict=args.continue_on_conflict,
         )
     except SyncError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    return 0
+    return 1 if any(item.action == "CONFLICT" for item in plan) else 0
 
 
 if __name__ == "__main__":

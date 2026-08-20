@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,17 +61,70 @@ def find_missing_match_ids(
     )
 
 
-def select_match_ids(missing_ids, match_id=None, limit=None):
+def select_match_ids(
+    missing_ids,
+    match_id=None,
+    all_missing=False,
+    limit=None,
+    published_ids=None,
+):
     selected = list(missing_ids)
-    if match_id is not None:
+    skipped = []
+    if not all_missing and match_id is not None:
+        if published_ids is not None and match_id not in published_ids:
+            raise ValueError(f"指定Match IDは公開Fight Detailに存在しません: {match_id}")
         if match_id not in selected:
-            raise ValueError(f"指定Match IDは復元対象ではありません: {match_id}")
-        selected = [match_id]
+            selected = []
+            skipped = [match_id]
+        else:
+            selected = [match_id]
     if limit is not None:
         if limit < 1:
             raise ValueError("--limitは1以上を指定してください")
         selected = selected[:limit]
-    return selected
+    return selected, skipped
+
+
+def raw_relative_paths(match_id):
+    return [
+        f"{match_id}.json",
+        f"timeline/{match_id}_timeline.json",
+        f"timeline/{match_id}_combat_timeline.json",
+        f"timeline/{match_id}_fight_context.txt",
+        f"timeline/{match_id}_fight_review_context.txt",
+    ]
+
+
+def write_text_atomic(path, text):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+
+
+def write_result_files(result, result_file=None, raw_manifest=None):
+    if result_file:
+        write_text_atomic(
+            result_file,
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+        )
+    if raw_manifest:
+        paths = [
+            path
+            for match_id in result["success"]
+            for path in raw_relative_paths(match_id)
+        ]
+        write_text_atomic(raw_manifest, "".join(f"{path}\n" for path in paths))
 
 
 def scan_missing_raw(match_ids, raw_dir=RAW_DIR):
@@ -235,7 +289,18 @@ def parse_args(argv=None):
         help="Riot API取得とTimeline解析を実行します（省略時はdry-run）",
     )
     parser.add_argument("--limit", type=int, help="先頭から最大N試合だけを対象にします")
-    parser.add_argument("--match-id", help="指定した不足Match IDだけを対象にします")
+    parser.add_argument("--match-id", help="指定したMatch IDだけを対象にします")
+    parser.add_argument(
+        "--all-missing",
+        action="store_true",
+        help="現在不足している全Matchを対象にします（--match-idより優先）",
+    )
+    parser.add_argument("--result-file", type=Path, help="実行結果JSONの出力先")
+    parser.add_argument(
+        "--raw-manifest",
+        type=Path,
+        help="成功Matchの同期対象raw相対パス一覧の出力先",
+    )
     return parser.parse_args(argv)
 
 
@@ -243,18 +308,32 @@ def main(argv=None):
     args = parse_args(argv)
     os.chdir(REPOSITORY_ROOT)
     try:
-        missing_ids = find_missing_match_ids()
-        selected_ids = select_match_ids(missing_ids, args.match_id, args.limit)
+        published_ids = load_published_match_ids()
+        missing_ids = sorted(published_ids - load_combat_match_ids())
+        selected_ids, pre_skipped = select_match_ids(
+            missing_ids,
+            match_id=args.match_id,
+            all_missing=args.all_missing,
+            limit=args.limit,
+            published_ids=published_ids,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"復元対象の確認に失敗しました: {safe_error_name(error)}")
         return 1
 
     states = scan_missing_raw(selected_ids)
     print_scan(missing_ids, selected_ids, states, args.apply)
+    for match_id in pre_skipped:
+        print(f"SKIP {match_id} already restored")
     if not args.apply:
+        print(f"Result: success 0 / failed 0 / skip {len(pre_skipped)}")
         return 0
     if not selected_ids:
-        print("復元対象はありません")
+        result = {"success": [], "failed": [], "skipped": pre_skipped}
+        print(
+            f"Result: success 0 / failed 0 / skip {len(pre_skipped)}"
+        )
+        write_result_files(result, args.result_file, args.raw_manifest)
         return 0
     from config import API_KEY, GAME_NAME, TAG_LINE
 
@@ -263,6 +342,8 @@ def main(argv=None):
         return 1
 
     result = restore_matches(selected_ids, game_name=GAME_NAME, tag_line=TAG_LINE)
+    result["skipped"] = pre_skipped + result["skipped"]
+    write_result_files(result, args.result_file, args.raw_manifest)
     return 1 if result["failed"] else 0
 
 

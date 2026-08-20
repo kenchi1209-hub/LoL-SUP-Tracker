@@ -183,6 +183,46 @@
 - GitHub ActionsとのPrivateData連携は未実装。現在の自動更新rawは従来どおりActions cacheで保持する。
 - Actions連携前にPrivate repositoryの認証方式、競合処理、同時実行時の更新順序を確定する。
 
+## 2026-08-20
+
+### 今日やったこと
+
+- PrivateDataのraw 2,351ファイルをMacのPublic `data/raw/`へ復元し、relative path + SHA-256の全件一致を確認済みの状態を引き継いだ。
+- Public fast-forward前の`fight_details.json` 499試合とcombat timeline 470試合を比較し、不足29 Match IDを差集合で再確認した。
+- `fight_detail_exporter.py`へ、既存公開Matchの減少と解析失敗がある場合に書き込み前で停止する安全装置を追加した。
+- exporterの正常出力を同一ディレクトリ内の一時ファイル生成と`os.replace`によるatomic replaceへ変更した。
+- 明示的な公開データ減少時だけ使用する`--allow-removals`を追加した。通常の`main.py`呼び出しは従来どおり減少を許可しない。
+- `restore_missing_fight_raw.py`を追加し、公開Fight Detailとcombat timelineの差集合から復元対象を自動算出するdry-run / apply CLIを実装した。
+- 復元処理は既存`riot_api.py`の取得・保存関数と`analyze_timeline.py`を再利用し、`--limit`と`--match-id`による限定実行に対応した。
+
+### 変更ファイル
+
+- `fight_detail_exporter.py`
+- `restore_missing_fight_raw.py`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+- PrivateData: `.github/workflows/restore-missing-fight-raw.yml`
+- PrivateData: `README.md`
+- PrivateData: `.gitignore`（`.DS_Store`除外）
+
+### 検証結果
+
+- Public fast-forward前の実データでexporterを通常実行し、`existing: 499` / `generated: 470` / `missing: 29`として非zero終了し、`fight_details.json`のSHA-256が不変であることを確認した。
+- Public fast-forward前の復元スクリプトdry-runで不足29件を検出し、Match Detail / Timeline / combat timelineの不足とAPI取得対象が各29件であることを確認した。
+- `JP1_556572228`が復元対象へ含まれることを確認した。
+- 一時ディレクトリとモックで、減少拒否、欠落なし書き込み、明示的減少許可、解析失敗拒否、atomic replace、差集合、dry-run、`--limit`、`--match-id`、既存raw skip、API失敗記録、成功raw保持、API key相当文字列の非表示を確認した。
+
+### 未実施・次工程
+
+- 最新`origin/build`へ競合なしでfast-forward後、`fight_details.json`と`timeline_summary.csv`が508試合、combat timelineが470試合、missingが38試合になったことを確認した。増加した9試合もraw未復元のためmissingへ加わった。
+- 不足38試合への実Riot APIアクセスは未実施。
+- `fight_details.json`の本番再生成は未実施で、remote最新の508試合を維持している。
+- MacローカルへRiot API認証情報は配置せず、PrivateData repositoryのActions Secretsを使う方針へ変更した。
+- PrivateData側へ手動`Restore missing Fight raw` workflowを追加した。Match IDを1件指定し、`apply: false`では検出のみ、明示的な`apply: true`でだけAPI取得・5ファイル検証・PrivateDataへの非破壊同期・対象5パス限定commitを行う。
+- workflowはPublic `build`の復元スクリプトをcheckoutして再利用し、Public repositoryや`fight_details.json`を更新しない。
+- workflowとSecrets連携は静的検証までで、実dispatchと実APIアクセスは未実施。
+- 次工程は両repoの関連変更をcommit・push後、workflowをdry-runし、`JP1_556572228`を1件限定で実復元すること。
+
 ## 運用ルール
 
 ### 作業開始時

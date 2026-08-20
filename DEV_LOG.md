@@ -233,6 +233,18 @@
 - PrivateData workflowへ`all_missing`入力を追加し、apply時に一部API失敗があっても成功結果を同期・1 commitへまとめた後、最終結果を非zeroにする構成へ変更した。
 - 一括実API取得、workflow dispatch、公開`fight_details.json`再生成は未実施。
 
+### 追加対応: 定期ActionsのPrivateData自動保存
+
+- Public `deploy.yml`のschedule / workflow_dispatch経路へ、PrivateData checkout、rawのdry-run / apply pull、`main.py`、完全性検証、dry-run / apply pushを追加した。
+- PrivateData同期が成功し、新規rawをPrivateDataへ通常pushした後にだけPublic生成データをcommitする順序へ変更した。
+- PrivateDataでは既存tracked rawの変更とraw外の変更を拒否し、新規`raw/`だけをstageする。開始時SHAとpush直前の`origin/main`が一致しない場合も停止する。
+- rawの二重正本化を避けるため、`actions/cache`による`data/raw`保持を廃止し、PrivateDataを唯一のクラウド正本とした。
+- 通常の`build` pushはPrivateData checkout、raw同期、Riot API処理を通らず、従来どおり静的サイト生成とPages配信だけを行う。
+- `verify_fight_raw_completeness.py`を追加し、公開Fight Detailとcombat timelineのMatch集合および全Matchの主要raw 5種類をcommit前に検証する構成とした。
+- PublicからPrivateDataへは、PrivateData repositoryのContents read/writeだけを許可した`PRIVATE_DATA_TOKEN`を使用する設計とした。Secret値はworkflowで出力しない。
+- Publicの定期workflowとPrivateDataの手動復元workflowは`private-raw-writer`という同一方針名を使用する。GitHubのconcurrencyはrepository単位のため、実際のcross-repository競合はremote SHA再確認とforceなしの通常pushで防止する。
+- 実Actions実行、Riot APIアクセス、raw更新、commit / pushは未実施。
+
 ## 運用ルール
 
 ### 作業開始時

@@ -82,11 +82,15 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - デフォルトはdry-runで、実コピーには`--apply`が必要
 - 同期は追加専用で、削除と内容競合の自動上書きを行わない
 - 同期スクリプトはGitのcommit / pull / pushを実行しない
-- PrivateDataへ実raw 2,351ファイルを初回投入し、Macの`data/raw/`へrelative path + SHA-256完全一致で復元済み
+- PrivateDataへ508試合分の主要raw 5種類を投入し、Macの`data/raw/`へrelative path + SHA-256完全一致で復元済み
 - PrivateData側に、不足Matchを復元する手動GitHub Actions workflowを実装済み。Repository Secretsをapply時だけ注入し、既定はAPIを呼ばないdry-run
 - 手動workflowは単一Matchに加えて`all_missing`一括復元へ対応。成功Matchの5 rawパスだけをmanifest経由で同期・stageし、一部失敗後も成功rawを保持する
-- 手動復元workflowは静的検証までで未実行。Public / PrivateData双方へ関連コードをcommit・pushした後に利用する
-- Publicの定期自動更新workflowとPrivateDataの連携は未実装。自動更新時のraw保持は従来どおりActions cacheを使用
+- 手動復元workflowで不足rawの復元を完了し、公開Fight Detail 508試合とcombat timeline 508試合が一致
+- Publicのschedule / workflow_dispatchは開始時にPrivateDataからrawを復元し、`main.py`後に新規rawだけをPrivateDataへ保存してからPublic生成データを更新する構成
+- PrivateDataをrawの唯一のクラウド正本とし、従来の`actions/cache`によるraw保持は廃止
+- Publicの通常`build` pushではRiot APIやPrivateDataへアクセスせず、Git管理済みデータからサイト生成・Pages配信だけを行う
+- Public ActionsからPrivateDataへは`PRIVATE_DATA_TOKEN`を使用し、対象repositoryのContents read/writeだけを許可する
+- 定期更新と手動復元は`private-raw-writer` concurrency方針を共有し、push前のremote SHA照合と通常pushで競合時に停止する
 
 ## 主要データファイル
 
@@ -163,12 +167,9 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - LP推移データがないため、現状は現在Rankのみ表示可能。
 - `main.py`など一部既存ソースの日本語コメント／ログに文字化けが残っている。機能は動作するが保守性の課題。
 - `fight_details.json`は約7.3MBあり、将来的に分割配信やオンデマンド取得を検討できる。
-- `JP1_556572228`の5 rawはActionsで復元され、PrivateData正本とMacのPublic rawへ反映済み。
-- 公開`fight_details.json`は508試合ある一方、PrivateDataから復元済みのcombat timelineは471試合で、37試合のDetail / Timeline / combat timelineが不足している。
-- `restore_missing_fight_raw.py`の一括dry-runと安全試験は完了したが、残り37試合の実API取得は未実施。
-- Riot API認証情報はMacへ配置せず、PrivateData repositoryのActions Secretsから手動復元workflowへ注入する。
-- 不足37試合を復元するまで、参加者`relation`付き`fight_details.json`の508試合本番再生成は未完了。
-- GitHub ActionsはPrivateDataをcheckout・同期していない。現在は`actions/cache`が自動更新時のraw保持手段。
+- 公開`fight_details.json` 508試合とPrivateDataの主要raw 5種類は整合済み。
+- Riot API認証情報はローカル端末へ配置せず、PublicまたはPrivateDataのActions Secretsから各workflowへ必要時だけ注入する。
+- Public ActionsからPrivateDataへアクセスする`PRIVATE_DATA_TOKEN`の登録と、定期workflowの実行検証が未実施。
 
 ## 直近で進行中の作業
 
@@ -185,12 +186,10 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 次にやること
 
-1. Public / PrivateDataの復元基盤をcommit・pushし、PrivateDataの手動workflowを`apply: false`で確認する。
-2. PrivateDataの手動workflowを`all_missing: true` / `apply: false`で一括dry-runする。
-3. 残り37試合を`all_missing: true` / `apply: true`で復元し、失敗試合があれば個別再実行する。
-4. combat timelineが508試合揃ったことを確認し、`fight_details.json`をrelation付きで再生成・回帰確認する。
-5. Public定期更新とPrivateDataの連携・同時更新時の競合ルールを確定する。
-6. `rank_history.csv`の列設計とRank専用ページを実装する。
+1. Public repositoryへ`PRIVATE_DATA_TOKEN`を最小権限で登録する。
+2. 定期連携変更をcommit / pushし、workflow_dispatchでPrivateData pull / pushと公開データ更新順を検証する。
+3. 初回実行後、PrivateDataには新規rawだけ、Publicには生成データだけがcommitされたことを確認する。
+4. `rank_history.csv`の列設計とRank専用ページを実装する。
 
 ## 注意事項
 

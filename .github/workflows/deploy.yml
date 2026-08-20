@@ -1,12 +1,5 @@
 name: Build & Deploy site
 
-# トリガー:
-#  - push (buildブランチ): サイトコード/データを更新したら即再ビルド&デプロイ
-#  - schedule: 毎日 10:00 JST (= 01:00 UTC) に新しい試合データを取得
-#  - workflow_dispatch: Actionsタブから手動実行(テスト用)
-#
-# 前提: buildブランチを「既定ブランチ」にすること。
-#       GitHubの schedule(cron) は既定ブランチのワークフローでしか発火しないため。
 on:
   push:
     branches: [build]
@@ -15,70 +8,162 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write   # データのcommit & push 用
-  pages: write      # GitHub Pages へのデプロイ用
-  id-token: write   # デプロイの認証(OIDC)用
+  contents: write
+  pages: write
+  id-token: write
 
-# 同時実行を1本に絞る(デプロイの競合を防ぐ)。実行中でもキャンセルしない。
+# GitHub scopes concurrency groups per repository, so the remote HEAD check
+# below is still required before pushing PrivateData.
 concurrency:
-  group: pages
+  group: private-raw-writer
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout Tracker
         uses: actions/checkout@v4
+        with:
+          path: tracker
+
+      - name: Checkout PrivateData
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          repository: kenchi1209-hub/LoL-SUP-Tracker-PrivateData
+          ref: main
+          token: ${{ secrets.PRIVATE_DATA_TOKEN }}
+          path: private-data
+
+      - name: Record PrivateData base revision
+        id: private-base
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: private-data
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # data/raw は .gitignore 対象(試合詳細JSONのローカルキャッシュ)。
-      # データ取得を伴う実行(schedule/手動)のときだけ、run間で復元して
-      # 毎回全試合をRiot APIから再取得しないようにする。
-      - name: Restore raw match cache
-        if: github.event_name != 'push'
-        uses: actions/cache@v4
-        with:
-          path: data/raw
-          key: raw-matches-${{ github.run_id }}
-          restore-keys: |
-            raw-matches-
-
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        working-directory: tracker
+        run: python -m pip install -r requirements.txt
 
-      # push(サイト編集)では既存データからビルドするだけなのでAPIは叩かない。
-      # schedule/手動のときだけ最新データを取得する。
+      - name: Preview PrivateData raw restore
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        run: >-
+          python sync_private_data.py pull
+          --private-data-dir "${{ github.workspace }}/private-data"
+
+      - name: Restore PrivateData raw
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        run: >-
+          python sync_private_data.py pull --apply
+          --private-data-dir "${{ github.workspace }}/private-data"
+
       - name: Fetch latest match data
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
         env:
           RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
           RIOT_GAME_NAME: ${{ secrets.RIOT_GAME_NAME }}
           RIOT_TAG_LINE: ${{ secrets.RIOT_TAG_LINE }}
         run: python main.py
 
-      # 取得したデータに差分があれば build ブランチへ commit する。
-      # GITHUB_TOKEN によるpushは新たなワークフローを再発火しない(無限ループ防止)。
-      # 同じrun内でこのあとサイトをビルド&デプロイするので反映は即時。
-      - name: Commit refreshed data
+      - name: Verify Fight raw completeness
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
         run: |
+          set -euo pipefail
+          python verify_fight_raw_completeness.py
+          test -z "$(git ls-files -- data/raw)"
+
+      - name: Preview new raw synchronization
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        run: >-
+          python sync_private_data.py push
+          --private-data-dir "${{ github.workspace }}/private-data"
+
+      - name: Copy new raw into PrivateData
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        run: >-
+          python sync_private_data.py push --apply
+          --private-data-dir "${{ github.workspace }}/private-data"
+
+      - name: Commit new raw to PrivateData
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: private-data
+        env:
+          PRIVATE_BASE_SHA: ${{ steps.private-base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- raw; then
+            echo "Existing PrivateData raw was modified; refusing to commit" >&2
+            git diff --name-status -- raw >&2
+            exit 1
+          fi
+          outside_raw=$(git status --porcelain -- . ':(exclude)raw')
+          if [ -n "$outside_raw" ]; then
+            echo "PrivateData has changes outside raw; refusing to commit" >&2
+            printf '%s\n' "$outside_raw" >&2
+            exit 1
+          fi
+
+          git fetch origin main
+          remote_sha=$(git rev-parse origin/main)
+          if [ "$remote_sha" != "$PRIVATE_BASE_SHA" ]; then
+            echo "PrivateData main advanced during this run; refusing to push" >&2
+            exit 1
+          fi
+
+          git add -- raw
+          unexpected=$(git diff --cached --name-only | grep -Ev '^raw/' || true)
+          if [ -n "$unexpected" ]; then
+            echo "Refusing to stage files outside raw" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No new raw files to commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update LoL raw data $(date -u +%Y-%m-%d)"
+            git push origin HEAD:main
+          fi
+
+      - name: Commit refreshed public data
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- data && git diff --cached --quiet -- data && \
-             [ -z "$(git ls-files --others --exclude-standard -- data)" ]; then
-            echo "データに変更なし。commitをスキップします"
+          git add -- data
+          if [ -n "$(git diff --cached --name-only | grep '^data/raw/' || true)" ]; then
+            echo "Public raw must not be staged" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No public data changes to commit"
           else
-            git add data
             git commit -m "Update LoL data $(date -u +%Y-%m-%d)"
-            git push
+            git push origin HEAD:build
           fi
 
       - name: Build static site
+        working-directory: tracker
         env:
           RIOT_GAME_NAME: ${{ secrets.RIOT_GAME_NAME }}
           RIOT_TAG_LINE: ${{ secrets.RIOT_TAG_LINE }}
@@ -87,15 +172,14 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: tracker/public
 
-      # Excelレポートは従来通りArtifactとしても残す(保持30日)。
       - name: Upload Excel report artifact
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: lol-report
-          path: data/excel/lol_report.xlsx
+          path: tracker/data/excel/lol_report.xlsx
           if-no-files-found: warn
           retention-days: 30
 

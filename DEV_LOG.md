@@ -265,6 +265,15 @@
 - PrivateData新構造だけを入力に、Fight Detail 508、combat timeline 508、missing / extra / 必須不足0、Timeline Summary 508、restore missing 0を確認した。
 - Public新構造対応コードの本番反映とworkflow_dispatchは、この時点では未実施。
 
+### 追加対応: 旧flat互換撤去
+
+- 新構造対応Public workflowの実連携成功後、PrivateDataから旧flat主要raw 2,540件とlegacy `death_analysis` 1件を削除した。新構造508 Match・2,540必須rawのSHA変化と不足は0。
+- `raw_paths.py`から旧flat path、read fallback、legacy Match ID判定を削除し、正式5ファイルだけを扱うAPIへ整理した。
+- main、Timeline解析、exporter、missing復元、完全性検証、補助スクリプトを新構造専用read / writeへ確定した。
+- `sync_private_data.py`の旧suffix別Match判定を撤去し、Match directoryの先頭componentだけで競合をまとめる構造にした。
+- migration完了に伴い`migrate_raw_layout.py`をPublic repositoryから削除した。migration設計と検証記録は本ログへ履歴として保持する。
+- PrivateData新構造だけを入力とする完全性・exporter・restore・syncテストを実施後、Public / PrivateDataの順にcommit・pushする。
+
 ## 運用ルール
 
 ### 作業開始時

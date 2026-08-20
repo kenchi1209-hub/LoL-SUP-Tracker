@@ -5,7 +5,6 @@ from raw_paths import (
     iter_combat_timeline_paths,
     match_id_from_path,
     paths_for_match,
-    readable_paths_for_match,
 )
 
 
@@ -25,7 +24,7 @@ def combat_match_ids(raw_dir: Path) -> set[str]:
 
 
 def required_paths(raw_dir: Path, match_id: str) -> tuple[Path, ...]:
-    return readable_paths_for_match(match_id, raw_dir).required()
+    return paths_for_match(match_id, raw_dir).required()
 
 
 def verify(fight_details_path: Path, raw_dir: Path) -> dict[str, int]:

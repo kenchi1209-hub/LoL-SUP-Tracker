@@ -7,7 +7,6 @@ from raw_paths import (
     iter_combat_timeline_paths,
     match_id_from_path,
     paths_for_match,
-    readable_paths_for_match,
     relative_paths_for_match,
 )
 
@@ -101,7 +100,7 @@ def write_result_files(result, result_file=None, raw_manifest=None):
 def scan_missing_raw(match_ids, raw_dir=RAW_DIR):
     states = []
     for match_id in match_ids:
-        paths = readable_paths_for_match(match_id, raw_dir)
+        paths = paths_for_match(match_id, raw_dir)
         states.append(
             {
                 "match_id": match_id,
@@ -190,7 +189,7 @@ def restore_matches(
     pending = []
 
     for match_id in match_ids:
-        paths = readable_paths_for_match(match_id, raw_dir)
+        paths = paths_for_match(match_id, raw_dir)
         if paths.combat.is_file():
             skipped.append(match_id)
             print(f"SKIP {match_id}: combat timeline already exists")
@@ -216,18 +215,18 @@ def restore_matches(
         return {"success": success, "failed": failed, "skipped": skipped}
 
     for match_id in pending:
-        paths = readable_paths_for_match(match_id, raw_dir)
+        paths = paths_for_match(match_id, raw_dir)
         try:
             if not paths.detail.is_file():
                 detail_saver(match_id, detail_getter(match_id), raw_root=raw_dir)
             if not paths.timeline.is_file():
                 timeline_saver(match_id, timeline_getter(match_id), raw_root=raw_dir)
-            paths = readable_paths_for_match(match_id, raw_dir)
+            paths = paths_for_match(match_id, raw_dir)
             if not paths.detail.is_file() or not paths.timeline.is_file():
                 raise FileNotFoundError("取得済みrawの保存確認に失敗しました")
 
             analyzer(match_id, puuid=puuid, raw_root=raw_dir)
-            paths = readable_paths_for_match(match_id, raw_dir)
+            paths = paths_for_match(match_id, raw_dir)
             expected = (
                 paths.combat,
                 paths.fight_context,

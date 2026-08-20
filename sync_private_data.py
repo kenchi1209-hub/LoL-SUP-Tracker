@@ -181,16 +181,6 @@ def build_plan(source_root, destination_root, relative_paths=None):
 def fight_match_id(relative_path):
     if len(relative_path.parts) >= 2 and relative_path.parts[0].startswith("JP"):
         return relative_path.parts[0]
-    name = relative_path.name
-    for suffix in (
-        "_fight_review_context.txt",
-        "_combat_timeline.json",
-        "_fight_context.txt",
-        "_timeline.json",
-        ".json",
-    ):
-        if name.endswith(suffix):
-            return name.removesuffix(suffix)
     return relative_path.as_posix()
 
 

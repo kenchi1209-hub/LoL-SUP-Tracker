@@ -2,7 +2,7 @@ import argparse
 import json
 import math
 import os
-from raw_paths import DEFAULT_RAW_ROOT, paths_for_match, readable_paths_for_match
+from raw_paths import DEFAULT_RAW_ROOT, paths_for_match
 
 from config import GAME_NAME, TAG_LINE
 
@@ -1664,9 +1664,9 @@ def analyze_match_timeline(
     で呼ぶ。
     """
 
-    readable = readable_paths_for_match(match_id, raw_root)
-    match_path = readable.detail
-    timeline_path = readable.timeline
+    paths = paths_for_match(match_id, raw_root)
+    match_path = paths.detail
+    timeline_path = paths.timeline
 
     if not os.path.exists(match_path):
         raise FileNotFoundError(

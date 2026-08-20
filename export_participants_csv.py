@@ -1,10 +1,10 @@
 import json
 import csv
 import os
-from raw_paths import readable_paths_for_match
+from raw_paths import paths_for_match
 
 MATCH_ID = "JP1_591434669"
-RAW_PATH = readable_paths_for_match(MATCH_ID).detail
+RAW_PATH = paths_for_match(MATCH_ID).detail
 CSV_PATH = "data/csv/participants.csv"
 
 with open(RAW_PATH, "r", encoding="utf-8") as f:

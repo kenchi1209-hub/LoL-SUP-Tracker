@@ -68,6 +68,11 @@ jobs:
           python sync_private_data.py pull --apply
           --private-data-dir "${{ github.workspace }}/private-data"
 
+      - name: Refresh Champion Registry
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        run: python champion_registry.py update
+
       - name: Fetch latest match data
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: tracker

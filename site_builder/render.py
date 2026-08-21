@@ -6,9 +6,8 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from champion_map import CHAMPION_JA_MAP
+from champion_registry import champion_icon_id, champion_name_ja
 from queue_map import queue_id_to_name
-from site_builder.champion_ids import champion_icon_id
 from site_builder.data import (
     aggregate,
     format_rank_name,
@@ -68,7 +67,7 @@ def load_match_detail(match_id):
             continue
         compact = dict(participant)
         champion = compact.get("champion", "")
-        compact["champion_name"] = CHAMPION_JA_MAP.get(champion, champion)
+        compact["champion_name"] = champion_name_ja(champion)
         participants.append(compact)
     return {
         "game_duration_seconds": detail.get("game_duration_seconds", 0),
@@ -140,9 +139,7 @@ def match_history_data(rows):
             "date": row.get("date", ""),
             "patch": normalize_patch(row.get("patch", row.get("gameVersion", ""))),
             "champion": row.get("champion", ""),
-            "champion_name": CHAMPION_JA_MAP.get(
-                row.get("champion", ""), row.get("champion", "")
-            ),
+            "champion_name": champion_name_ja(row.get("champion", "")),
             "champion_icon_id": champion_icon_id(row.get("champion", "")),
             "queue_id": str(row.get("queue_id", "")),
             "queue_name": queue_id_to_name(row.get("queue_id", "")),
@@ -181,7 +178,7 @@ def match_history_data(rows):
 def match_history_champion_options(rows):
     champions = sorted({row.get("champion", "") for row in rows if row.get("champion")})
     return "".join(
-        f'<option value="{esc(champion)}">{esc(CHAMPION_JA_MAP.get(champion, champion))}</option>'
+        f'<option value="{esc(champion)}">{esc(champion_name_ja(champion))}</option>'
         for champion in champions
     )
 
@@ -347,7 +344,7 @@ def render_champion_table(items, version, title="チャンピオン別"):
     body = ""
     for it in items:
         champ = it["_key"]
-        ja = CHAMPION_JA_MAP.get(champ, champ)
+        ja = champion_name_ja(champ)
         icon = (
             f"https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/"
             f"{champion_icon_id(champ)}.png"

@@ -1,7 +1,7 @@
 import csv
 import os
 from collections import defaultdict
-from champion_map import champion_to_ja
+from champion_registry import champion_name_ja
 from queue_map import queue_id_to_name
 
 MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
@@ -89,7 +89,7 @@ def group_by_champion(rows):
     grouped = defaultdict(list)
 
     for r in rows:
-        grouped[champion_to_ja(r["champion"])].append(r)
+        grouped[champion_name_ja(r["champion"])].append(r)
 
     summaries = []
 

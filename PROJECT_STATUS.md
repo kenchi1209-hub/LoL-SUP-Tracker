@@ -169,12 +169,13 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - 10人比較のALLY / ENEMYは公式`teamId`、RoleはMatch-V5の`teamPosition`（空の場合のみ`individualPosition`）を使い、Champion等から推測しない。
 - Fight Detailは初期表示性能のためlazy DOM生成とする。
 - UI日本語化は表示時マッピングで行い、EARLY / WIN等の内部値は変更しない。
-- Champion日本語名は既存`CHAMPION_JA_MAP`を再利用する。
+- Champion日本語名・Data Dragon ID・icon versionは、Git管理済み`data/csv/champion_registry.json`を唯一の正本とする。Registryはschedule / workflow_dispatch時だけData Dragon `ja_JP/champion.json`から安全に更新し、通常のPages buildはネットワークへアクセスせず保存済みRegistryを使用する。
 - Fight参加者の味方・敵判定はChampion名や表示順から推測せず、combat timeline内の自分と各参加者の`team_id`を比較する。
 - raw参照パスは引き続き`data/raw/`とし、端末間共有はsymlinkや参照先変更ではなくPrivateDataとの同期コピーで行う。
 - PrivateData同期は削除禁止、競合時停止、デフォルトdry-runとし、Git操作から分離する。
 - 公開`fight_details.json`の再生成は、既存Match IDが欠落する場合にデフォルトで拒否する。意図的な減少だけ`--allow-removals`で許可する。
 - `.gitignore`の`data/raw/`と`public/`除外は維持する。
+- Champion Registry更新は取得・parse・validation完了後にatomic replaceし、取得失敗や既存より小さい応答では既存Registryを維持する。通常Championの手動一覧は持たず、Match-V5表示名とData Dragon IDの差異など特殊aliasだけをコード管理する。
 
 ## 現在の未解決事項
 

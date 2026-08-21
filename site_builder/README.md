@@ -7,7 +7,7 @@ site_builder/
 ├─ assets/          # ブラウザ側の分析・描画JavaScript
 ├─ static/          # public/assetsへコピーするCSS
 ├─ templates/       # TOP・ロール・Match HistoryのHTMLテンプレート
-├─ champion_ids.py  # Data Dragon正式ID解決
+├─ champion_ids.py  # Champion Registry正式ID解決の互換API
 ├─ patches.py       # Patch major.minor正規化
 ├─ data.py          # CSV/JSON読込・型変換・集計
 ├─ render.py        # 共通HTML部品とテンプレート値生成

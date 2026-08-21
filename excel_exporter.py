@@ -5,7 +5,7 @@ from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from champion_map import champion_to_ja
+from champion_registry import champion_name_ja
 from queue_map import queue_id_to_name
 from summary_exporter import (
     filter_support_rows,
@@ -54,7 +54,7 @@ MATCH_COLUMNS = [
     ("キュー", "queue_id", queue_id_to_name, None),
     ("勝敗", "win", win_to_wl, None),
     ("ロール", "role", role_to_name, None),
-    ("チャンピオン", "champion", champion_to_ja, None),
+    ("チャンピオン", "champion", champion_name_ja, None),
     ("K", "kills", to_int, "0"),
     ("D", "deaths", to_int, "0"),
     ("A", "assists", to_int, "0"),

@@ -1,6 +1,6 @@
 import csv
 import os
-from champion_map import champion_to_ja
+from champion_registry import champion_name_ja
 from queue_map import queue_id_to_name
 
 REVIEW_CSV_PATH = "data/csv/review.csv"
@@ -91,7 +91,7 @@ def build_review_row(my_match_row, existing_review=None):
         "queue": queue_id_to_name(my_match_row["queue_id"]),
         "win": win_to_wl(my_match_row["win"]),
         "role": role_to_name(my_match_row["role"]),
-        "champion": champion_to_ja(my_match_row["champion"]),
+        "champion": champion_name_ja(my_match_row["champion"]),
         "kills": my_match_row["kills"],
         "deaths": my_match_row["deaths"],
         "assists": my_match_row["assists"],

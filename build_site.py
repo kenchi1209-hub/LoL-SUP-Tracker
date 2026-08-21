@@ -5,11 +5,10 @@ data/csv/my_matches.csv を読み、Pythonで集計してから
 自己完結した public/index.html を書き出す（チャンピオンアイコンのみ
 Data Dragon CDN を参照）。
 """
-import json
 import os
 import shutil
-import urllib.request
 
+from champion_registry import registry_version
 from site_builder.data import load_matches
 from site_builder.history import build_history_html
 from site_builder.role import build_role_pages
@@ -17,20 +16,9 @@ from site_builder.top import build_html
 
 OUT_DIR = "public"
 
-DDRAGON_FALLBACK_VERSION = "15.13.1"
-
-
 def get_ddragon_version():
-    """Data Dragon の最新バージョンを取得（失敗時は固定値）。"""
-    try:
-        url = "https://ddragon.leagueoflegends.com/api/versions.json"
-        with urllib.request.urlopen(url, timeout=10) as res:
-            versions = json.load(res)
-            if versions:
-                return versions[0]
-    except Exception as e:  # noqa: BLE001
-        print(f"ddragonバージョン取得に失敗、固定値を使用します: {e}")
-    return DDRAGON_FALLBACK_VERSION
+    """Git管理済みChampion RegistryのData Dragon versionを返す。"""
+    return registry_version()
 
 
 def main():

@@ -1,6 +1,6 @@
 import csv
 import os
-from champion_map import champion_to_ja
+from champion_registry import champion_name_ja
 from queue_map import queue_id_to_name
 
 MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
@@ -52,7 +52,7 @@ def build_report_text(row):
     duration = seconds_to_mmss(row["game_duration_seconds"])
 
     role = role_to_name(row["role"])
-    champion = champion_to_ja(row["champion"])
+    champion = champion_name_ja(row["champion"])
 
     kills = row["kills"]
     deaths = row["deaths"]

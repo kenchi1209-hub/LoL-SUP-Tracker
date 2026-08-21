@@ -276,6 +276,17 @@
 
 ## 2026-08-21
 
+### Data Dragon Champion Registry移行
+
+- `data/csv/champion_registry.json`を新設し、Data Dragon version、Champion ID、numeric key、日本語名の173体分をdeterministicに保存した。
+- `champion_registry.py`へ取得、validation、atomic write、日本語名・icon ID・version解決を集約した。
+- TOP、Role、Filter、Match History、Match/Fight Detail、Excel、Summary、Report、ReviewのChampion表示を共通Registry参照へ移行した。
+- `build_site.py`のData Dragonネットワーク取得と固定`15.13.1` fallbackを廃止し、保存済みRegistry versionを使用する純粋buildへ変更した。
+- schedule / workflow_dispatchだけRegistry更新を試みるよう`deploy.yml`へ追加した。取得失敗時は既存Registryを維持し、通常のbuild pushでは更新処理を実行しない。
+- Locke / Yunara / Zaahenを個別の静的マップへ追加せず、Registryからロック / ユナラ / ザーヘンとして解決した。
+- 公開Fight Detail 508試合を再生成し、Match減少0・解析失敗0を確認した。変更はChampion日本語名だけで、数値・Fight判定・個人識別情報に変更はない。
+- 一時ディレクトリのテストで取得失敗時のbyte維持、部分応答拒否、空・重複key拒否、alias解決を確認した。
+
 ### Match History「試合詳細」v1
 
 - Match Historyカード直下へ「試合詳細」「戦闘詳細」の独立ボタンを配置した。

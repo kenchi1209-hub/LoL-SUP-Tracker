@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from champion_map import CHAMPION_JA_MAP
+from champion_registry import champion_name_ja
 from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_from_path
 
 
@@ -34,7 +34,7 @@ def compact_fight_person(
     champion = person.get("champion") or "Unknown"
     compact = {
         "champion": champion,
-        "champion_name": CHAMPION_JA_MAP.get(champion, champion),
+        "champion_name": champion_name_ja(champion),
     }
     team_id = person.get("team_id")
     if include_relation and player_team_id is not None and team_id is not None:

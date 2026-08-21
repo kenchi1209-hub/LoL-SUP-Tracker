@@ -2,7 +2,7 @@
 
 from collections import Counter
 
-from champion_map import CHAMPION_JA_MAP
+from champion_registry import champion_name_ja
 from site_builder.render import (
     esc,
     load_template,
@@ -29,7 +29,7 @@ def champion_options(rows):
     champions = sorted(counts, key=lambda champion: (-counts[champion], champion))
     return "".join(
         f'<option value="{esc(champion)}">'
-        f'{esc(CHAMPION_JA_MAP.get(champion, champion))} ({counts[champion]})'
+        f'{esc(champion_name_ja(champion))} ({counts[champion]})'
         "</option>"
         for champion in champions
         if champion

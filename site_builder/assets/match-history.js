@@ -110,15 +110,15 @@
     participantRows.forEach(([label, members]) => {
       const row = text("div", "", "fight-participant-row");
       row.append(
-        text("strong", `${label}:`, "fight-participant-label"),
+        text("strong", `${label}：`, "fight-participant-label"),
         text("span", members.map(fightPersonName).join(" / ") || "-")
       );
       participantGroups.append(row);
     });
-    participants.append(
-      text("strong", "参加者", "fight-participants-heading"),
-      participantGroups
-    );
+    participants.append(participantGroups);
+
+    const info = text("div", "", "fight-info");
+    info.append(text("strong", "戦闘情報", "fight-info-heading"), metrics, participants);
 
     const kills = text("div", "", "fight-subsection");
     kills.append(text("strong", "キル経過", "fight-subheading"));
@@ -129,8 +129,8 @@
       const list = text("div", "", "fight-event-list");
       killEvents.forEach((event) => {
         const assists = (event.assists || []).map(personName);
-        const assistText = assists.length ? ` [アシスト: ${assists.join(", ")}]` : "";
-        list.append(text("div", `${clock(event.timestamp)} ${personName(event.killer)} → ${personName(event.victim)}${assistText}`));
+        const assistText = assists.length ? ` [A: ${assists.join(", ")}]` : "";
+        list.append(text("div", `${clock(event.timestamp)} K:${personName(event.killer)} → D:${personName(event.victim)}${assistText}`));
       });
       kills.append(list);
     }
@@ -138,7 +138,7 @@
     const objectives = text("div", "", "fight-subsection");
     objectives.append(text("strong", "オブジェクト状況", "fight-subheading"));
     const context = fight.objective_context || {};
-    objectives.append(text("div", `戦闘前: ${localized(context.before || "NONE", FIGHT_LABELS)} · 戦闘中: ${localized(context.during || "NONE", FIGHT_LABELS)} · 戦闘後: ${localized(context.after || "NONE", FIGHT_LABELS)}`, "fight-objective-context"));
+    objectives.append(text("div", `戦闘前：${localized(context.before || "NONE", FIGHT_LABELS)} / 戦闘中：${localized(context.during || "NONE", FIGHT_LABELS)} / 戦闘後：${localized(context.after || "NONE", FIGHT_LABELS)}`, "fight-objective-context"));
     const objectiveList = text("div", "", "fight-event-list");
     [
       ["BEFORE", fight.objectives_before],
@@ -149,10 +149,10 @@
         objectiveList.append(text("div", `${localized(period, PERIOD_LABELS)} ${clock(objective.timestamp)} ${localized(objective.relation || "UNKNOWN", RELATION_LABELS)} ${objectiveName(objective)}`));
       });
     });
-    if (!objectiveList.children.length) objectiveList.append(text("div", "オブジェクトイベントなし", "fight-empty"));
+    if (!objectiveList.children.length) objectiveList.append(text("div", "オブジェクトイベント：なし", "fight-empty"));
     objectives.append(objectiveList);
 
-    item.append(header, metrics, participants, kills, objectives);
+    item.append(header, info, kills, objectives);
     return item;
   }
 

@@ -119,21 +119,22 @@
 .fight-result-win { color: var(--good, #38d39f); }
 .fight-result-loss, .fight-survival-died { color: var(--bad, #ff6b81); }
 .fight-result-even { color: #e5b95c; }
-.fight-metrics { display: grid; gap: 2px; margin-bottom: 5px; }
+.fight-info { margin-bottom: 5px; }
+.fight-info-heading, .fight-subheading { color: var(--text); }
+.fight-info-heading { display: block; margin-bottom: 2px; }
+.fight-metrics { display: grid; gap: 2px; margin-bottom: 2px; }
 .fight-participants {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
-  margin-bottom: 7px;
+  display: block;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 .fight-participant-groups { display: grid; gap: 2px; min-width: 0; }
 .fight-participant-row {
   display: grid;
-  grid-template-columns: 2.5em minmax(0, 1fr);
+  grid-template-columns: 3em minmax(0, 1fr);
   gap: 4px;
 }
-.fight-participants-heading, .fight-participant-label { color: var(--text); }
+.fight-participant-label { color: var(--text); }
 .fight-subsection + .fight-subsection { margin-top: 7px; }
 .fight-subheading { display: block; margin-bottom: 3px; }
 .fight-event-list { display: grid; gap: 2px; color: var(--muted); line-height: 1.45; }
@@ -167,14 +168,15 @@
   .fight-title-line { gap: 4px; }
   .fight-tags { gap: 2px 4px; }
   .fight-badge { padding: 1px 4px; }
-  .fight-metrics { gap: 1px; margin-bottom: 4px; }
+  .fight-info { margin-bottom: 3px; }
+  .fight-info-heading { margin-bottom: 1px; }
+  .fight-metrics { gap: 1px; margin-bottom: 1px; }
   .fight-metric-row { flex-wrap: nowrap; gap: 3px 5px; white-space: nowrap; }
   .fight-participants {
-    display: block; margin-bottom: 4px; overflow-wrap: normal;
+    overflow-wrap: normal;
   }
-  .fight-participants-heading { display: none; }
   .fight-participant-groups { gap: 1px; }
-  .fight-participant-row { grid-template-columns: 2.5em minmax(0, 1fr); gap: 2px; }
+  .fight-participant-row { grid-template-columns: 3em minmax(0, 1fr); gap: 2px; }
   .fight-participant-row > span {
     min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: thin;
   }

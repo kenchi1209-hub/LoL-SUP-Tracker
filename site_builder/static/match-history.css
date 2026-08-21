@@ -14,7 +14,7 @@
 .matches { display: flex; flex-direction: column; gap: 8px; }
 .match {
   display: grid;
-  grid-template-columns: 40px minmax(220px, 1fr) 225px 118px 165px 136px;
+  grid-template-columns: 40px minmax(220px, 1fr) 205px 118px 165px 136px;
   align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border);
   border-left-width: 4px; border-radius: 10px; padding: 10px 12px;
 }
@@ -26,8 +26,10 @@
 .m-primary { display: contents; }
 .m-champ { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .m-champ img { width: 34px; height: 34px; border-radius: 7px; }
-.m-champ-name, .m-kda { font-weight: 600; }
+.m-champ-name, .m-kda-my { font-weight: 600; }
 .m-kda { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.m-kda-separator { color: var(--muted); font-size: .85em; font-weight: 400; }
+.m-kda-team { color: var(--muted); font-size: .82em; font-weight: 500; }
 .m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
 .m-stats, .m-date { padding-left: 8px; line-height: 1.5; text-align: left; }
 .m-stats {

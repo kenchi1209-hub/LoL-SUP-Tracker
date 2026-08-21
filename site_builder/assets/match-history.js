@@ -316,8 +316,9 @@
     champion.append(image, identity);
     const kda = text("div", "", "m-kda");
     kda.append(
-      text("div", `${match.kills} / ${match.deaths} / ${match.assists}`),
-      text("div", `(${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`)
+      text("span", `${match.kills} / ${match.deaths} / ${match.assists}`, "m-kda-my"),
+      text("span", "｜", "m-kda-separator"),
+      text("span", `(${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`, "m-kda-team")
     );
     const primary = text("div", "", "m-primary");
     primary.append(champion, kda);

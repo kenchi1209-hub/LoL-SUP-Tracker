@@ -1,7 +1,7 @@
 header.hero {
   background: linear-gradient(135deg, #1b2a4a, #131a2b);
   border: 1px solid var(--border); border-radius: 16px;
-  padding: 28px 24px; margin-bottom: 24px;
+  padding: 26px 22px; margin-bottom: 22px;
 }
 .hero h1 { margin: 0 0 6px; font-size: 1.7rem; letter-spacing: .3px; }
 .hero .meta { color: var(--muted); font-size: .88rem; }
@@ -10,11 +10,11 @@ h2 {
   font-size: 1.05rem; margin: 0 0 14px; display: flex; align-items: baseline;
   gap: 10px; color: #cdd6e6;
 }
-.block { margin-bottom: 30px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; }
+.block { margin-bottom: 28px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 11px; }
 .card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px;
+  padding: 13px 15px;
 }
 .stat-label { color: var(--muted); font-size: .78rem; margin-bottom: 6px; }
 .stat-value { font-size: 1.5rem; font-weight: 700; }
@@ -38,10 +38,10 @@ h2 {
 table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 560px; }
 thead th {
   background: var(--panel2); color: var(--muted); font-weight: 600;
-  text-align: right; padding: 10px 12px; white-space: nowrap; font-size: .8rem;
+  text-align: right; padding: 9px 11px; white-space: nowrap; font-size: .8rem;
 }
 thead th:first-child { text-align: left; }
-tbody td { padding: 10px 12px; border-top: 1px solid var(--border); text-align: right; }
+tbody td { padding: 9px 11px; border-top: 1px solid var(--border); text-align: right; }
 tbody td.name { text-align: left; font-weight: 600; }
 tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
 td.champ { display: flex; align-items: center; gap: 8px; }

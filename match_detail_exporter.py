@@ -7,6 +7,7 @@ from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths, match_id_from_p
 
 OUTPUT_PATH = "data/csv/match_details.json"
 ROLE_ORDER = {"TOP": 0, "JUNGLE": 1, "MIDDLE": 2, "BOTTOM": 3, "UTILITY": 4}
+SIDE_BY_TEAM_ID = {100: "BLUE", 200: "RED"}
 
 
 class MatchDetailExportError(RuntimeError):
@@ -44,8 +45,9 @@ def compact_match(data, my_puuid):
     if player is None:
         raise ValueError("player participant was not found")
     player_team_id = player.get("teamId")
-    if player_team_id is None:
-        raise ValueError("player teamId is missing")
+    side = SIDE_BY_TEAM_ID.get(player_team_id)
+    if side is None:
+        raise ValueError(f"unsupported player teamId: {player_team_id}")
 
     compact = [
         compact_participant(participant, player_team_id, my_puuid)
@@ -61,6 +63,7 @@ def compact_match(data, my_puuid):
     )
     return {
         "game_duration_seconds": info.get("gameDuration", 0),
+        "side": side,
         "participants": compact,
     }
 

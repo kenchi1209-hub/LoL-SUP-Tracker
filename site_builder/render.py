@@ -72,6 +72,7 @@ def load_match_detail(match_id):
         participants.append(compact)
     return {
         "game_duration_seconds": detail.get("game_duration_seconds", 0),
+        "side": detail.get("side", ""),
         "participants": participants,
     }
 

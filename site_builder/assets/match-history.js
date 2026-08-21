@@ -164,6 +164,7 @@
   function playerComparison(match) {
     const detail = match.detail || {};
     const participants = Array.isArray(detail.participants) ? detail.participants : [];
+    const playerSide = detail.side === "BLUE" || detail.side === "RED" ? detail.side : "";
     const table = text("div", "", "match-player-table");
     table.setAttribute("role", "table");
     table.setAttribute("aria-label", "味方・敵10人比較");
@@ -179,6 +180,12 @@
     participants.forEach((participant) => {
       const row = text("div", "", `match-player-row match-player-${String(participant.relation || "unknown").toLowerCase()}`);
       row.setAttribute("role", "row");
+      const participantSide = participant.relation === "ALLY"
+        ? playerSide
+        : participant.relation === "ENEMY" && playerSide
+          ? (playerSide === "BLUE" ? "RED" : "BLUE")
+          : "";
+      if (participantSide) row.classList.add(`match-player-side-${participantSide.toLowerCase()}`);
       if (participant.is_self) row.classList.add("match-player-self");
       const cs = number(participant.cs);
       const vision = number(participant.vision_score);
@@ -219,6 +226,7 @@
         ["Queue", match.queue_name || match.queue_id || "-"],
         ["Role", ROLE_NAMES[match.role] || match.role || "-"],
         ["Champion", match.champion_name || match.champion || "-"],
+        ["Side", detail.side || "-"],
         ["結果", match.win ? "WIN" : "LOSS"],
         ["Game Time", duration(match.game_duration_seconds)],
       ]),

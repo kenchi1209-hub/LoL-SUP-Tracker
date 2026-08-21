@@ -185,7 +185,7 @@
     table.setAttribute("aria-label", "味方・敵10人比較");
     const header = text("div", "", "match-player-header");
     header.setAttribute("role", "row");
-    ["Role", "Champ", "K/D/A", "CS/m (CS)", "VS/m (VS)", "DPM (DMG)"].forEach((label) => {
+    ["Role", "Champ", "K/D/A", "CS/m", "VS/m", "DPM"].forEach((label) => {
       const cell = text("span", label);
       cell.setAttribute("role", "columnheader");
       header.append(cell);
@@ -238,12 +238,12 @@
         ["日時", String(match.date || "-").slice(0, 16)],
         ["Patch", match.patch || "-"],
         ["Queue", match.queue_name || match.queue_id || "-"],
+        ["Game Time", duration(match.game_duration_seconds)],
         ["Role", ROLE_NAMES[match.role] || match.role || "-"],
         ["Champion", match.champion_name || match.champion || "-"],
         ["Side", detail.side || "-"],
         ["結果", match.win ? "WIN" : "LOSS"],
-        ["Game Time", duration(match.game_duration_seconds)],
-      ]),
+      ], "match-detail-info"),
       metricGroup("パフォーマンス", [
         ["K/D/A (KDA)", `${number(match.kills)} / ${number(match.deaths)} / ${number(match.assists)} (${decimal(ownKda, 2)})`],
         ["CS/m (CS)", `${decimal(global.MatchHistoryMetrics.rate(match.cs, match), 2)} (${Math.round(number(match.cs))})`],

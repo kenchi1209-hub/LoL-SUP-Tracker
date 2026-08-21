@@ -64,11 +64,11 @@
   gap: 18px;
 }
 .match-detail-group { min-width: 0; }
-.match-detail-group h4, .match-player-title { margin: 0 0 5px; font-size: .82rem; }
-.match-detail-metrics { display: grid; gap: 4px; margin: 0; }
+.match-detail-group h4, .match-player-title { margin: 0 0 4px; font-size: .75rem; }
+.match-detail-metrics { display: grid; gap: 3px; margin: 0; }
 .match-detail-metric {
   display: grid; grid-template-columns: 84px max-content;
-  justify-content: start; column-gap: 10px; font-size: .76rem;
+  justify-content: start; column-gap: 8px; font-size: .67rem;
 }
 .match-detail-performance .match-detail-metric { grid-template-columns: 108px max-content; }
 .match-detail-vision-fight .match-detail-metric { grid-template-columns: 104px max-content; }
@@ -77,13 +77,16 @@
 .match-detail-performance .match-detail-metric:nth-child(5) {
   margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border);
 }
+.match-detail-info .match-detail-metric:nth-child(5) {
+  margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border);
+}
 .match-detail-vision-fight .match-detail-metric:nth-child(4) {
   margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border);
 }
-.match-detail-empty { margin: 0; color: var(--muted); font-size: .76rem; }
+.match-detail-empty { margin: 0; color: var(--muted); font-size: .67rem; }
 .match-player-table {
   display: grid; width: fit-content; max-width: 100%; min-width: 0;
-  justify-self: start; overflow-x: auto; font-size: .72rem;
+  justify-self: start; overflow-x: auto; font-size: .66rem;
   scrollbar-width: thin;
 }
 .match-player-header, .match-player-row {
@@ -106,8 +109,8 @@
 .match-player-champion { font-weight: 600; }
 .match-player-self .match-player-champion { color: #f6c85f; }
 .fight-item {
-  padding: 7px 8px; background: var(--panel2); border: 1px solid var(--border);
-  border-left: 3px solid var(--border); border-radius: 8px; font-size: .76rem;
+  padding: 6px 7px; background: var(--panel2); border: 1px solid var(--border);
+  border-left: 3px solid var(--border); border-radius: 8px; font-size: .67rem;
 }
 .fight-item-win { border-left-color: var(--good, #38d39f); }
 .fight-item-loss { border-left-color: var(--bad, #ff6b81); }
@@ -118,12 +121,12 @@
   display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px;
 }
 .fight-title-line { flex-wrap: nowrap; }
-.fight-title { font-size: .82rem; }
+.fight-title { font-size: .75rem; }
 .fight-time, .fight-participants, .fight-empty { color: var(--muted); }
 .fight-tag-separator, .fight-metric-separator { color: var(--muted); }
 .fight-badge {
   padding: 2px 6px; background: rgba(255,255,255,.04); border: 1px solid var(--border);
-  border-radius: 999px; font-size: .67rem; font-weight: 700;
+  border-radius: 999px; font-size: .62rem; font-weight: 700;
 }
 .fight-result-win { color: var(--good, #38d39f); }
 .fight-result-loss, .fight-survival-died { color: var(--bad, #ff6b81); }
@@ -194,11 +197,35 @@
   .fight-event-list { gap: 1px; line-height: 1.35; }
   .fight-objective-context { margin-bottom: 1px; }
   .match-detail-overview { grid-template-columns: minmax(0, 1fr); }
+  .match-detail-performance .match-detail-metrics,
+  .match-detail-vision-fight .match-detail-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 8px;
+  }
+  .match-detail-performance .match-detail-metric,
+  .match-detail-vision-fight .match-detail-metric {
+    grid-template-columns: 88px max-content;
+    column-gap: 5px;
+  }
+  .match-detail-performance .match-detail-metric:nth-child(5),
+  .match-detail-vision-fight .match-detail-metric:nth-child(4) { grid-column: 1; }
+  .match-detail-performance .match-detail-metric:nth-child(6),
+  .match-detail-vision-fight .match-detail-metric:nth-child(5) {
+    margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border);
+  }
   .match-player-header { display: grid; }
   .match-player-table { gap: 0; }
   .match-player-header,
   .match-player-row {
-    grid-template-columns: 34px 74px 60px 76px 76px 94px;
-    gap: 2px; min-width: 430px; padding: 2px 3px;
+    grid-template-columns: 27px 104px 43px 57px 57px 82px;
+    gap: 1px; min-width: 375px; padding: 1px 0;
+  }
+}
+@media (max-width: 400px) {
+  .match-detail-performance .match-detail-metrics,
+  .match-detail-vision-fight .match-detail-metrics { grid-template-columns: minmax(0, 1fr); }
+  .match-detail-performance .match-detail-metric:nth-child(6),
+  .match-detail-vision-fight .match-detail-metric:nth-child(5) {
+    margin-top: 0; padding-top: 0; border-top: 0;
   }
 }

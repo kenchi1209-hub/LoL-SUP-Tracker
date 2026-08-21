@@ -274,6 +274,40 @@
 - migration完了に伴い`migrate_raw_layout.py`をPublic repositoryから削除した。migration設計と検証記録は本ログへ履歴として保持する。
 - PrivateData新構造だけを入力とする完全性・exporter・restore・syncテストを実施後、Public / PrivateDataの順にcommit・pushする。
 
+## 2026-08-21
+
+### Match History「試合詳細」v1
+
+- Match Historyカード直下へ「試合詳細」「戦闘詳細」の独立ボタンを配置した。
+- 両詳細は初回展開時だけDOMを生成し、互いの開閉状態へ干渉しない。
+- カードFight Summaryを`戦闘 W-E-L / My Fights · 生存 · 集団戦`形式へ変更した。
+- 試合詳細へ試合情報、自分の成績、チーム内比較、視界、Fight Summaryを追加した。
+- Match-V5 rawから10人比較に必要な値だけを抽出する`match_detail_exporter.py`を追加した。
+- 公開用`data/csv/match_details.json`は508試合を保持し、個人識別情報を含まない。
+- ALLY / ENEMYは公式`teamId`、Roleは正式positionから決定し、Championや配列位置による推測は行わない。
+- PCは表形式、390px幅では全列を保持した参加者別レイアウトとして表示する。
+
+### 変更ファイル
+
+- `match_detail_exporter.py`
+- `data/csv/match_details.json`
+- `main.py`
+- `site_builder/render.py`
+- `site_builder/assets/match-history.js`
+- `site_builder/static/match-history.css`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+
+### 検証結果
+
+- Python構文、全JavaScript構文、`python3 build_site.py`、`git diff --check`成功。
+- 508試合すべて10人、ALLY 5 / ENEMY 5、自分1人であることを確認した。
+- 公開JSONと生成HTMLにPUUID、Riot ID、Summoner ID等の識別フィールドがないことを確認した。
+- `JP1_596841033`でTeam K/D/A、KP、Damage Share、Death Share、Fight勝率、生存率を独立計算と照合した。
+- 同試合のFight Detail 17件、Fight ID、8W-2E-7L、生存7/17、Teamfight 8が不変であることを確認した。
+- Filter、日時sort、さらに20件、独立開閉、複数試合同時展開、全7ページをブラウザで回帰確認した。
+- PC / 390pxとも横方向のはみ出しなし、browser console error / warning 0件。
+
 ## 運用ルール
 
 ### 作業開始時

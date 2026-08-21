@@ -33,6 +33,7 @@ from excel_exporter import export_excel_report
 from timezone_utils import now_jst
 from timeline_summary_exporter import export_timeline_summary
 from fight_detail_exporter import export_fight_details
+from match_detail_exporter import export_match_details
 
 
 def write_last_updated():
@@ -248,6 +249,9 @@ export_timeline_summary()
 
 print("\nExporting Fight Detail JSON")
 export_fight_details()
+
+print("\nExporting public Match Detail JSON")
+export_match_details(puuid)
 
 # ============================================================
 # Existing exports

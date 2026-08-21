@@ -1,6 +1,6 @@
 # LoL Analytics — Project Status
 
-最終更新: 2026-08-20
+最終更新: 2026-08-21
 
 ## プロジェクト概要
 
@@ -11,19 +11,20 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 ## 現在の構成
 
 - ブランチ: `build`
-- HEAD / `origin/build`: `1823e52efadd0168b5dc8a7a9eaa22db653397c7`
-- working tree: clean（本ファイル作成前）
+- 作業開始時HEAD / `origin/build`: `ef9d3e8c44b2d34861a3c657ee390001cda35d2d`
+- working tree: Match History「試合詳細」v1の未コミット変更あり
 - データ取得・解析: Python
 - サイト生成: Pythonで静的HTMLを生成し、JavaScriptでフィルタ・チャート・Fight Detailを制御
 - 配信: GitHub Actions + GitHub Pages
 - タイムゾーン: 共通utilityによるJST固定
 - raw端末間同期: PrivateDataをraw正本として初回投入・Mac復元まで完了
 - 現在のデータ:
-  - `my_matches.csv`: 406戦
+  - `my_matches.csv`: 406戦（サイト対象はリメイク除外後394戦）
   - `timeline_summary.csv`: 508試合分
   - `fight_details.json`: 508試合分、約8.6MB
-  - PrivateData / Mac復元raw: 2,356ファイル
-  - combat timeline: 471試合分（公開Fight Detailに対して37試合不足）
+  - `match_details.json`: 508試合分、10人比較用の匿名化済み公開データ
+  - PrivateData: 508 Match directory、必須raw 2,540ファイル
+  - combat timeline: 508試合分（公開Fight Detailと完全一致）
   - 現在Rank: Silver IV / 56 LP / 36勝49敗
 
 ## 実装済み機能
@@ -35,7 +36,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - Match Detail取得・ローカルraw JSON保存
 - Match Timeline API取得・ローカルraw JSON保存
 - League-V4による現在Solo Rank取得
-- APIキーは`.env`から読み込み
+- API認証値は環境変数から読み込み、GitHub ActionsではRepository Secretsから注入（ローカル端末への配置は不要）
 - Riot APIの日付境界、Match日時、更新日時をJSTへ明示統一
 
 ### Timeline解析
@@ -55,7 +56,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - 日時・KDA・K/D/A・CS・Vision・Damage・試合時間等のソート
 - 昇順／降順、20件ずつ追加表示
 - 一覧カードにFight Summary表示
-  - 例: `戦闘 8W-2E-7L · 生存 7/17 · 集団戦 8`
+  - 例: `戦闘 8W-2E-7L / 17 · 生存 7/17 · 集団戦 8`
 - 一覧カードの自分のK/D/Aに、CSV既存列を使ったTeam K/D/Aを併記
   - 例: `5 / 10 / 21 (54 / 46 / 69)`
 - Fight Detailの展開表示
@@ -65,6 +66,11 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - Fight参加者はcombat timelineの公式`team_id`を基に`FRIENDLY` / `ENEMY`へ分類し、公開用JSONの`relation`を使って味方・敵別に表示
 - Fight Detailの表示文言・Champion名・Objective名を日本語化
 - 未知の内部値・Champion名は元の値へフォールバック
+- カード直下に独立した「試合詳細」「戦闘詳細」ボタンを表示し、各詳細を初回展開時だけlazy生成
+- 試合詳細に試合情報、自分の成績、Team K/D/A・KP・Damage Share・Death Share、視界、Fight Summaryを表示
+- 試合詳細に公式`teamId`で分類したALLY 5人 / ENEMY 5人の匿名10人比較を表示
+- 10人比較は正式positionを使用し、Champion、K/D/A、CS/m、VS/m、DPMを表示
+- 試合詳細の公開データにはRiot ID、Summoner Name、PUUID等の個人識別情報を含めない
 
 ### 集計・出力
 
@@ -102,6 +108,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `data/csv/my_matches.csv` | Git管理 | Match DetailとTimeline SummaryをJOINしたサイト・集計の主データ |
 | `data/csv/timeline_summary.csv` | Git管理 | Match ID単位のFight集計 |
 | `data/csv/fight_details.json` | Git管理 | GitHub Pages用に軽量化した`review_fights`。Fight Detailの正規公開データ |
+| `data/csv/match_details.json` | Git管理 | Match-V5から必要な戦績だけを匿名化した試合詳細・10人比較データ |
 | `data/csv/current_rank.json` | Git管理 | 現在のSolo Rank |
 | `data/csv/last_updated.txt` | Git管理 | データ更新日時 |
 | `data/csv/monthly/` | Git管理（一部除外） | 月別match・summary |
@@ -124,6 +131,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `analyze_timeline.py` | TimelineからFight・死亡・Objective等を解析 |
 | `timeline_summary_exporter.py` | combat timelineから試合単位集計CSVを生成 |
 | `fight_detail_exporter.py` | `review_fights`を公開用`fight_details.json`へ軽量化。既存Match減少・解析失敗時は書き込みを拒否し、成功時はatomic replace |
+| `match_detail_exporter.py` | Match-V5から匿名10人比較を`match_details.json`へ抽出。既存Match減少・解析失敗を拒否しatomic replace |
 | `restore_missing_fight_raw.py` | 公開Fight Detailとcombat timelineの差集合を算出し、不足rawを既存Riot API・Timeline解析で復元する専用CLI（dry-run既定） |
 | `sync_private_data.py` | PublicとPrivateDataのrawを非破壊でローカル同期 |
 | `raw_paths.py` | Match単位の正式raw pathを一元管理 |
@@ -157,6 +165,8 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - Fight IDは抽出後に振り直さず、元JSONのIDを表示する。
 - Timeline Summaryは`my_matches.csv`へJOINするが、raw JSON自体はCSVへ埋め込まない。
 - GitHub Pagesは`data/raw/`へ依存しない。公開用Fight Detailは`data/csv/fight_details.json`へ軽量化する。
+- 試合詳細・10人比較はPIIを除外した`data/csv/match_details.json`を使用し、Pages buildからrawを参照しない。
+- 10人比較のALLY / ENEMYは公式`teamId`、RoleはMatch-V5の`teamPosition`（空の場合のみ`individualPosition`）を使い、Champion等から推測しない。
 - Fight Detailは初期表示性能のためlazy DOM生成とする。
 - UI日本語化は表示時マッピングで行い、EARLY / WIN等の内部値は変更しない。
 - Champion日本語名は既存`CHAMPION_JA_MAP`を再利用する。
@@ -175,7 +185,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - `fight_details.json`は約7.3MBあり、将来的に分割配信やオンデマンド取得を検討できる。
 - 公開`fight_details.json` 508試合とPrivateDataの主要raw 5種類は整合済み。
 - Riot API認証情報はローカル端末へ配置せず、PublicまたはPrivateDataのActions Secretsから各workflowへ必要時だけ注入する。
-- Public ActionsからPrivateDataへアクセスする`PRIVATE_DATA_TOKEN`の登録と、定期workflowの実行検証が未実施。
+- Public ActionsからPrivateDataへの連携と新per-match raw構造によるworkflow_dispatch実証は完了済み。
 
 ## 直近で進行中の作業
 
@@ -192,7 +202,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 次にやること
 
-1. fallback撤去後のworkflow_dispatchで新構造のpull / update / pushを最終実証する。
+1. Match History「試合詳細」v1の差分をreview後にcommit / pushする。
 2. PrivateDataに新規MatchがMatch directory単位で保存されることを次回更新時に確認する。
 3. `rank_history.csv`の列設計とRank専用ページを実装する。
 

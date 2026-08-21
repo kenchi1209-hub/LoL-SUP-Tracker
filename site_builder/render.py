@@ -22,6 +22,7 @@ from timezone_utils import now_jst
 
 BASE_DIR = Path(__file__).resolve().parent
 FIGHT_DETAILS_PATH = Path("data/csv/fight_details.json")
+MATCH_DETAILS_PATH = Path("data/csv/match_details.json")
 
 
 def load_template(name):
@@ -45,6 +46,34 @@ def load_review_fights(match_id):
     if not isinstance(fights, list):
         return []
     return fights
+
+
+@lru_cache(maxsize=1)
+def load_match_details():
+    try:
+        with MATCH_DETAILS_PATH.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_match_detail(match_id):
+    detail = load_match_details().get(match_id, {})
+    if not isinstance(detail, dict):
+        return {}
+    participants = []
+    for participant in detail.get("participants", []):
+        if not isinstance(participant, dict):
+            continue
+        compact = dict(participant)
+        champion = compact.get("champion", "")
+        compact["champion_name"] = CHAMPION_JA_MAP.get(champion, champion)
+        participants.append(compact)
+    return {
+        "game_duration_seconds": detail.get("game_duration_seconds", 0),
+        "participants": participants,
+    }
 
 
 def page_header_context(rows):
@@ -134,6 +163,7 @@ def match_history_data(rows):
             "survived_fights": row.get("survived_fights", 0),
             "died_fights": row.get("died_fights", 0),
             "teamfights": row.get("teamfights", 0),
+            "detail": load_match_detail(row.get("match_id", "")),
             "fights": load_review_fights(row.get("match_id", "")),
         }
         for row in rows

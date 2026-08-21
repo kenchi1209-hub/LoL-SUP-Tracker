@@ -325,11 +325,11 @@
     stats.append(
       text(
         "div",
-        `CS : ${Math.round(match.cs)} (${decimal(metrics.rate(match.cs, match), 2)}/m)`
+        `CS：${Math.round(match.cs)} (${decimal(metrics.rate(match.cs, match), 2)}/m)`
       ),
       text(
         "div",
-        `VS : ${Math.round(match.vision_score)} (${decimal(metrics.rate(match.vision_score, match), 2)}/m)`
+        `VS：${Math.round(match.vision_score)} (${decimal(metrics.rate(match.vision_score, match), 2)}/m)`
       )
     );
     const when = text("div", "", "m-date");

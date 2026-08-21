@@ -14,8 +14,8 @@
 .matches { display: flex; flex-direction: column; gap: 8px; }
 .match {
   display: grid;
-  grid-template-columns: 40px minmax(220px, 1fr) 126px 128px 175px 136px;
-  align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border);
+  grid-template-columns: 40px minmax(220px, 1fr) 225px 118px 165px 136px;
+  align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border);
   border-left-width: 4px; border-radius: 10px; padding: 10px 12px;
 }
 .match.win { border-left-color: var(--good, #38d39f); }
@@ -27,11 +27,12 @@
 .m-champ { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .m-champ img { width: 34px; height: 34px; border-radius: 7px; }
 .m-champ-name, .m-kda { font-weight: 600; }
+.m-kda { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
 .m-stats, .m-date { padding-left: 8px; line-height: 1.5; text-align: left; }
 .m-stats {
-  display: grid; grid-template-columns: 30px 4ch max-content;
-  align-items: baseline; column-gap: 2px;
+  display: grid; grid-template-columns: 30px 3ch max-content;
+  align-items: baseline; column-gap: 1px;
 }
 .m-stat-row { display: contents; }
 .m-stat-value { text-align: left; }

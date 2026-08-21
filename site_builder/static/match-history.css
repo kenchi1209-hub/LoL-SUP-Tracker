@@ -39,7 +39,7 @@
 .m-stat-row { display: contents; }
 .m-stat-value { text-align: left; }
 .m-actions {
-  display: grid; gap: 6px;
+  display: grid; gap: 3px;
 }
 .m-detail-toggle, .m-fight-toggle {
   padding: 4px 8px; color: var(--text); background: var(--panel2);
@@ -126,7 +126,7 @@
   background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
 }
 .match-history-more[hidden], .match-history-empty[hidden] { display: none; }
-@media (max-width: 760px) {
+@media (max-width: 1080px) {
   .match { grid-template-columns: max-content auto minmax(0, 1fr) auto; gap: 7px 6px; padding: 10px 8px; }
   .m-primary { display: contents; }
   .m-champ { display: contents; }

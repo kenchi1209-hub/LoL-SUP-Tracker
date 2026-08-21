@@ -13,8 +13,9 @@
 .match-history-summary { color: var(--muted); font-size: .82rem; margin: 0 0 10px; }
 .matches { display: flex; flex-direction: column; gap: 8px; }
 .match {
-  display: grid; grid-template-columns: max-content minmax(0,1.45fr) minmax(0,.85fr) minmax(0,1fr) minmax(110px,.65fr);
-  align-items: center; gap: 14px; background: var(--panel); border: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 40px minmax(220px, 1fr) 126px 128px 175px 136px;
+  align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border);
   border-left-width: 4px; border-radius: 10px; padding: 10px 12px;
 }
 .match.win { border-left-color: var(--good, #38d39f); }
@@ -22,17 +23,14 @@
 .m-result { font-weight: 700; font-size: .78rem; white-space: nowrap; }
 .match.win .m-result { color: var(--good, #38d39f); }
 .match.loss .m-result { color: var(--bad, #ff6b81); }
-.m-primary {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center; gap: 8px; min-width: 0;
-}
-.m-champ { display: flex; align-items: center; gap: 8px; }
+.m-primary { display: contents; }
+.m-champ { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .m-champ img { width: 34px; height: 34px; border-radius: 7px; }
 .m-champ-name, .m-kda { font-weight: 600; }
 .m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
 .m-stats, .m-date { padding-left: 8px; line-height: 1.5; text-align: left; }
 .m-stats {
-  display: grid; grid-template-columns: max-content minmax(3ch, max-content) max-content;
+  display: grid; grid-template-columns: 30px 4ch max-content;
   align-items: baseline; column-gap: 2px;
 }
 .m-stat-row { display: contents; }

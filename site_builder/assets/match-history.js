@@ -320,7 +320,7 @@
       text("div", `(${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`)
     );
     const primary = text("div", "", "m-primary");
-    primary.append(result, champion, kda);
+    primary.append(champion, kda);
     const stats = text("div", "", "m-stats");
     stats.append(
       text(
@@ -339,7 +339,7 @@
       text("div", `Patch ${match.patch || "-"}`)
     );
     const actions = text("div", "", "m-actions");
-    element.append(primary, stats, when, actions);
+    element.append(primary, result, stats, when, actions);
     addMatchDetail(element, actions, match);
     addFightDetail(element, actions, match);
     return element;

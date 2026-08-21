@@ -22,6 +22,10 @@
     if (!person) return "Unknown";
     return person.champion_name || person.champion || "Unknown";
   };
+  const fightPersonName = (person) => {
+    const role = person && person.role && person.role !== "UNKNOWN" ? person.role : "不明";
+    return `${role}:${personName(person)}`;
+  };
   const FIGHT_LABELS = {
     EARLY: "序盤", MID: "中盤", LATE: "終盤",
     SOLO: "単独戦", SMALL: "小規模戦", SKIRMISH: "小集団戦", TEAMFIGHT: "集団戦",
@@ -67,17 +71,19 @@
     );
 
     const kda = fight.my_kda || {};
+    const people = Array.isArray(fight.participants) ? fight.participants : [];
+    const friendlyCount = people.filter((person) => person.relation === "FRIENDLY").length;
+    const enemyCount = people.filter((person) => person.relation === "ENEMY").length;
     const metrics = text("div", "", "fight-metrics");
     metrics.append(
-      text("span", `K/D/A ${Number(kda.kills) || 0}/${Number(kda.deaths) || 0}/${Number(kda.assists) || 0}`),
-      text("span", `キル交換 ${Number(fight.friendly_kills) || 0}-${Number(fight.enemy_kills) || 0}`),
-      text("span", `参加者 ${Number(fight.participant_count) || 0}`),
-      text("span", `戦闘時間 ${Math.round((Number(fight.duration_ms) || 0) / 1000)}秒`)
+      text("span", `K/D/A：${Number(kda.kills) || 0}/${Number(kda.deaths) || 0}/${Number(kda.assists) || 0}`),
+      text("span", `キル交換：${Number(fight.friendly_kills) || 0}-${Number(fight.enemy_kills) || 0}`),
+      text("span", `参加者：${people.length} (${friendlyCount}-${enemyCount})`),
+      text("span", `戦闘時間：${Math.round((Number(fight.duration_ms) || 0) / 1000)}秒`)
     );
 
     const participants = text("div", "", "fight-participants");
     const participantGroups = text("div", "", "fight-participant-groups");
-    const people = fight.participants || [];
     const participantRows = [
       ["味方", people.filter((person) => person.relation === "FRIENDLY")],
       ["敵", people.filter((person) => person.relation === "ENEMY")],
@@ -90,7 +96,7 @@
       const row = text("div", "", "fight-participant-row");
       row.append(
         text("strong", `${label}:`, "fight-participant-label"),
-        text("span", members.map(personName).join(" / ") || "-")
+        text("span", members.map(fightPersonName).join(" / ") || "-")
       );
       participantGroups.append(row);
     });
@@ -255,6 +261,7 @@
     button.type = "button";
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", detailId);
+    button.setAttribute("aria-label", "試合詳細を開く");
     const panel = text("div", "", "match-detail");
     panel.id = detailId;
     panel.hidden = true;
@@ -267,7 +274,8 @@
       }
       panel.hidden = !opening;
       button.setAttribute("aria-expanded", String(opening));
-      button.textContent = opening ? "試合詳細を閉じる ▲" : "試合詳細 ▼";
+      button.setAttribute("aria-label", opening ? "試合詳細を閉じる" : "試合詳細を開く");
+      button.textContent = opening ? "▲" : "試合詳細 ▼";
     });
     actions.append(button);
     element.append(panel);
@@ -276,10 +284,11 @@
   function addFightDetail(element, actions, match) {
     const fights = Array.isArray(match.fights) ? match.fights : [];
     const detailId = `fight-detail-${String(match.match_id || "match").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-    const button = text("button", `戦闘詳細 (${fights.length}) ▼`, "m-fight-toggle");
+    const button = text("button", "戦闘詳細 ▼", "m-fight-toggle");
     button.type = "button";
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", detailId);
+    button.setAttribute("aria-label", `戦闘詳細を開く（${fights.length}件）`);
     if (!fights.length) button.disabled = true;
     const detail = text("div", "", "fight-detail");
     detail.id = detailId;
@@ -292,7 +301,8 @@
       }
       detail.hidden = !opening;
       button.setAttribute("aria-expanded", String(opening));
-      button.textContent = `${opening ? "戦闘詳細を閉じる" : "戦闘詳細"} (${fights.length}) ${opening ? "▲" : "▼"}`;
+      button.setAttribute("aria-label", opening ? `戦闘詳細を閉じる（${fights.length}件）` : `戦闘詳細を開く（${fights.length}件）`);
+      button.textContent = opening ? "▲" : "戦闘詳細 ▼";
     });
     actions.append(button);
     element.append(detail);
@@ -311,7 +321,7 @@
     const identity = text("div", "");
     identity.append(
       text("div", match.champion_name || match.champion, "m-champ-name"),
-      text("div", `${ROLE_NAMES[match.role] || match.role} · ${match.queue_name || match.queue_id}`, "m-meta")
+      text("div", `${ROLE_NAMES[match.role] || match.role}：${match.queue_name || match.queue_id}`, "m-meta")
     );
     champion.append(image, identity);
     const kda = text("div", "", "m-kda");

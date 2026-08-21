@@ -10,13 +10,25 @@ from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_fro
 
 
 OUTPUT_PATH = "data/csv/fight_details.json"
+ROLE_NAMES = {
+    "TOP": "TOP",
+    "JUNGLE": "JG",
+    "MIDDLE": "MID",
+    "BOTTOM": "ADC",
+    "UTILITY": "SUP",
+}
 
 
 class FightDetailExportError(RuntimeError):
     pass
 
 
-def compact_fight_person(person, player_team_id=None, include_relation=False):
+def compact_fight_person(
+    person,
+    player_team_id=None,
+    include_relation=False,
+    roles_by_participant_id=None,
+):
     if not isinstance(person, dict):
         return {"champion": "Unknown", "champion_name": "Unknown"}
     champion = person.get("champion") or "Unknown"
@@ -27,7 +39,31 @@ def compact_fight_person(person, player_team_id=None, include_relation=False):
     team_id = person.get("team_id")
     if include_relation and player_team_id is not None and team_id is not None:
         compact["relation"] = "FRIENDLY" if team_id == player_team_id else "ENEMY"
+    if roles_by_participant_id is not None:
+        compact["role"] = roles_by_participant_id.get(
+            person.get("participant_id"), "UNKNOWN"
+        )
     return compact
+
+
+def load_participant_roles(match_path):
+    with open(match_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+    participants = (data.get("info") or {}).get("participants") or []
+    roles = {}
+    for participant in participants:
+        if not isinstance(participant, dict):
+            continue
+        participant_id = participant.get("participantId")
+        if participant_id is None:
+            continue
+        position = (
+            participant.get("teamPosition")
+            or participant.get("individualPosition")
+            or ""
+        )
+        roles[participant_id] = ROLE_NAMES.get(position, "UNKNOWN")
+    return roles
 
 
 def compact_objective(objective):
@@ -46,7 +82,7 @@ def compact_objective(objective):
     }
 
 
-def compact_review_fight(fight, player_team_id=None):
+def compact_review_fight(fight, player_team_id=None, roles_by_participant_id=None):
     events = []
     for event in fight.get("events", []) or []:
         if not isinstance(event, dict) or event.get("type") != "CHAMPION_KILL":
@@ -76,7 +112,12 @@ def compact_review_fight(fight, player_team_id=None):
         "duration_ms": fight.get("duration_ms", 0),
         "participant_count": fight.get("participant_count", 0),
         "participants": [
-            compact_fight_person(person, player_team_id, include_relation=True)
+            compact_fight_person(
+                person,
+                player_team_id,
+                include_relation=True,
+                roles_by_participant_id=roles_by_participant_id,
+            )
             for person in fight.get("participants", []) or []
             if isinstance(person, dict)
         ],
@@ -124,8 +165,9 @@ def build_fight_details(timeline_pattern=None, raw_root=DEFAULT_RAW_ROOT):
             if not isinstance(fights, list):
                 fights = []
             player_team_id = (data.get("participant") or {}).get("team_id")
+            roles_by_participant_id = load_participant_roles(path.parent / "match.json")
             details[match_id] = [
-                compact_review_fight(fight, player_team_id)
+                compact_review_fight(fight, player_team_id, roles_by_participant_id)
                 for fight in fights
                 if isinstance(fight, dict)
             ]

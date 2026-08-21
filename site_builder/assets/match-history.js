@@ -156,8 +156,8 @@
     return item;
   }
 
-  function metricGroup(title, entries) {
-    const section = text("section", "", "match-detail-group");
+  function metricGroup(title, entries, className) {
+    const section = text("section", "", `match-detail-group${className ? ` ${className}` : ""}`);
     section.append(text("h4", title));
     const list = text("dl", "", "match-detail-metrics");
     entries.forEach(([label, value]) => {
@@ -257,18 +257,16 @@
         ["Damage Share", percent(number(match.damage_to_champions), allyDamage)],
         ["Death Share", percent(number(match.deaths), number(match.team_deaths))],
       ]),
-      metricGroup("視界", [
+      metricGroup("視界 / Fight", [
         ["Ward設置", String(number(match.wards_placed))],
         ["Ward破壊", String(number(match.wards_killed))],
         ["Control Ward購入", String(number(match.control_wards_bought))],
-      ]),
-      metricGroup("Fight Summary", [
         ["My Fights", String(fights)],
         ["W-E-L", `${fightWins}W-${number(match.fight_evens)}E-${number(match.fight_losses)}L`],
         ["Fight勝率", percent(fightWins, fights)],
         ["生存率", fights ? `${percent(survived, fights)} (${survived}/${fights})` : "-"],
         ["Teamfight", String(number(match.teamfights))],
-      ])
+      ], "match-detail-vision-fight")
     );
     root.append(overview, text("h4", "味方・敵10人比較", "match-player-title"), playerComparison(match));
     if (!self && participants.length) root.prepend(text("p", "自分の参加者データを確認できません", "match-detail-empty"));

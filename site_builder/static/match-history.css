@@ -58,7 +58,9 @@
 .fight-detail[hidden] { display: none; }
 .match-detail-content { display: grid; gap: 12px; min-width: 0; }
 .match-detail-overview {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(190px, 1.15fr) minmax(160px, .95fr) minmax(170px, 1fr) minmax(180px, 1.1fr);
+  gap: 12px;
 }
 .match-detail-group { min-width: 0; }
 .match-detail-group h4, .match-player-title { margin: 0 0 5px; font-size: .82rem; }
@@ -66,15 +68,19 @@
 .match-detail-metric { display: flex; justify-content: space-between; gap: 8px; font-size: .76rem; }
 .match-detail-metric dt { color: var(--muted); }
 .match-detail-metric dd { margin: 0; text-align: right; }
+.match-detail-vision-fight .match-detail-metric:nth-child(4) {
+  margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border);
+}
 .match-detail-empty { margin: 0; color: var(--muted); font-size: .76rem; }
 .match-player-table {
-  display: grid; min-width: 0; overflow-x: auto; font-size: .72rem;
+  display: grid; width: fit-content; max-width: 100%; min-width: 0;
+  justify-self: start; overflow-x: auto; font-size: .72rem;
   scrollbar-width: thin;
 }
 .match-player-header, .match-player-row {
   display: grid;
-  grid-template-columns: 36px minmax(76px, 1fr) 62px 78px 78px 96px;
-  align-items: center; gap: 3px; min-width: 449px; padding: 3px 4px;
+  grid-template-columns: 36px 104px 62px 78px 78px 96px;
+  align-items: center; gap: 3px; width: 100%; min-width: 477px; padding: 3px 4px;
 }
 .match-player-header { color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; }
 .match-player-row { border-bottom: 1px solid rgba(255,255,255,.05); }

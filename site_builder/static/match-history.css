@@ -31,10 +31,12 @@
 .m-champ-name, .m-kda { font-weight: 600; }
 .m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
 .m-stats, .m-date { padding-left: 8px; line-height: 1.5; text-align: left; }
-.m-stat-row {
-  display: grid; grid-template-columns: 4ch 3ch auto; align-items: baseline; column-gap: 5px;
+.m-stats {
+  display: grid; grid-template-columns: max-content minmax(3ch, max-content) max-content;
+  align-items: baseline; column-gap: 2px;
 }
-.m-stat-value { text-align: right; }
+.m-stat-row { display: contents; }
+.m-stat-value { text-align: left; }
 .m-actions {
   display: grid; gap: 6px;
 }
@@ -137,7 +139,7 @@
     grid-column: 2 / -1; display: flex; flex-wrap: nowrap; gap: 2px 6px;
     padding-left: 0; white-space: nowrap; font-size: .74rem;
   }
-  .m-stat-row { display: inline-flex; gap: 3px; }
+  .m-stat-row { display: inline-flex; gap: 2px; }
   .m-stats > div + div::before, .m-date > div + div::before { content: "/"; margin-right: 6px; }
   .m-actions { grid-column: 2 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-detail, .fight-detail { grid-column: 1 / -1; }

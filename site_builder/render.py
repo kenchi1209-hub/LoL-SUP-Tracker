@@ -116,14 +116,18 @@ STATISTICS_COLGROUP = (
     '</colgroup>'
 )
 
-NAV_ITEMS = (
-    ("overview", "Overview", "index.html"),
-    ("support", "SUP", "support.html"),
-    ("mid", "MID", "mid.html"),
-    ("top", "TOP", "top.html"),
-    ("adc", "ADC", "adc.html"),
-    ("jungle", "JG", "jungle.html"),
-    ("history", "Match History", "history.html"),
+NAV_ROWS = (
+    (
+        ("overview", "Overview", "index.html"),
+        ("history", "Match History", "history.html"),
+    ),
+    (
+        ("top", "TOP", "top.html"),
+        ("jungle", "JG", "jungle.html"),
+        ("mid", "MID", "mid.html"),
+        ("adc", "ADC", "adc.html"),
+        ("support", "SUP", "support.html"),
+    ),
 )
 
 
@@ -216,17 +220,20 @@ def esc(s):
 
 
 def render_navigation(active_page):
-    links = []
-    for page_id, label, href in NAV_ITEMS:
-        active = page_id == active_page
-        class_name = "nav-link active" if active else "nav-link"
-        current = ' aria-current="page"' if active else ""
-        links.append(
-            f'<a class="{class_name}" href="{href}"{current}>{label}</a>'
-        )
+    rows = []
+    for items in NAV_ROWS:
+        links = []
+        for page_id, label, href in items:
+            active = page_id == active_page
+            class_name = "nav-link active" if active else "nav-link"
+            current = ' aria-current="page"' if active else ""
+            links.append(
+                f'<a class="{class_name}" href="{href}"{current}>{label}</a>'
+            )
+        rows.append(f'<div class="site-nav-row">{"".join(links)}</div>')
     return (
         '<nav class="site-nav" aria-label="サイトナビゲーション">'
-        f'{"".join(links)}</nav>'
+        f'{"".join(rows)}</nav>'
     )
 
 

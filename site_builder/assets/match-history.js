@@ -244,19 +244,16 @@
         ["結果", match.win ? "WIN" : "LOSS"],
         ["Game Time", duration(match.game_duration_seconds)],
       ]),
-      metricGroup("自分の成績", [
-        ["K/D/A", `${number(match.kills)} / ${number(match.deaths)} / ${number(match.assists)}`],
-        ["KDA", decimal(ownKda, 2)],
+      metricGroup("パフォーマンス", [
+        ["K/D/A (KDA)", `${number(match.kills)} / ${number(match.deaths)} / ${number(match.assists)} (${decimal(ownKda, 2)})`],
         ["CS/m (CS)", `${decimal(global.MatchHistoryMetrics.rate(match.cs, match), 2)} (${Math.round(number(match.cs))})`],
         ["VS/m (VS)", `${decimal(global.MatchHistoryMetrics.rate(match.vision_score, match), 2)} (${Math.round(number(match.vision_score))})`],
         ["DPM (DMG)", `${decimal(global.MatchHistoryMetrics.rate(match.damage_to_champions, match), 0)} (${Math.round(number(match.damage_to_champions)).toLocaleString("ja-JP")})`],
-      ]),
-      metricGroup("チーム内比較", [
         ["Team K/D/A", `${number(match.team_kills)} / ${number(match.team_deaths)} / ${number(match.team_assists)}`],
         ["KP", percent(number(match.kills) + number(match.assists), number(match.team_kills))],
         ["Damage Share", percent(number(match.damage_to_champions), allyDamage)],
         ["Death Share", percent(number(match.deaths), number(match.team_deaths))],
-      ]),
+      ], "match-detail-performance"),
       metricGroup("視界 / Fight", [
         ["Ward設置", String(number(match.wards_placed))],
         ["Ward破壊", String(number(match.wards_killed))],
@@ -353,18 +350,19 @@
     const primary = text("div", "", "m-primary");
     primary.append(champion, kda);
     const stats = text("div", "", "m-stats");
-    const statRow = (label, value, rate) => {
+    const statRow = (label, value, total = "") => {
       const row = text("div", "", "m-stat-row");
       row.append(
         text("span", `${label}：`, "m-stat-label"),
         text("span", String(value), "m-stat-value"),
-        text("span", `(${rate}/m)`, "m-stat-rate")
+        text("span", total === "" ? "" : `(${total})`, "m-stat-total")
       );
       return row;
     };
     stats.append(
-      statRow("CS", Math.round(match.cs), decimal(metrics.rate(match.cs, match), 2)),
-      statRow("VS", Math.round(match.vision_score), decimal(metrics.rate(match.vision_score, match), 2))
+      statRow("CS/m", decimal(metrics.rate(match.cs, match), 2), Math.round(match.cs)),
+      statRow("VS/m", decimal(metrics.rate(match.vision_score, match), 2), Math.round(match.vision_score)),
+      statRow("DPM", decimal(metrics.rate(match.damage_to_champions, match), 0))
     );
     const when = text("div", "", "m-date");
     when.append(

@@ -319,34 +319,27 @@
       text("div", `${match.kills} / ${match.deaths} / ${match.assists}`),
       text("div", `(${match.team_kills} / ${match.team_deaths} / ${match.team_assists})`)
     );
+    const primary = text("div", "", "m-primary");
+    primary.append(result, champion, kda);
     const stats = text("div", "", "m-stats");
     stats.append(
       text(
         "div",
-        `CS ${Math.round(match.cs)} (${decimal(metrics.rate(match.cs, match), 2)}/m) · ` +
-        `VS ${Math.round(match.vision_score)} (${decimal(metrics.rate(match.vision_score, match), 2)}/m)`
+        `CS : ${Math.round(match.cs)} (${decimal(metrics.rate(match.cs, match), 2)}/m)`
       ),
       text(
         "div",
-        `Damage ${Math.round(match.damage_to_champions)} ` +
-        `(${decimal(metrics.rate(match.damage_to_champions, match), 0)}/m) · ` +
-        `Time ${duration(match.game_duration_seconds)}`
-      ),
-      text(
-        "div",
-        `戦闘 ${Number(match.fight_wins) || 0}W-` +
-        `${Number(match.fight_evens) || 0}E-` +
-        `${Number(match.fight_losses) || 0}L / ${Number(match.my_fights) || 0} · ` +
-        `生存 ${Number(match.survived_fights) || 0}/${Number(match.my_fights) || 0} · ` +
-        `集団戦 ${Number(match.teamfights) || 0}`,
-        "m-fight"
+        `VS : ${Math.round(match.vision_score)} (${decimal(metrics.rate(match.vision_score, match), 2)}/m)`
       )
     );
     const when = text("div", "", "m-date");
-    when.append(text("div", `Patch ${match.patch || "-"}`), text("div", String(match.date || "").slice(0, 16)));
+    when.append(
+      text("div", `Time ${duration(match.game_duration_seconds)}`),
+      text("div", String(match.date || "").slice(0, 16)),
+      text("div", `Patch ${match.patch || "-"}`)
+    );
     const actions = text("div", "", "m-actions");
-    element.append(result, champion, kda, stats, when);
-    element.append(actions);
+    element.append(primary, stats, when, actions);
     addMatchDetail(element, actions, match);
     addFightDetail(element, actions, match);
     return element;

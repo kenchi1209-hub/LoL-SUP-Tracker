@@ -13,13 +13,13 @@
 .match-history-summary { color: var(--muted); font-size: .82rem; margin: 0 0 10px; }
 .matches { display: flex; flex-direction: column; gap: 8px; }
 .match {
-  display: grid; grid-template-columns: minmax(0,1.45fr) minmax(68px,.45fr) minmax(0,.85fr) minmax(0,1fr) minmax(110px,.65fr);
+  display: grid; grid-template-columns: max-content minmax(0,1.45fr) minmax(0,.85fr) minmax(0,1fr) minmax(110px,.65fr);
   align-items: center; gap: 14px; background: var(--panel); border: 1px solid var(--border);
   border-left-width: 4px; border-radius: 10px; padding: 10px 12px;
 }
 .match.win { border-left-color: var(--good, #38d39f); }
 .match.loss { border-left-color: var(--bad, #ff6b81); }
-.m-result { font-weight: 700; font-size: .78rem; }
+.m-result { font-weight: 700; font-size: .78rem; white-space: nowrap; }
 .match.win .m-result { color: var(--good, #38d39f); }
 .match.loss .m-result { color: var(--bad, #ff6b81); }
 .m-primary {
@@ -31,6 +31,10 @@
 .m-champ-name, .m-kda { font-weight: 600; }
 .m-meta, .m-stats, .m-date { color: var(--muted); font-size: .78rem; }
 .m-stats, .m-date { padding-left: 8px; line-height: 1.5; text-align: left; }
+.m-stat-row {
+  display: grid; grid-template-columns: 4ch 3ch auto; align-items: baseline; column-gap: 5px;
+}
+.m-stat-value { text-align: right; }
 .m-actions {
   display: grid; gap: 6px;
 }
@@ -120,17 +124,22 @@
 }
 .match-history-more[hidden], .match-history-empty[hidden] { display: none; }
 @media (max-width: 760px) {
-  .match { grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px 8px; }
+  .match { grid-template-columns: max-content auto minmax(0, 1fr) auto; gap: 7px 6px; padding: 10px 8px; }
   .m-primary { display: contents; }
-  .m-champ > div { display: none; }
-  .m-kda { display: flex; align-items: center; gap: 5px; white-space: nowrap; font-size: .78rem; }
-  .m-result { justify-self: end; }
+  .m-champ { display: contents; }
+  .m-champ > div { min-width: 0; }
+  .m-champ-name, .m-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-champ-name { font-size: .76rem; }
+  .m-meta { font-size: .65rem; }
+  .m-kda { display: flex; align-items: center; gap: 3px; white-space: nowrap; font-size: .68rem; }
+  .m-result { align-self: center; font-size: .7rem; }
   .m-stats, .m-date {
-    grid-column: 1 / -1; display: flex; flex-wrap: nowrap; gap: 2px 6px;
+    grid-column: 2 / -1; display: flex; flex-wrap: nowrap; gap: 2px 6px;
     padding-left: 0; white-space: nowrap; font-size: .74rem;
   }
+  .m-stat-row { display: inline-flex; gap: 3px; }
   .m-stats > div + div::before, .m-date > div + div::before { content: "/"; margin-right: 6px; }
-  .m-actions { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .m-actions { grid-column: 2 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-detail, .fight-detail { grid-column: 1 / -1; }
   .fight-item-header, .fight-metrics { align-items: flex-start; flex-direction: column; gap: 4px; }
   .match-detail-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }

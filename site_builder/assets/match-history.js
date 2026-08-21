@@ -322,15 +322,18 @@
     const primary = text("div", "", "m-primary");
     primary.append(champion, kda);
     const stats = text("div", "", "m-stats");
+    const statRow = (label, value, rate) => {
+      const row = text("div", "", "m-stat-row");
+      row.append(
+        text("span", `${label}：`, "m-stat-label"),
+        text("span", String(value), "m-stat-value"),
+        text("span", `(${rate}/m)`, "m-stat-rate")
+      );
+      return row;
+    };
     stats.append(
-      text(
-        "div",
-        `CS：${Math.round(match.cs)} (${decimal(metrics.rate(match.cs, match), 2)}/m)`
-      ),
-      text(
-        "div",
-        `VS：${Math.round(match.vision_score)} (${decimal(metrics.rate(match.vision_score, match), 2)}/m)`
-      )
+      statRow("CS", Math.round(match.cs), decimal(metrics.rate(match.cs, match), 2)),
+      statRow("VS", Math.round(match.vision_score), decimal(metrics.rate(match.vision_score, match), 2))
     );
     const when = text("div", "", "m-date");
     when.append(
@@ -339,7 +342,7 @@
       text("div", `Patch ${match.patch || "-"}`)
     );
     const actions = text("div", "", "m-actions");
-    element.append(primary, result, stats, when, actions);
+    element.append(result, primary, stats, when, actions);
     addMatchDetail(element, actions, match);
     addFightDetail(element, actions, match);
     return element;

@@ -59,13 +59,19 @@
 .match-detail-content { display: grid; gap: 12px; min-width: 0; }
 .match-detail-overview {
   display: grid;
-  grid-template-columns: minmax(190px, .9fr) minmax(270px, 1.35fr) minmax(190px, 1fr);
-  gap: 12px;
+  grid-template-columns: 230px 300px 230px;
+  justify-content: start;
+  gap: 18px;
 }
 .match-detail-group { min-width: 0; }
 .match-detail-group h4, .match-player-title { margin: 0 0 5px; font-size: .82rem; }
 .match-detail-metrics { display: grid; gap: 4px; margin: 0; }
-.match-detail-metric { display: flex; justify-content: space-between; gap: 8px; font-size: .76rem; }
+.match-detail-metric {
+  display: grid; grid-template-columns: 84px max-content;
+  justify-content: start; column-gap: 10px; font-size: .76rem;
+}
+.match-detail-performance .match-detail-metric { grid-template-columns: 108px max-content; }
+.match-detail-vision-fight .match-detail-metric { grid-template-columns: 104px max-content; }
 .match-detail-metric dt { color: var(--muted); }
 .match-detail-metric dd { margin: 0; text-align: right; white-space: nowrap; }
 .match-detail-performance .match-detail-metric:nth-child(5) {

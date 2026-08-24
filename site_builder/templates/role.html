@@ -46,7 +46,42 @@
       <p class="filter-result">対象試合数: <strong id="filtered-match-count">{match_count}</strong></p>
       <section class="overview" aria-labelledby="overview-heading">
         <h2 id="overview-heading">Overview</h2>
-        {overview_content}
+        <div class="role-summary-grid">
+          <article class="card role-summary-block">
+            <h3>試合概要</h3>
+            <div class="role-summary-metrics">
+              <div class="role-summary-stat">
+                <div class="stat-label">試合数</div>
+                <div class="stat-value" data-overview="games">0戦</div>
+                <div class="stat-sub" data-overview="record">0勝 0敗</div>
+              </div>
+              <div class="role-summary-stat">
+                <div class="stat-label">勝率</div>
+                <div class="stat-value" data-overview="winrate">-</div>
+              </div>
+              <div class="role-summary-stat">
+                <div class="stat-label">平均ゲーム時間</div>
+                <div class="stat-value" data-overview="duration">-</div>
+              </div>
+            </div>
+          </article>
+          <article class="card role-summary-block">
+            <h3>平均パフォーマンス</h3>
+            <div class="role-summary-performance">
+              <div class="role-summary-stat role-summary-kda">
+                <div class="stat-label">K/D/A (KDA)</div>
+                <div class="stat-value">
+                  <span data-overview="avg-kda">-</span>
+                  <span class="role-summary-kda-ratio">(<span data-overview="kda">-</span>)</span>
+                </div>
+              </div>
+              <div class="role-summary-stat">
+                <div class="stat-label">CS/m</div>
+                <div class="stat-value" data-overview="cspm">-</div>
+              </div>
+            </div>
+          </article>
+        </div>
       </section>
       <section class="overview role-overview" data-role-overview="{role_code}">
         <h2>Overview - {role_name}</h2><div id="role-overview-cards" class="cards"></div>

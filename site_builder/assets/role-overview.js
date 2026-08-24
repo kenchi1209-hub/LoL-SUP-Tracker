@@ -5,35 +5,41 @@
     return global.document.querySelector(`[data-overview="${name}"]`);
   }
 
+  function setMetricText(name, value) {
+    const element = metricElement(name);
+    if (element) element.textContent = value;
+  }
+
   function renderOverview(matches) {
     const metrics = global.RoleMetrics.aggregateMatches(matches);
-    metricElement("games").textContent = `${metrics.games}戦`;
-    metricElement("record").textContent = `${metrics.wins}勝 ${metrics.losses}敗`;
+    setMetricText("games", `${metrics.games}戦`);
+    setMetricText("record", `${metrics.wins}勝 ${metrics.losses}敗`);
 
     const winrate = metricElement("winrate");
     winrate.classList.remove("good", "bad");
     if (!metrics.games) {
       winrate.textContent = "-";
-      metricElement("avg-kda").textContent = "-";
-      metricElement("kda").textContent = "-";
-      metricElement("cspm").textContent = "-";
-      metricElement("vspm").textContent = "-";
-      metricElement("duration").textContent = "-";
+      setMetricText("avg-kda", "-");
+      setMetricText("kda", "-");
+      setMetricText("cspm", "-");
+      setMetricText("vspm", "-");
+      setMetricText("duration", "-");
       return metrics;
     }
 
     winrate.textContent = `${global.RoleMetrics.formatDecimal(metrics.winrate, 1)}%`;
     winrate.classList.add(metrics.winrate >= 50 ? "good" : "bad");
-    metricElement("avg-kda").textContent = [
+    setMetricText("avg-kda", [
       global.RoleMetrics.formatDecimal(metrics.avgKills, 1),
       global.RoleMetrics.formatDecimal(metrics.avgDeaths, 1),
       global.RoleMetrics.formatDecimal(metrics.avgAssists, 1),
-    ].join(" / ");
-    metricElement("kda").textContent = global.RoleMetrics.formatDecimal(metrics.kda, 2);
-    metricElement("cspm").textContent = global.RoleMetrics.formatDecimal(metrics.cspm, 2);
-    metricElement("vspm").textContent = global.RoleMetrics.formatDecimal(metrics.vspm, 2);
-    metricElement("duration").textContent = global.RoleMetrics.formatDuration(
-      metrics.avgDurationSeconds
+    ].join(" / "));
+    setMetricText("kda", global.RoleMetrics.formatDecimal(metrics.kda, 2));
+    setMetricText("cspm", global.RoleMetrics.formatDecimal(metrics.cspm, 2));
+    setMetricText("vspm", global.RoleMetrics.formatDecimal(metrics.vspm, 2));
+    setMetricText(
+      "duration",
+      global.RoleMetrics.formatDuration(metrics.avgDurationSeconds)
     );
     return metrics;
   }

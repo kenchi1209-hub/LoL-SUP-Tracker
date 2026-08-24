@@ -46,15 +46,7 @@
       <p class="filter-result">対象試合数: <strong id="filtered-match-count">{match_count}</strong></p>
       <section class="overview" aria-labelledby="overview-heading">
         <h2 id="overview-heading">Overview</h2>
-        <div class="cards">
-          <div class="card"><div class="stat-label">試合数</div><div class="stat-value" data-overview="games">0戦</div></div>
-          <div class="card"><div class="stat-label">勝率</div><div class="stat-value" data-overview="winrate">-</div><div class="stat-sub" data-overview="record">0勝 0敗</div></div>
-          <div class="card"><div class="stat-label">平均K / D / A</div><div class="stat-value" data-overview="avg-kda">-</div></div>
-          <div class="card"><div class="stat-label">KDA</div><div class="stat-value" data-overview="kda">-</div></div>
-          <div class="card"><div class="stat-label">CS/m</div><div class="stat-value" data-overview="cspm">-</div></div>
-          <div class="card"><div class="stat-label">VS/m</div><div class="stat-value" data-overview="vspm">-</div></div>
-          <div class="card"><div class="stat-label">平均ゲーム時間</div><div class="stat-value" data-overview="duration">-</div></div>
-        </div>
+        {overview_content}
       </section>
       <section class="overview role-overview" data-role-overview="{role_code}">
         <h2>Overview - {role_name}</h2><div id="role-overview-cards" class="cards"></div>

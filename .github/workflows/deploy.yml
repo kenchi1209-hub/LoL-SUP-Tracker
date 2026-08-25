@@ -159,7 +159,9 @@ jobs:
             echo "Public raw must not be staged" >&2
             exit 1
           fi
-          git diff --cached --check
+          # csv.DictWriter emits standards-compliant CRLF. Ignore only that CR;
+          # ordinary trailing spaces and other whitespace errors still fail.
+          git -c core.whitespace=cr-at-eol diff --cached --check
           if git diff --cached --quiet; then
             echo "No public data changes to commit"
           else

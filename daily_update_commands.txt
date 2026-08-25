@@ -1,12 +1,29 @@
 git switch build
-git pull origin build
+git fetch origin
+git pull --ff-only origin build
+
+cd ..\LoL-SUP-Tracker-PrivateData
+git switch main
+git pull --ff-only origin main
+
+cd ..\LoL-Analytics
+python sync_private_data.py pull --apply
+
 python main.py
+
 git status
 git add .
-git diff --cached --quiet
-if ($LASTEXITCODE -eq 0) {
-  Write-Host "コミットする変更はありません"
+
+git -c core.whitespace=cr-at-eol diff --cached --check
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "差分チェックでエラーが出ています。コミットを中止します"
 } else {
-  git commit -m "Update LoL data $((Get-Date).AddHours(-5).ToString('yyyy-MM-dd'))"
-  git push origin build
+  git diff --cached --quiet
+
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "コミットする変更はありません"
+  } else {
+    git commit -m "Update LoL data $((Get-Date).AddHours(-5).ToString('yyyy-MM-dd'))"
+    git push origin build
+  }
 }

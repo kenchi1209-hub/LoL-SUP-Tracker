@@ -1,29 +1,5 @@
-git switch build
-git fetch origin
-git pull --ff-only origin build
-
-cd ..\LoL-SUP-Tracker-PrivateData
-git switch main
-git pull --ff-only origin main
-
-cd ..\LoL-Analytics
-python sync_private_data.py pull --apply
-
-python main.py
-
-git status
-git add .
-
-git -c core.whitespace=cr-at-eol diff --cached --check
+Set-Location C:\Users\kissx\Desktop\LoL-Analytics
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\daily_update.ps1
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "差分チェックでエラーが出ています。コミットを中止します"
-} else {
-  git diff --cached --quiet
-
-  if ($LASTEXITCODE -eq 0) {
-    Write-Host "コミットする変更はありません"
-  } else {
-    git commit -m "Update LoL data $((Get-Date).AddHours(-5).ToString('yyyy-MM-dd'))"
-    git push origin build
-  }
+  throw "LoLデータ更新に失敗しました。上のエラーを確認してください。"
 }

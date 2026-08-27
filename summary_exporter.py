@@ -3,9 +3,10 @@ import os
 from collections import defaultdict
 from champion_registry import champion_name_ja
 from queue_map import queue_id_to_name
+from data_paths import CSV_ROOT
 
-MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
-SUMMARY_TXT_PATH = "data/csv/summary.txt"
+MY_MATCHES_CSV_PATH = CSV_ROOT / "my_matches.csv"
+SUMMARY_TXT_PATH = CSV_ROOT / "summary.txt"
 
 def to_float(value, default=0.0):
     try:

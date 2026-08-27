@@ -3,11 +3,20 @@
 import csv
 import json
 import os
+from data_paths import get_data_paths
+
+_paths = get_data_paths()
+MATCHES_CSV = _paths.csv / "my_matches.csv"
+LAST_UPDATED_TXT = _paths.csv / "last_updated.txt"
+CURRENT_RANK_JSON = _paths.csv / "current_rank.json"
 
 
-MATCHES_CSV = "data/csv/my_matches.csv"
-LAST_UPDATED_TXT = "data/csv/last_updated.txt"
-CURRENT_RANK_JSON = "data/csv/current_rank.json"
+def configure_data_root(data_root=None):
+    global MATCHES_CSV, LAST_UPDATED_TXT, CURRENT_RANK_JSON
+    paths = get_data_paths(data_root)
+    MATCHES_CSV = paths.csv / "my_matches.csv"
+    LAST_UPDATED_TXT = paths.csv / "last_updated.txt"
+    CURRENT_RANK_JSON = paths.csv / "current_rank.json"
 
 
 def to_float(v, default=0.0):

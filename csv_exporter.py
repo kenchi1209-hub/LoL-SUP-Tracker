@@ -3,8 +3,9 @@ import json
 import os
 from queue_map import is_allowed_queue_id
 from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths
+from data_paths import CSV_ROOT
 
-CSV_PATH = "data/csv/participants.csv"
+CSV_PATH = CSV_ROOT / "participants.csv"
 
 FIELDNAMES = [
     "match_id",

@@ -1,14 +1,12 @@
 import csv
 import json
 import os
+from pathlib import Path
+from data_paths import CSV_ROOT
 from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths
 
 
-OUTPUT_PATH = os.path.join(
-    "data",
-    "csv",
-    "timeline_summary.csv",
-)
+OUTPUT_PATH = CSV_ROOT / "timeline_summary.csv"
 
 
 FIELDNAMES = [
@@ -224,10 +222,7 @@ def build_summary_row(data):
 
 
 def export_timeline_summary(raw_root=DEFAULT_RAW_ROOT, output_path=OUTPUT_PATH):
-    os.makedirs(
-        "data/csv",
-        exist_ok=True,
-    )
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     paths = sorted(iter_combat_timeline_paths(raw_root))
 

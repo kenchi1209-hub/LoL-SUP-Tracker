@@ -1,3 +1,4 @@
+import argparse
 import csv
 import json
 import os
@@ -36,20 +37,19 @@ from timeline_summary_exporter import export_timeline_summary
 from fight_detail_exporter import export_fight_details
 from match_detail_exporter import export_match_details
 from queue_map import is_allowed_queue_id
+from data_paths import get_data_paths
 
 
-def write_last_updated():
-    os.makedirs(
-        "data/csv",
-        exist_ok=True,
-    )
+def write_last_updated(csv_root=None):
+    csv_root = get_data_paths().csv if csv_root is None else csv_root
+    os.makedirs(csv_root, exist_ok=True)
 
     updated_at = now_jst().strftime(
         "%Y-%m-%d %H:%M"
     )
 
     with open(
-        "data/csv/last_updated.txt",
+        csv_root / "last_updated.txt",
         "w",
         encoding="utf-8",
     ) as f:
@@ -60,16 +60,17 @@ def write_last_updated():
     )
 
 
-def write_current_rank(puuid):
+def write_current_rank(puuid, csv_root=None):
+    csv_root = get_data_paths().csv if csv_root is None else csv_root
     rank = get_current_solo_rank(puuid)
 
     os.makedirs(
-        "data/csv",
+        csv_root,
         exist_ok=True,
     )
 
     with open(
-        "data/csv/current_rank.json",
+        csv_root / "current_rank.json",
         "w",
         encoding="utf-8",
     ) as f:
@@ -93,7 +94,8 @@ def write_current_rank(puuid):
         )
 
 
-def load_published_match_ids(csv_path="data/csv/my_matches.csv"):
+def load_published_match_ids(csv_path=None):
+    csv_path = csv_path or get_data_paths().csv / "my_matches.csv"
     if not os.path.exists(csv_path):
         return set()
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as file:
@@ -104,7 +106,7 @@ def load_published_match_ids(csv_path="data/csv/my_matches.csv"):
         }
 
 
-def discover_new_eligible_matches(match_ids, published_ids=None):
+def discover_new_eligible_matches(match_ids, published_ids=None, raw_root=None):
     """Return eligible matches not yet present in the public match dataset."""
     published_ids = (
         published_ids
@@ -118,7 +120,7 @@ def discover_new_eligible_matches(match_ids, published_ids=None):
         if match_id in published_ids:
             continue
 
-        detail_path = paths_for_match(match_id).detail
+        detail_path = paths_for_match(match_id, raw_root).detail
         if detail_path.exists():
             with detail_path.open("r", encoding="utf-8") as file:
                 detail = json.load(file)
@@ -134,7 +136,8 @@ def discover_new_eligible_matches(match_ids, published_ids=None):
     return eligible, ineligible
 
 
-def run():
+def run(data_root=None):
+    paths = get_data_paths(data_root)
     puuid = get_puuid(GAME_NAME, TAG_LINE)
     print("PUUID")
     print(puuid)
@@ -150,7 +153,10 @@ def run():
     for match_id in match_ids:
         print(match_id)
 
-    new_matches, ineligible_ids = discover_new_eligible_matches(match_ids)
+    published_ids = load_published_match_ids(paths.csv / "my_matches.csv")
+    new_matches, ineligible_ids = discover_new_eligible_matches(
+        match_ids, published_ids, paths.raw
+    )
     print(
         "\n新規Match確認: "
         f"eligible {len(new_matches)}件 / 対象外Queue {len(ineligible_ids)}件"
@@ -162,31 +168,31 @@ def run():
     new_match_ids = list(new_matches)
     print("\n試合詳細JSONを保存します")
     for match_id, data in new_matches.items():
-        if paths_for_match(match_id).detail.exists():
-            print(f"既存スキップ: {paths_for_match(match_id).detail}")
+        if paths_for_match(match_id, paths.raw).detail.exists():
+            print(f"既存スキップ: {paths_for_match(match_id, paths.raw).detail}")
             continue
-        path = save_match_json(match_id, data)
+        path = save_match_json(match_id, data, raw_root=paths.raw)
         print(f"保存完了: {path}")
 
     print("\nTimeline JSONを保存します")
     for match_id in new_match_ids:
-        if paths_for_match(match_id).timeline.exists():
-            print(f"既存スキップ: {paths_for_match(match_id).timeline}")
+        if paths_for_match(match_id, paths.raw).timeline.exists():
+            print(f"既存スキップ: {paths_for_match(match_id, paths.raw).timeline}")
             continue
         timeline_data = get_match_timeline(match_id)
-        path = save_match_timeline_json(match_id, timeline_data)
+        path = save_match_timeline_json(match_id, timeline_data, raw_root=paths.raw)
         print(f"保存完了: {path}")
 
     print("\nTimeline解析を実行します")
     timeline_success = 0
     timeline_errors = []
     for match_id in new_match_ids:
-        if paths_for_match(match_id).combat.exists():
+        if paths_for_match(match_id, paths.raw).combat.exists():
             timeline_success += 1
-            print(f"既存解析スキップ: {paths_for_match(match_id).combat}")
+            print(f"既存解析スキップ: {paths_for_match(match_id, paths.raw).combat}")
             continue
         try:
-            result = analyze_match_timeline(match_id, puuid=puuid)
+            result = analyze_match_timeline(match_id, puuid=puuid, raw_root=paths.raw)
             timeline_success += 1
             print(
                 f"解析完了: {match_id} | {result['champion']} "
@@ -206,33 +212,39 @@ def run():
         raise RuntimeError(f"Timeline解析に失敗しました: {failed_ids}")
 
     print("\nTimeline Summary CSVに出力します")
-    export_timeline_summary()
+    export_timeline_summary(paths.raw, paths.csv / "timeline_summary.csv")
     print("\nExporting Fight Detail JSON")
-    export_fight_details()
+    export_fight_details(output_path=paths.csv / "fight_details.json", raw_root=paths.raw)
     print("\nExporting public Match Detail JSON")
-    export_match_details(puuid)
+    export_match_details(puuid, paths.raw, paths.csv / "match_details.json")
     print("\nparticipants.csvに出力します")
-    export_participants_from_raw()
+    export_participants_from_raw(paths.raw, paths.csv / "participants.csv")
     print("\nmy_matches.csvに出力します")
-    export_my_matches_from_raw(puuid)
+    export_my_matches_from_raw(
+        puuid, paths.raw, paths.csv / "my_matches.csv", paths.csv / "timeline_summary.csv"
+    )
     print("\nresult_report.csvに出力します")
-    export_result_report()
+    export_result_report(paths.csv / "my_matches.csv", paths.csv / "result_report.csv")
     print("\nreview.csvテンプレートを作成します")
-    create_review_template()
+    create_review_template(paths.csv / "my_matches.csv", paths.csv / "review.csv")
     print("\nfinal_report.txtに出力します")
-    export_final_report()
+    export_final_report(
+        paths.csv / "result_report.csv", paths.csv / "review.csv", paths.csv / "final_report.txt"
+    )
     print("\nsummary.txtに出力します")
-    export_summary()
+    export_summary(paths.csv / "my_matches.csv", paths.csv / "summary.txt")
     print("\n月別CSVに出力します")
-    export_monthly_csvs()
+    export_monthly_csvs(paths.csv)
     print("\n年間summary.txtに出力します")
-    export_yearly_summary(now_jst().strftime("%Y"))
+    export_yearly_summary(now_jst().strftime("%Y"), paths.csv)
     print("\nExcelレポートに出力します")
-    export_excel_report()
+    export_excel_report(
+        paths.csv / "my_matches.csv", paths.csv / "review.csv", paths.excel / "lol_report.xlsx"
+    )
     print("\nデータ更新日時を出力します")
-    write_last_updated()
+    write_last_updated(paths.csv)
     print("\n現在ランクを出力します")
-    write_current_rank(puuid)
+    write_current_rank(puuid, paths.csv)
 
     print("\n==============================")
     print("全処理完了")
@@ -242,5 +254,12 @@ def run():
     return 0
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-root")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    raise SystemExit(run())
+    args = parse_args()
+    raise SystemExit(run(args.data_root))

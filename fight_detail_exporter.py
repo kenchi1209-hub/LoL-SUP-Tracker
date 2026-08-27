@@ -7,9 +7,10 @@ from pathlib import Path
 
 from champion_registry import champion_name_ja
 from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_from_path
+from data_paths import CSV_ROOT
 
 
-OUTPUT_PATH = "data/csv/fight_details.json"
+OUTPUT_PATH = CSV_ROOT / "fight_details.json"
 ROLE_NAMES = {
     "TOP": "TOP",
     "JUNGLE": "JG",

@@ -17,11 +17,22 @@ from site_builder.data import (
 )
 from site_builder.patches import normalize_patch
 from timezone_utils import now_jst
+from data_paths import get_data_paths
 
 
 BASE_DIR = Path(__file__).resolve().parent
-FIGHT_DETAILS_PATH = Path("data/csv/fight_details.json")
-MATCH_DETAILS_PATH = Path("data/csv/match_details.json")
+_paths = get_data_paths()
+FIGHT_DETAILS_PATH = _paths.csv / "fight_details.json"
+MATCH_DETAILS_PATH = _paths.csv / "match_details.json"
+
+
+def configure_data_root(data_root=None):
+    global FIGHT_DETAILS_PATH, MATCH_DETAILS_PATH
+    paths = get_data_paths(data_root)
+    FIGHT_DETAILS_PATH = paths.csv / "fight_details.json"
+    MATCH_DETAILS_PATH = paths.csv / "match_details.json"
+    load_fight_details.cache_clear()
+    load_match_details.cache_clear()
 
 
 def load_template(name):

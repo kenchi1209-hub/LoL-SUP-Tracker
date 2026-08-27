@@ -2,9 +2,10 @@ import csv
 import os
 from champion_registry import champion_name_ja
 from queue_map import queue_id_to_name
+from data_paths import CSV_ROOT
 
-MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
-RESULT_REPORT_CSV_PATH = "data/csv/result_report.csv"
+MY_MATCHES_CSV_PATH = CSV_ROOT / "my_matches.csv"
+RESULT_REPORT_CSV_PATH = CSV_ROOT / "result_report.csv"
 
 RESULT_REPORT_COLUMNS = [
     "match_id",

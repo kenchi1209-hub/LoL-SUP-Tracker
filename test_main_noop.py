@@ -48,7 +48,7 @@ class MainNoopTest(unittest.TestCase):
                     patch.object(main, "get_match_detail", side_effect=lambda match_id: details[match_id])
                 )
                 exporter = stack.enter_context(patch.object(main, "export_timeline_summary"))
-                result = main.run()
+                result = main.run(Path(directory) / "data")
 
                 self.assertEqual(result, 0)
                 self.assertEqual(sentinel.read_bytes(), before)
@@ -107,7 +107,9 @@ class MainNoopTest(unittest.TestCase):
                 )
                 with patch.object(main, "get_match_detail") as detail_mock:
                     eligible, _ = main.discover_new_eligible_matches(
-                        ["JP1_PENDING"], published_ids=set()
+                        ["JP1_PENDING"],
+                        published_ids=set(),
+                        raw_root=Path("data/raw"),
                     )
                 detail_mock.assert_not_called()
             finally:
@@ -163,12 +165,34 @@ class MainNoopTest(unittest.TestCase):
                     for name in self.EXPORT_FUNCTIONS
                 }
 
-                self.assertEqual(main.run(), 0)
+                data_root = Path(directory) / "data"
+                self.assertEqual(main.run(data_root), 0)
                 save_detail.assert_called_once()
                 save_timeline.assert_called_once()
-                analyze.assert_called_once_with("JP1_NEW", puuid="puuid")
+                analyze.assert_called_once_with(
+                    "JP1_NEW", puuid="puuid", raw_root=data_root.resolve() / "raw"
+                )
                 for exporter in exporters.values():
                     exporter.assert_called_once()
+                resolved = data_root.resolve()
+                exporters["export_timeline_summary"].assert_called_once_with(
+                    resolved / "raw", resolved / "csv/timeline_summary.csv"
+                )
+                exporters["export_fight_details"].assert_called_once_with(
+                    output_path=resolved / "csv/fight_details.json",
+                    raw_root=resolved / "raw",
+                )
+                exporters["export_match_details"].assert_called_once_with(
+                    "puuid", resolved / "raw", resolved / "csv/match_details.json"
+                )
+                exporters["export_monthly_csvs"].assert_called_once_with(
+                    resolved / "csv"
+                )
+                exporters["export_excel_report"].assert_called_once_with(
+                    resolved / "csv/my_matches.csv",
+                    resolved / "csv/review.csv",
+                    resolved / "excel/lol_report.xlsx",
+                )
             finally:
                 os.chdir(previous)
 
@@ -198,7 +222,7 @@ class MainNoopTest(unittest.TestCase):
                 )
                 exporter = stack.enter_context(patch.object(main, "export_timeline_summary"))
                 with self.assertRaises(RuntimeError):
-                    main.run()
+                    main.run(Path(directory) / "data")
                 exporter.assert_not_called()
             finally:
                 os.chdir(previous)

@@ -9,13 +9,15 @@ from raw_paths import (
     paths_for_match,
     relative_paths_for_match,
 )
+from data_paths import get_data_paths
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
-FIGHT_DETAILS_PATH = REPOSITORY_ROOT / "data/csv/fight_details.json"
-RAW_DIR = REPOSITORY_ROOT / "data/raw"
 
 
-def load_published_match_ids(fight_details_path=FIGHT_DETAILS_PATH):
+def load_published_match_ids(fight_details_path=None):
+    fight_details_path = fight_details_path or (
+        get_data_paths().csv / "fight_details.json"
+    )
     with Path(fight_details_path).open("r", encoding="utf-8") as file:
         details = json.load(file)
     if not isinstance(details, dict):
@@ -23,14 +25,18 @@ def load_published_match_ids(fight_details_path=FIGHT_DETAILS_PATH):
     return set(details)
 
 
-def load_combat_match_ids(raw_dir=RAW_DIR):
+def load_combat_match_ids(raw_dir=None):
+    raw_dir = raw_dir or get_data_paths().raw
     return {match_id_from_path(path) for path in iter_combat_timeline_paths(raw_dir)}
 
 
 def find_missing_match_ids(
-    fight_details_path=FIGHT_DETAILS_PATH,
-    raw_dir=RAW_DIR,
+    fight_details_path=None,
+    raw_dir=None,
 ):
+    paths = get_data_paths()
+    fight_details_path = fight_details_path or paths.csv / "fight_details.json"
+    raw_dir = raw_dir or paths.raw
     return sorted(
         load_published_match_ids(fight_details_path)
         - load_combat_match_ids(raw_dir)
@@ -97,7 +103,8 @@ def write_result_files(result, result_file=None, raw_manifest=None):
         write_text_atomic(raw_manifest, "".join(f"{path}\n" for path in paths))
 
 
-def scan_missing_raw(match_ids, raw_dir=RAW_DIR):
+def scan_missing_raw(match_ids, raw_dir=None):
+    raw_dir = raw_dir or get_data_paths().raw
     states = []
     for match_id in match_ids:
         paths = paths_for_match(match_id, raw_dir)
@@ -146,7 +153,7 @@ def safe_error_name(error):
 
 def restore_matches(
     match_ids,
-    raw_dir=RAW_DIR,
+    raw_dir=None,
     game_name=None,
     tag_line=None,
     puuid_getter=None,
@@ -156,6 +163,7 @@ def restore_matches(
     timeline_saver=None,
     analyzer=None,
 ):
+    raw_dir = raw_dir or get_data_paths().raw
     if any(
         dependency is None
         for dependency in (
@@ -264,16 +272,17 @@ def parse_args(argv=None):
         help="現在不足している全Matchを対象にします（--match-idより優先）",
     )
     parser.add_argument("--result-file", type=Path, help="実行結果JSONの出力先")
+    parser.add_argument("--data-root", type=Path)
     parser.add_argument(
         "--fight-details",
         type=Path,
-        default=FIGHT_DETAILS_PATH,
+        default=None,
         help="不足判定に使う公開Fight Detail JSON",
     )
     parser.add_argument(
         "--raw-dir",
         type=Path,
-        default=RAW_DIR,
+        default=None,
         help="復元対象raw root",
     )
     parser.add_argument(
@@ -281,7 +290,11 @@ def parse_args(argv=None):
         type=Path,
         help="成功Matchの同期対象raw相対パス一覧の出力先",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    paths = get_data_paths(args.data_root)
+    args.fight_details = args.fight_details or paths.csv / "fight_details.json"
+    args.raw_dir = args.raw_dir or paths.raw
+    return args
 
 
 def main(argv=None):

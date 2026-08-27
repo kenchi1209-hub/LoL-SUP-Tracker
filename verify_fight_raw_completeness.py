@@ -6,6 +6,7 @@ from raw_paths import (
     match_id_from_path,
     paths_for_match,
 )
+from data_paths import get_data_paths
 
 
 class VerificationError(RuntimeError):
@@ -85,10 +86,15 @@ def parse_args(argv=None):
     parser.add_argument(
         "--fight-details",
         type=Path,
-        default=Path("data/csv/fight_details.json"),
+        default=None,
     )
-    parser.add_argument("--raw-dir", type=Path, default=Path("data/raw"))
-    return parser.parse_args(argv)
+    parser.add_argument("--raw-dir", type=Path, default=None)
+    parser.add_argument("--data-root", type=Path)
+    args = parser.parse_args(argv)
+    paths = get_data_paths(args.data_root)
+    args.fight_details = args.fight_details or paths.csv / "fight_details.json"
+    args.raw_dir = args.raw_dir or paths.raw
+    return args
 
 
 def main(argv=None) -> int:

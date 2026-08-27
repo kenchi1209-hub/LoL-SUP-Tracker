@@ -1,9 +1,10 @@
 import csv
 import os
+from data_paths import CSV_ROOT
 
-RESULT_REPORT_CSV_PATH = "data/csv/result_report.csv"
-REVIEW_CSV_PATH = "data/csv/review.csv"
-FINAL_REPORT_TXT_PATH = "data/csv/final_report.txt"
+RESULT_REPORT_CSV_PATH = CSV_ROOT / "result_report.csv"
+REVIEW_CSV_PATH = CSV_ROOT / "review.csv"
+FINAL_REPORT_TXT_PATH = CSV_ROOT / "final_report.txt"
 
 def load_result_reports(result_report_csv_path):
     if not os.path.exists(result_report_csv_path):

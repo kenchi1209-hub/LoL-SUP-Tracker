@@ -2,10 +2,11 @@ import csv
 import os
 from collections import defaultdict
 from summary_exporter import export_summary
+from data_paths import CSV_ROOT
 
-MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
-PARTICIPANTS_CSV_PATH = "data/csv/participants.csv"
-MONTHLY_DIR = "data/csv/monthly"
+MY_MATCHES_CSV_PATH = CSV_ROOT / "my_matches.csv"
+PARTICIPANTS_CSV_PATH = CSV_ROOT / "participants.csv"
+MONTHLY_DIR = CSV_ROOT / "monthly"
 
 
 def read_csv_rows(csv_path):
@@ -37,18 +38,18 @@ def get_month_key(date_text):
     return date_text[:7]
 
 
-def clear_old_monthly_outputs():
-    if not os.path.exists(MONTHLY_DIR):
-        os.makedirs(MONTHLY_DIR, exist_ok=True)
+def clear_old_monthly_outputs(monthly_dir=MONTHLY_DIR):
+    if not os.path.exists(monthly_dir):
+        os.makedirs(monthly_dir, exist_ok=True)
         return
 
-    for filename in os.listdir(MONTHLY_DIR):
+    for filename in os.listdir(monthly_dir):
         if filename.endswith(".csv") or filename.endswith(".txt"):
-            os.remove(os.path.join(MONTHLY_DIR, filename))
+            os.remove(os.path.join(monthly_dir, filename))
 
 
-def export_my_matches_monthly():
-    rows, fieldnames = read_csv_rows(MY_MATCHES_CSV_PATH)
+def export_my_matches_monthly(my_matches_path=MY_MATCHES_CSV_PATH, monthly_dir=MONTHLY_DIR):
+    rows, fieldnames = read_csv_rows(my_matches_path)
 
     grouped = defaultdict(list)
 
@@ -62,7 +63,7 @@ def export_my_matches_monthly():
     for month_key, month_rows in grouped.items():
         month_rows.sort(key=lambda r: r.get("date", ""), reverse=True)
 
-        output_path = f"{MONTHLY_DIR}/{month_key}_my_matches.csv"
+        output_path = os.path.join(monthly_dir, f"{month_key}_my_matches.csv")
         write_csv_rows(output_path, month_rows, fieldnames)
 
     print(f"月別my_matches.csv 出力完了: {len(grouped)}か月分")
@@ -85,9 +86,9 @@ def build_match_id_to_month(my_match_rows):
     return match_id_to_month
 
 
-def export_participants_monthly():
-    my_match_rows, _ = read_csv_rows(MY_MATCHES_CSV_PATH)
-    participant_rows, participant_fieldnames = read_csv_rows(PARTICIPANTS_CSV_PATH)
+def export_participants_monthly(my_matches_path=MY_MATCHES_CSV_PATH, participants_path=PARTICIPANTS_CSV_PATH, monthly_dir=MONTHLY_DIR):
+    my_match_rows, _ = read_csv_rows(my_matches_path)
+    participant_rows, participant_fieldnames = read_csv_rows(participants_path)
 
     match_id_to_month = build_match_id_to_month(my_match_rows)
 
@@ -103,7 +104,7 @@ def export_participants_monthly():
         grouped[month_key].append(row)
 
     for month_key, month_rows in grouped.items():
-        output_path = f"{MONTHLY_DIR}/{month_key}_participants.csv"
+        output_path = os.path.join(monthly_dir, f"{month_key}_participants.csv")
         write_csv_rows(output_path, month_rows, participant_fieldnames)
 
     print(f"月別participants.csv 出力完了: {len(grouped)}か月分")
@@ -111,16 +112,16 @@ def export_participants_monthly():
     return grouped
 
 
-def export_monthly_summaries():
+def export_monthly_summaries(monthly_dir=MONTHLY_DIR):
     count = 0
 
-    for filename in os.listdir(MONTHLY_DIR):
+    for filename in os.listdir(monthly_dir):
         if not filename.endswith("_my_matches.csv"):
             continue
 
         month_key = filename.replace("_my_matches.csv", "")
-        my_matches_path = f"{MONTHLY_DIR}/{filename}"
-        summary_path = f"{MONTHLY_DIR}/{month_key}_summary.txt"
+        my_matches_path = os.path.join(monthly_dir, filename)
+        summary_path = os.path.join(monthly_dir, f"{month_key}_summary.txt")
 
         export_summary(
             my_matches_csv_path=my_matches_path,
@@ -132,8 +133,9 @@ def export_monthly_summaries():
     print(f"月別summary.txt 出力完了: {count}か月分")
 
 
-def export_monthly_csvs():
-    clear_old_monthly_outputs()
-    export_my_matches_monthly()
-    export_participants_monthly()
-    export_monthly_summaries()
+def export_monthly_csvs(csv_root=CSV_ROOT):
+    monthly_dir = csv_root / "monthly"
+    clear_old_monthly_outputs(monthly_dir)
+    export_my_matches_monthly(csv_root / "my_matches.csv", monthly_dir)
+    export_participants_monthly(csv_root / "my_matches.csv", csv_root / "participants.csv", monthly_dir)
+    export_monthly_summaries(monthly_dir)

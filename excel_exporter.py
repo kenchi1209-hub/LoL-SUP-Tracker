@@ -6,6 +6,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from champion_registry import champion_name_ja
+from data_paths import CSV_ROOT, EXCEL_ROOT
 from queue_map import queue_id_to_name
 from summary_exporter import (
     filter_support_rows,
@@ -20,9 +21,9 @@ from summary_exporter import (
 from timezone_utils import now_jst
 from report_exporter import role_to_name, win_to_wl
 
-MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
-REVIEW_CSV_PATH = "data/csv/review.csv"
-EXCEL_PATH = "data/excel/lol_report.xlsx"
+MY_MATCHES_CSV_PATH = CSV_ROOT / "my_matches.csv"
+REVIEW_CSV_PATH = CSV_ROOT / "review.csv"
+EXCEL_PATH = EXCEL_ROOT / "lol_report.xlsx"
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3864")
 HEADER_FONT = Font(color="FFFFFF", bold=True)

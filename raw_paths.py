@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
+from data_paths import RAW_ROOT
 
 
-DEFAULT_RAW_ROOT = Path("data/raw")
+DEFAULT_RAW_ROOT = RAW_ROOT
 
 
 @dataclass(frozen=True)
@@ -24,8 +25,8 @@ class MatchRawPaths:
         )
 
 
-def paths_for_match(match_id: str, raw_root=DEFAULT_RAW_ROOT) -> MatchRawPaths:
-    directory = Path(raw_root) / match_id
+def paths_for_match(match_id: str, raw_root=None) -> MatchRawPaths:
+    directory = Path(raw_root or DEFAULT_RAW_ROOT) / match_id
     return MatchRawPaths(
         directory=directory,
         detail=directory / "match.json",
@@ -36,13 +37,13 @@ def paths_for_match(match_id: str, raw_root=DEFAULT_RAW_ROOT) -> MatchRawPaths:
     )
 
 
-def iter_match_detail_paths(raw_root=DEFAULT_RAW_ROOT):
-    raw_root = Path(raw_root)
+def iter_match_detail_paths(raw_root=None):
+    raw_root = Path(raw_root or DEFAULT_RAW_ROOT)
     yield from raw_root.glob("*/match.json")
 
 
-def iter_combat_timeline_paths(raw_root=DEFAULT_RAW_ROOT):
-    raw_root = Path(raw_root)
+def iter_combat_timeline_paths(raw_root=None):
+    raw_root = Path(raw_root or DEFAULT_RAW_ROOT)
     yield from raw_root.glob("*/combat_timeline.json")
 
 

@@ -2,17 +2,18 @@ import json
 import csv
 import os
 from raw_paths import paths_for_match
+from data_paths import get_data_paths
 
 MATCH_ID = "JP1_591434669"
 RAW_PATH = paths_for_match(MATCH_ID).detail
-CSV_PATH = "data/csv/participants.csv"
+CSV_PATH = get_data_paths().csv / "participants.csv"
 
 with open(RAW_PATH, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 participants = data["info"]["participants"]
 
-os.makedirs("data/csv", exist_ok=True)
+os.makedirs(CSV_PATH.parent, exist_ok=True)
 
 columns = [
     "match_id",

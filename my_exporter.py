@@ -7,10 +7,11 @@ from queue_map import is_allowed_queue_id
 from config import GAME_NAME, TAG_LINE
 from timezone_utils import JST
 from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths
+from data_paths import CSV_ROOT
 
 
-MY_MATCHES_CSV_PATH = "data/csv/my_matches.csv"
-TIMELINE_SUMMARY_CSV_PATH = "data/csv/timeline_summary.csv"
+MY_MATCHES_CSV_PATH = CSV_ROOT / "my_matches.csv"
+TIMELINE_SUMMARY_CSV_PATH = CSV_ROOT / "timeline_summary.csv"
 
 
 BASE_MATCH_COLUMNS = [
@@ -471,6 +472,7 @@ def export_my_matches_from_raw(
     my_puuid,
     raw_dir=DEFAULT_RAW_ROOT,
     csv_path=MY_MATCHES_CSV_PATH,
+    timeline_summary_path=TIMELINE_SUMMARY_CSV_PATH,
 ):
     os.makedirs(
         os.path.dirname(csv_path),
@@ -478,7 +480,7 @@ def export_my_matches_from_raw(
     )
 
     timeline_by_match = (
-        load_timeline_summary()
+        load_timeline_summary(timeline_summary_path)
     )
 
     json_paths = list(iter_match_detail_paths(raw_dir))

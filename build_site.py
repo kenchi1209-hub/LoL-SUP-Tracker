@@ -5,11 +5,13 @@ data/csv/my_matches.csv を読み、Pythonで集計してから
 自己完結した public/index.html を書き出す（チャンピオンアイコンのみ
 Data Dragon CDN を参照）。
 """
+import argparse
 import os
 import shutil
 
 from champion_registry import registry_version
-from site_builder.data import load_matches
+from site_builder.data import configure_data_root as configure_site_data, load_matches
+from site_builder.render import configure_data_root as configure_render_data
 from site_builder.history import build_history_html
 from site_builder.role import build_role_pages
 from site_builder.top import build_html
@@ -21,7 +23,9 @@ def get_ddragon_version():
     return registry_version()
 
 
-def main():
+def main(data_root=None):
+    configure_site_data(data_root)
+    configure_render_data(data_root)
     rows = load_matches()
     if not rows:
         print("警告: 試合データが空です。プレースホルダを生成します。")
@@ -58,5 +62,12 @@ def main():
     print(f"生成完了: {out_path} ({len(rows)}戦)")
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-root")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.data_root)

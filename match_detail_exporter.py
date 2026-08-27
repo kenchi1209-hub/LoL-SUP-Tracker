@@ -3,9 +3,10 @@ import os
 import tempfile
 
 from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths, match_id_from_path
+from data_paths import CSV_ROOT
 
 
-OUTPUT_PATH = "data/csv/match_details.json"
+OUTPUT_PATH = CSV_ROOT / "match_details.json"
 ROLE_ORDER = {"TOP": 0, "JUNGLE": 1, "MIDDLE": 2, "BOTTOM": 3, "UTILITY": 4}
 SIDE_BY_TEAM_ID = {100: "BLUE", 200: "RED"}
 

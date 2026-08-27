@@ -5,12 +5,9 @@ __pycache__/
 venv/
 .DS_Store
 data/raw/
+data/csv/*
+!data/csv/champion_registry.json
+data/excel/
 .idea/
 # 生成物(GitHub Actionsで都度ビルドするためコミット不要)
 public/
-# 他プレイヤー情報を含むため公開しない
-data/csv/participants.csv
-data/csv/monthly/*_participants.csv
-
-# Public, lightweight Fight Detail data used by GitHub Pages builds.
-!data/csv/fight_details.json

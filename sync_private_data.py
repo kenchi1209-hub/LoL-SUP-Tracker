@@ -1,3 +1,8 @@
+"""Recovery utility for non-destructive raw copies between Public and PrivateData.
+
+Phase 3 update and build flows access PrivateData directly and do not call this tool.
+"""
+
 import argparse
 import hashlib
 import os

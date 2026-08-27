@@ -12,10 +12,8 @@ permissions:
   pages: write
   id-token: write
 
-# GitHub scopes concurrency groups per repository, so the remote HEAD check
-# below is still required before pushing PrivateData.
 concurrency:
-  group: private-raw-writer
+  group: private-data-writer
   cancel-in-progress: false
 
 jobs:
@@ -28,7 +26,6 @@ jobs:
           path: tracker
 
       - name: Checkout PrivateData
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
           repository: kenchi1209-hub/LoL-SUP-Tracker-PrivateData
@@ -36,14 +33,15 @@ jobs:
           token: ${{ secrets.PRIVATE_DATA_TOKEN }}
           path: private-data
 
-      - name: Record PrivateData base revision
-        id: private-base
+      - name: Record base revisions
+        id: bases
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        working-directory: private-data
         run: |
           set -euo pipefail
-          test -z "$(git status --porcelain)"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          test -z "$(git -C tracker status --porcelain)"
+          test -z "$(git -C private-data status --porcelain)"
+          echo "tracker_sha=$(git -C tracker rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "private_sha=$(git -C private-data rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -54,72 +52,50 @@ jobs:
         working-directory: tracker
         run: python -m pip install -r requirements.txt
 
-      - name: Preview PrivateData raw restore
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        working-directory: tracker
-        run: >-
-          python sync_private_data.py pull
-          --private-data-dir "${{ github.workspace }}/private-data"
-
-      - name: Restore PrivateData raw
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        working-directory: tracker
-        run: >-
-          python sync_private_data.py pull --apply
-          --private-data-dir "${{ github.workspace }}/private-data"
-
       - name: Refresh Champion Registry
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: tracker
         run: python champion_registry.py update
 
-      - name: Fetch latest match data
+      - name: Fetch latest match data into PrivateData
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: tracker
         env:
           RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
           RIOT_GAME_NAME: ${{ secrets.RIOT_GAME_NAME }}
           RIOT_TAG_LINE: ${{ secrets.RIOT_TAG_LINE }}
-        run: python main.py
+        run: python main.py --data-root "${{ github.workspace }}/private-data"
 
-      - name: Verify Fight raw completeness
+      - name: Verify PrivateData completeness
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: tracker
-        run: |
-          set -euo pipefail
+        run: >-
           python verify_fight_raw_completeness.py
-          test -z "$(git ls-files -- data/raw)"
+          --data-root "${{ github.workspace }}/private-data"
 
-      - name: Preview new raw synchronization
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        working-directory: tracker
-        run: >-
-          python sync_private_data.py push
-          --private-data-dir "${{ github.workspace }}/private-data"
-
-      - name: Copy new raw into PrivateData
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        working-directory: tracker
-        run: >-
-          python sync_private_data.py push --apply
-          --private-data-dir "${{ github.workspace }}/private-data"
-
-      - name: Commit new raw to PrivateData
+      - name: Commit refreshed PrivateData
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: private-data
         env:
-          PRIVATE_BASE_SHA: ${{ steps.private-base.outputs.sha }}
+          PRIVATE_BASE_SHA: ${{ steps.bases.outputs.private_sha }}
         run: |
           set -euo pipefail
+
           if ! git diff --quiet -- raw; then
-            echo "Existing PrivateData raw was modified; refusing to commit" >&2
+            echo "Existing PrivateData raw was modified or deleted; refusing to commit" >&2
             git diff --name-status -- raw >&2
             exit 1
           fi
-          outside_raw=$(git status --porcelain -- . ':(exclude)raw')
-          if [ -n "$outside_raw" ]; then
-            echo "PrivateData has changes outside raw; refusing to commit" >&2
-            printf '%s\n' "$outside_raw" >&2
+          deleted=$(git diff --name-only --diff-filter=D -- raw csv excel)
+          if [ -n "$deleted" ]; then
+            echo "PrivateData files were deleted; refusing to commit" >&2
+            printf '%s\n' "$deleted" >&2
+            exit 1
+          fi
+          outside_data=$(git status --porcelain -- . ':(exclude)raw' ':(exclude)csv' ':(exclude)excel')
+          if [ -n "$outside_data" ]; then
+            echo "PrivateData has changes outside raw/csv/excel; refusing to commit" >&2
+            printf '%s\n' "$outside_data" >&2
             exit 1
           fi
 
@@ -130,51 +106,66 @@ jobs:
             exit 1
           fi
 
-          git add -- raw
-          unexpected=$(git diff --cached --name-only | grep -Ev '^raw/' || true)
+          git add -- raw csv excel
+          unexpected=$(git diff --cached --name-only | awk '!/^(raw|csv|excel)\//')
           if [ -n "$unexpected" ]; then
-            echo "Refusing to stage files outside raw" >&2
+            echo "Refusing to stage files outside raw/csv/excel" >&2
             printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git -c core.whitespace=cr-at-eol diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No PrivateData changes to commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update LoL data $(date -u +%Y-%m-%d)"
+            git push origin HEAD:main
+          fi
+
+      - name: Commit Champion Registry only
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: tracker
+        env:
+          TRACKER_BASE_SHA: ${{ steps.bases.outputs.tracker_sha }}
+        run: |
+          set -euo pipefail
+          unexpected=$(git status --porcelain -- . ':(exclude)data/csv/champion_registry.json')
+          if [ -n "$unexpected" ]; then
+            echo "Public changes outside Champion Registry are not allowed" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+          git fetch origin build
+          remote_sha=$(git rev-parse origin/build)
+          if [ "$remote_sha" != "$TRACKER_BASE_SHA" ]; then
+            echo "Public build advanced during this run; refusing to push" >&2
+            exit 1
+          fi
+
+          git add -- data/csv/champion_registry.json
+          unexpected=$(git diff --cached --name-only | awk '!/^data\/csv\/champion_registry\.json$/')
+          if [ -n "$unexpected" ]; then
+            echo "Refusing to stage Public data outside Champion Registry" >&2
             exit 1
           fi
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo "No new raw files to commit"
+            echo "Champion Registry is unchanged"
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Update LoL raw data $(date -u +%Y-%m-%d)"
-            git push origin HEAD:main
-          fi
-
-      - name: Commit refreshed public data
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        working-directory: tracker
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -- data
-          if [ -n "$(git diff --cached --name-only | grep '^data/raw/' || true)" ]; then
-            echo "Public raw must not be staged" >&2
-            exit 1
-          fi
-          # csv.DictWriter emits standards-compliant CRLF. Ignore only that CR;
-          # ordinary trailing spaces and other whitespace errors still fail.
-          git -c core.whitespace=cr-at-eol diff --cached --check
-          if git diff --cached --quiet; then
-            echo "No public data changes to commit"
-          else
-            git commit -m "Update LoL data $(date -u +%Y-%m-%d)"
+            git commit -m "Update Champion Registry $(date -u +%Y-%m-%d)"
             git push origin HEAD:build
           fi
 
-      - name: Build static site
+      - name: Build static site from PrivateData
         working-directory: tracker
         env:
           RIOT_GAME_NAME: ${{ secrets.RIOT_GAME_NAME }}
           RIOT_TAG_LINE: ${{ secrets.RIOT_TAG_LINE }}
-        run: python build_site.py
+        run: python build_site.py --data-root "${{ github.workspace }}/private-data"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -182,12 +173,11 @@ jobs:
           path: tracker/public
 
       - name: Upload Excel report artifact
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: lol-report
-          path: tracker/data/excel/lol_report.xlsx
-          if-no-files-found: warn
+          path: private-data/excel/lol_report.xlsx
+          if-no-files-found: error
           retention-days: 30
 
   deploy:

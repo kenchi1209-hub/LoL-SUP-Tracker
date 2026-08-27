@@ -1,3 +1,9 @@
+"""Migration utility for copying legacy Public processed data into PrivateData.
+
+Phase 3 writes processed data directly to PrivateData; this remains for recovery
+and manual verification only.
+"""
+
 import argparse
 import hashlib
 import os

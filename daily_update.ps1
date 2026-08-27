@@ -1,12 +1,25 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$PublicRepo = $PSScriptRoot,
-    [string]$PrivateRepo = (Join-Path (Split-Path -Parent $PSScriptRoot) "LoL-SUP-Tracker-PrivateData"),
+    [string]$PublicRepo,
+    [string]$PrivateRepo,
     [string]$PythonCommand = "python"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$scriptPath = $MyInvocation.MyCommand.Path
+if ([string]::IsNullOrWhiteSpace($scriptPath)) {
+    throw "daily_update.ps1の実行パスを解決できません。powershell.exe -Fileで実行してください。"
+}
+
+$scriptDirectory = Split-Path -Parent $scriptPath
+if ([string]::IsNullOrWhiteSpace($PublicRepo)) {
+    $PublicRepo = $scriptDirectory
+}
+if ([string]::IsNullOrWhiteSpace($PrivateRepo)) {
+    $PrivateRepo = Join-Path (Split-Path -Parent $scriptDirectory) "LoL-SUP-Tracker-PrivateData"
+}
 
 function Invoke-Checked {
     param(

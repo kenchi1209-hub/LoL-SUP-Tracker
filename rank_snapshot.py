@@ -107,7 +107,8 @@ def write_snapshot_atomic(snapshot, path):
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
     )
     try:
-        os.fchmod(descriptor, 0o644)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o644)
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
             json.dump(snapshot, file, ensure_ascii=True, separators=(",", ":"))
             file.write("\n")

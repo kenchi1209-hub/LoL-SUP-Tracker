@@ -15,6 +15,7 @@ class MatchRawPaths:
     fight_context: Path
     fight_review_context: Path
     rank_snapshot: Path
+    rank_after: Path
 
     def required(self) -> tuple[Path, ...]:
         return (
@@ -36,6 +37,7 @@ def paths_for_match(match_id: str, raw_root=None) -> MatchRawPaths:
         fight_context=directory / "fight_context.txt",
         fight_review_context=directory / "fight_review_context.txt",
         rank_snapshot=directory / "rank_snapshot.json",
+        rank_after=directory / "rank_after.json",
     )
 
 
@@ -58,6 +60,7 @@ def match_id_from_path(path: Path) -> str:
         "fight_context.txt",
         "fight_review_context.txt",
         "rank_snapshot.json",
+        "rank_after.json",
     }:
         return path.parent.name
     raise ValueError(f"Match IDを判定できないraw pathです: {path}")

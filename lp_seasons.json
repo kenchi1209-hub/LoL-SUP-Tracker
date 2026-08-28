@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "seasons": [
+    {
+      "id": "2026",
+      "label": "2026 Season",
+      "start_jst": "2026-01-01",
+      "end_jst": null
+    }
+  ]
+}

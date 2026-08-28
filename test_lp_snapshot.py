@@ -1,0 +1,292 @@
+import json
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import Mock
+
+from lp_snapshot import (
+    AmbiguousHistoryError,
+    LeagueUpdateTimeout,
+    build_rank_after,
+    capture_one,
+    create_baseline,
+    history_path,
+    rank_value,
+    rebuild_lp_history,
+    wait_for_league_update,
+)
+from raw_paths import paths_for_match
+from timezone_utils import JST
+from verify_fight_raw_completeness import required_paths
+
+
+def league_rank(tier="SILVER", division="IV", lp=20, wins=40, losses=55):
+    return {
+        "queueType": "RANKED_SOLO_5x5",
+        "tier": tier,
+        "rank": division,
+        "leaguePoints": lp,
+        "wins": wins,
+        "losses": losses,
+        "puuid": "must-not-be-copied",
+        "summonerId": "must-not-be-copied",
+    }
+
+
+def match_detail(match_id, puuid="self", won=True, hour=1, queue_id=420):
+    creation = int(datetime(2026, 8, 28, hour, 0, tzinfo=JST).timestamp() * 1000)
+    return {
+        "metadata": {"matchId": match_id},
+        "info": {
+            "queueId": queue_id,
+            "gameCreation": creation,
+            "gameEndTimestamp": creation + 30 * 60 * 1000,
+            "gameDuration": 1800,
+            "gameVersion": "16.17.810.4348",
+            "participants": [
+                {"puuid": puuid, "championName": "Nami", "win": won}
+            ],
+        },
+    }
+
+
+class Clock:
+    def __init__(self):
+        self.value = 0
+
+    def monotonic(self):
+        return self.value
+
+    def sleep(self, seconds):
+        self.value += seconds
+
+
+class LPSnapshotTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.raw = self.root / "raw"
+        self.csv = self.root / "csv"
+        self.current_rank = self.csv / "current_rank.json"
+        self.csv.mkdir(parents=True)
+        self.current_rank.write_text(
+            json.dumps(league_rank()), encoding="utf-8"
+        )
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def baseline(self):
+        return create_baseline(
+            self.current_rank,
+            self.raw,
+            self.csv,
+            captured_at=datetime(2026, 8, 28, 0, 0, tzinfo=JST),
+        )
+
+    def capture(self, details, after, **kwargs):
+        ids = list(details)
+        return capture_one(
+            "self",
+            self.raw,
+            self.csv,
+            lambda _puuid, count=100: ids,
+            lambda match_id: details[match_id],
+            lambda: after,
+            captured_at=datetime(2026, 8, 28, 2, 0, tzinfo=JST),
+            sleep=lambda _seconds: None,
+            **kwargs,
+        )
+
+    def test_baseline_is_minimal_immutable_and_history_starts_empty(self):
+        output = self.baseline()
+        baseline = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(baseline["snapshot_type"], "baseline")
+        self.assertEqual(baseline["confidence"], "baseline")
+        self.assertEqual(baseline["queue_id"], 420)
+        self.assertEqual((baseline["tier"], baseline["division"], baseline["lp"]), ("SILVER", "IV", 20))
+        serialized = json.dumps(baseline)
+        self.assertNotIn("puuid", serialized)
+        self.assertNotIn("summonerId", serialized)
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(history["matches"], [])
+        with self.assertRaises(Exception):
+            self.baseline()
+
+    def test_first_win_uses_baseline_as_before_and_writes_exact_snapshot(self):
+        self.baseline()
+        output = self.capture(
+            {"JP1_NEW": match_detail("JP1_NEW", won=True)},
+            league_rank(lp=42, wins=41, losses=55),
+        )
+        snapshot = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot["before"]["lp"], 20)
+        self.assertEqual(snapshot["before"]["wins"], 40)
+        self.assertEqual(snapshot["after"]["wins"], 41)
+        self.assertEqual(snapshot["lp_delta"], 22)
+        self.assertEqual(snapshot["confidence"], "exact")
+        self.assertEqual(snapshot["games_since_previous_snapshot"], 1)
+
+    def test_first_loss_requires_losses_plus_one(self):
+        self.baseline()
+        output = self.capture(
+            {"JP1_LOSS": match_detail("JP1_LOSS", won=False)},
+            league_rank(lp=5, wins=40, losses=56),
+        )
+        snapshot = json.loads(output.read_text(encoding="utf-8"))
+        self.assertFalse(snapshot["win"])
+        self.assertEqual(snapshot["after"]["losses"], 56)
+
+    def test_unexpected_record_is_ambiguous_and_writes_nothing(self):
+        self.baseline()
+        with self.assertRaises(AmbiguousHistoryError):
+            self.capture(
+                {"JP1_BAD": match_detail("JP1_BAD", won=True)},
+                league_rank(wins=42, losses=55),
+            )
+        self.assertFalse(paths_for_match("JP1_BAD", self.raw).rank_after.exists())
+        self.assertEqual(json.loads(history_path(self.csv).read_text())["matches"], [])
+
+    def test_wait_retries_unchanged_record_until_reflected(self):
+        before = {"tier": "SILVER", "division": "IV", "lp": 20, "wins": 40, "losses": 55}
+        fetch = Mock(side_effect=[league_rank(), league_rank(lp=42, wins=41)])
+        clock = Clock()
+        after = wait_for_league_update(
+            before, True, fetch, timeout_seconds=10, poll_interval_seconds=2,
+            monotonic=clock.monotonic, sleep=clock.sleep,
+        )
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(after["lp"], 42)
+
+    def test_timeout_writes_no_confirmed_snapshot(self):
+        self.baseline()
+        details = {"JP1_TIMEOUT": match_detail("JP1_TIMEOUT")}
+        clock = Clock()
+        with self.assertRaises(LeagueUpdateTimeout):
+            capture_one(
+                "self", self.raw, self.csv,
+                lambda _puuid, count=100: list(details),
+                lambda match_id: details[match_id],
+                lambda: league_rank(),
+                timeout_seconds=4, poll_interval_seconds=2,
+                monotonic=clock.monotonic, sleep=clock.sleep,
+            )
+        self.assertFalse(paths_for_match("JP1_TIMEOUT", self.raw).rank_after.exists())
+
+    def test_two_uncaptured_matches_are_ambiguous_before_rank_api_call(self):
+        self.baseline()
+        details = {
+            "JP1_ONE": match_detail("JP1_ONE", hour=1),
+            "JP1_TWO": match_detail("JP1_TWO", hour=2),
+        }
+        rank_api = Mock()
+        with self.assertRaises(AmbiguousHistoryError):
+            capture_one(
+                "self", self.raw, self.csv,
+                lambda _puuid, count=100: list(details),
+                lambda match_id: details[match_id], rank_api,
+            )
+        rank_api.assert_not_called()
+        self.assertFalse(paths_for_match("JP1_ONE", self.raw).rank_after.exists())
+        self.assertFalse(paths_for_match("JP1_TWO", self.raw).rank_after.exists())
+
+    def test_noop_does_not_call_rank_api_or_change_history(self):
+        self.baseline()
+        before = history_path(self.csv).read_bytes()
+        rank_api = Mock()
+        result = capture_one(
+            "self", self.raw, self.csv,
+            lambda _puuid, count=100: [], Mock(), rank_api,
+        )
+        self.assertIsNone(result)
+        rank_api.assert_not_called()
+        self.assertEqual(history_path(self.csv).read_bytes(), before)
+
+    def test_rank_math_across_divisions_tiers_and_master(self):
+        self.assertEqual(
+            rank_value({"tier": "SILVER", "division": "III", "lp": 18})
+            - rank_value({"tier": "SILVER", "division": "IV", "lp": 95}),
+            23,
+        )
+        self.assertEqual(
+            rank_value({"tier": "SILVER", "division": "IV", "lp": 92})
+            - rank_value({"tier": "SILVER", "division": "III", "lp": 10}),
+            -18,
+        )
+        self.assertEqual(
+            rank_value({"tier": "GOLD", "division": "IV", "lp": 10})
+            - rank_value({"tier": "SILVER", "division": "I", "lp": 90}),
+            20,
+        )
+        self.assertEqual(rank_value({"tier": "MASTER", "division": None, "lp": 135}), 2935)
+        self.assertEqual(rank_value({"tier": "GRANDMASTER", "division": None, "lp": 500}), 3300)
+
+    def test_history_is_rebuilt_from_exact_snapshots_only(self):
+        self.baseline()
+        exact = build_rank_after(
+            {
+                "match_id": "JP1_EXACT", "game_datetime_jst": "2026-08-28T01:00:00+09:00",
+                "patch": "16.17", "champion": "Nami", "win": True,
+            },
+            {"tier": "SILVER", "division": "IV", "lp": 20, "wins": 40, "losses": 55},
+            {"tier": "SILVER", "division": "IV", "lp": 42, "wins": 41, "losses": 55},
+            datetime(2026, 8, 28, 2, 0, tzinfo=JST),
+        )
+        exact_path = paths_for_match("JP1_EXACT", self.raw).rank_after
+        exact_path.parent.mkdir(parents=True)
+        exact_path.write_text(json.dumps(exact), encoding="utf-8")
+        old_ids = [f"JP1_OLD_{index:03d}" for index in range(97)]
+        for old_id in old_ids:
+            old_detail = paths_for_match(old_id, self.raw).detail
+            old_detail.parent.mkdir(parents=True)
+            old_detail.write_text(
+                json.dumps(match_detail(old_id, hour=0)), encoding="utf-8"
+            )
+        ambiguous_path = paths_for_match("JP1_AMBIGUOUS", self.raw).rank_after
+        ambiguous_path.parent.mkdir(parents=True)
+        ambiguous_path.write_text(json.dumps({**exact, "match_id": "JP1_AMBIGUOUS", "confidence": "ambiguous"}), encoding="utf-8")
+
+        history = rebuild_lp_history(self.raw, self.csv)
+        self.assertEqual([item["match_id"] for item in history["matches"]], ["JP1_EXACT"])
+        self.assertEqual(history["matches"][0]["lp_delta"], 22)
+        self.assertTrue(all(old_id not in json.dumps(history) for old_id in old_ids))
+        serialized = json.dumps(history)
+        self.assertNotIn("puuid", serialized)
+        self.assertNotIn("summonerId", serialized)
+
+    def test_rank_after_is_optional_for_raw_completeness(self):
+        paths = paths_for_match("JP1_OPTIONAL", self.raw)
+        paths.directory.mkdir(parents=True)
+        for path in paths.required():
+            path.write_text("{}", encoding="utf-8")
+        self.assertNotIn(paths.rank_after, required_paths(self.raw, "JP1_OPTIONAL"))
+
+    def test_rebuild_rejects_discontinuous_exact_snapshot(self):
+        self.baseline()
+        snapshot = build_rank_after(
+            {
+                "match_id": "JP1_GAP", "game_datetime_jst": "2026-08-28T01:00:00+09:00",
+                "patch": "16.17", "champion": "Nami", "win": True,
+            },
+            {"tier": "SILVER", "division": "IV", "lp": 99, "wins": 40, "losses": 55},
+            {"tier": "SILVER", "division": "III", "lp": 21, "wins": 41, "losses": 55},
+        )
+        path = paths_for_match("JP1_GAP", self.raw).rank_after
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        with self.assertRaisesRegex(Exception, "Discontinuous"):
+            rebuild_lp_history(self.raw, self.csv)
+
+    def test_season_configuration_is_versioned_and_open_ended(self):
+        config = json.loads(
+            (Path(__file__).resolve().parent / "lp_seasons.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(config["schema_version"], 1)
+        self.assertEqual(config["seasons"][0]["id"], "2026")
+        self.assertEqual(config["seasons"][0]["start_jst"], "2026-01-01")
+        self.assertIsNone(config["seasons"][0]["end_jst"])
+
+
+if __name__ == "__main__":
+    unittest.main()

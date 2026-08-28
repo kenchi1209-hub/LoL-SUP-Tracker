@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import math
 import os
@@ -673,13 +674,13 @@ def objective_event_info(
     return info
 
 
-def attach_objectives_to_my_fights(
+def attach_objectives_to_fights(
     events,
-    my_fights,
+    fights,
     participants,
     player_team_id,
 ):
-    if not my_fights:
+    if not fights:
         return
 
     objective_events = [
@@ -695,7 +696,7 @@ def attach_objectives_to_my_fights(
 
         candidate_fights = []
 
-        for fight in my_fights:
+        for fight in fights:
             time_distance = (
                 distance_from_event_to_fight(
                     timestamp,
@@ -781,6 +782,21 @@ def attach_objectives_to_my_fights(
         ].append(info)
 
 
+def attach_objectives_to_my_fights(
+    events,
+    my_fights,
+    participants,
+    player_team_id,
+):
+    """Keep the established review-objective assignment API unchanged."""
+    attach_objectives_to_fights(
+        events,
+        my_fights,
+        participants,
+        player_team_id,
+    )
+
+
 # ============================================================
 # Review Context
 # ============================================================
@@ -858,10 +874,10 @@ def evaluate_objective_group(objectives):
     return "NONE"
 
 
-def build_review_context(my_fights):
-    review_fights = []
+def build_fight_context(fights, include_player_involved=False):
+    context_fights = []
 
-    for fight in my_fights:
+    for fight in fights:
         objectives_before = []
         objectives_during = []
         objectives_after = []
@@ -902,8 +918,7 @@ def build_review_context(my_fights):
             ),
         }
 
-        review_fights.append(
-            {
+        context_fight = {
                 "fight_id": fight["fight_id"],
                 "phase": get_game_phase(
                     fight["start_timestamp"]
@@ -911,8 +926,10 @@ def build_review_context(my_fights):
                 "scale": get_fight_scale(
                     fight["participant_count"]
                 ),
-                "survival": get_survival(
-                    fight
+                "survival": (
+                    get_survival(fight)
+                    if fight["player_involved"]
+                    else "NOT_INVOLVED"
                 ),
                 "result": fight["result"],
                 "start_timestamp": (
@@ -935,6 +952,8 @@ def build_review_context(my_fights):
                 ),
                 "my_kda": (
                     fight["my_kda"]
+                    if fight["player_involved"]
+                    else None
                 ),
                 "friendly_kills": (
                     fight["friendly_kills"]
@@ -959,9 +978,60 @@ def build_review_context(my_fights):
                     fight["my_relations"]
                 ),
             }
-        )
+        if include_player_involved:
+            context_fight["player_involved"] = fight["player_involved"]
+        context_fights.append(context_fight)
 
-    return review_fights
+    return context_fights
+
+
+def build_review_context(my_fights):
+    """Build the established SELF-only review payload without new fields."""
+    return build_fight_context(my_fights)
+
+
+def build_all_fight_context(fights):
+    """Build display context for every detected fight, including non-SELF fights."""
+    return build_fight_context(fights, include_player_involved=True)
+
+
+def build_all_fight_context_from_timeline(
+    match_data,
+    timeline_data,
+    player,
+):
+    """Rebuild all-Fight display context without changing review-context behavior."""
+    combat = analyze_combat(match_data, timeline_data, player)
+    fights = copy.deepcopy(combat["fights"])
+
+    # analyze_combat assigns objectives to the SELF-only review subset.  Resetting
+    # this copy keeps the established review assignment separate from all-Fight data.
+    for fight in fights:
+        fight["objective_events"] = []
+
+    participant_map = {
+        participant["participantId"]: participant
+        for participant
+        in match_data["info"]["participants"]
+    }
+    if not participant_map:
+        return []
+
+    events = sorted(
+        (
+            event
+            for frame in timeline_data["info"]["frames"]
+            for event in frame["events"]
+        ),
+        key=lambda event: event["timestamp"],
+    )
+    attach_objectives_to_fights(
+        events,
+        fights,
+        participant_map,
+        player["teamId"],
+    )
+    return build_all_fight_context(fights)
 
 
 # ============================================================

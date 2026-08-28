@@ -30,7 +30,7 @@
     EARLY: "序盤", MID: "中盤", LATE: "終盤",
     SOLO: "単独戦", SMALL: "小規模戦", SKIRMISH: "小集団戦", TEAMFIGHT: "集団戦",
     WIN: "勝利", EVEN: "五分", LOSS: "敗北",
-    SURVIVED: "生存", DIED: "死亡",
+    SURVIVED: "生存", DIED: "死亡", NOT_INVOLVED: "非参加",
     GAIN: "獲得", NONE: "なし",
   };
   const OBJECTIVE_LABELS = {
@@ -78,6 +78,7 @@
     });
     header.append(titleLine, tags);
 
+    const notInvolved = fight.player_involved === false || fight.my_kda === null;
     const kda = fight.my_kda || {};
     const people = Array.isArray(fight.participants) ? fight.participants : [];
     const friendlyCount = people.filter((person) => person.relation === "FRIENDLY").length;
@@ -93,7 +94,12 @@
     exchangeAndKda.append(
       text("span", `キル交換：${Number(fight.friendly_kills) || 0}-${Number(fight.enemy_kills) || 0}`),
       text("span", "/", "fight-metric-separator"),
-      text("span", `My K/D/A：${Number(kda.kills) || 0}/${Number(kda.deaths) || 0}/${Number(kda.assists) || 0}`)
+      text(
+        "span",
+        notInvolved
+          ? "My K/D/A：非参加"
+          : `My K/D/A：${Number(kda.kills) || 0}/${Number(kda.deaths) || 0}/${Number(kda.assists) || 0}`
+      )
     );
     metrics.append(sizeAndTime, exchangeAndKda);
 
@@ -270,11 +276,44 @@
     return root;
   }
 
-  function addMatchDetail(element, actions, match) {
+  function setDetailButtonLabel(button, label, shortLabel, opening) {
+    button.replaceChildren(
+      text("span", label, "m-action-label"),
+      text("span", shortLabel, "m-action-label-short"),
+      text("span", opening ? " ▲" : " ▼", "m-action-arrow")
+    );
+  }
+
+  function createDetailController() {
+    const entries = [];
+    return (entry) => {
+      entries.push(entry);
+      entry.button.addEventListener("click", () => {
+        const opening = entry.panel.hidden;
+        entries.forEach((other) => {
+          if (other === entry || other.panel.hidden) return;
+          other.panel.hidden = true;
+          other.button.setAttribute("aria-expanded", "false");
+          other.button.setAttribute("aria-label", `${other.label}を開く`);
+          setDetailButtonLabel(other.button, other.label, other.shortLabel, false);
+        });
+        if (opening && entry.panel.dataset.rendered !== "true") {
+          entry.render();
+          entry.panel.dataset.rendered = "true";
+        }
+        entry.panel.hidden = !opening;
+        entry.button.setAttribute("aria-expanded", String(opening));
+        entry.button.setAttribute("aria-label", `${entry.label}を${opening ? "閉じる" : "開く"}`);
+        setDetailButtonLabel(entry.button, entry.label, entry.shortLabel, opening);
+      });
+    };
+  }
+
+  function addMatchDetail(element, actions, match, registerDetail) {
     const detail = match.detail || {};
     const participants = Array.isArray(detail.participants) ? detail.participants : [];
     const detailId = `match-detail-${String(match.match_id || "match").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-    const button = text("button", "試合詳細 ▼", "m-detail-toggle");
+    const button = text("button", "", "m-detail-toggle");
     button.type = "button";
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", detailId);
@@ -283,43 +322,43 @@
     panel.id = detailId;
     panel.hidden = true;
     if (!participants.length) button.disabled = true;
-    button.addEventListener("click", () => {
-      const opening = panel.hidden;
-      if (opening && panel.dataset.rendered !== "true") {
-        panel.append(matchDetailContent(match));
-        panel.dataset.rendered = "true";
-      }
-      panel.hidden = !opening;
-      button.setAttribute("aria-expanded", String(opening));
-      button.setAttribute("aria-label", opening ? "試合詳細を閉じる" : "試合詳細を開く");
-      button.textContent = opening ? "試合詳細 ▲" : "試合詳細 ▼";
+    setDetailButtonLabel(button, "試合詳細", "試合詳細", false);
+    registerDetail({
+      button,
+      panel,
+      label: "試合詳細",
+      shortLabel: "試合詳細",
+      render: () => panel.append(matchDetailContent(match)),
     });
     actions.append(button);
     element.append(panel);
   }
 
-  function addFightDetail(element, actions, match) {
-    const fights = Array.isArray(match.fights) ? match.fights : [];
-    const detailId = `fight-detail-${String(match.match_id || "match").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-    const button = text("button", "戦闘詳細 ▼", "m-fight-toggle");
+  function addFightDetail(element, actions, match, registerDetail, mode) {
+    const isAll = mode === "all";
+    const fights = Array.isArray(isAll ? match.all_fights : match.fights)
+      ? (isAll ? match.all_fights : match.fights)
+      : [];
+    const suffix = isAll ? "all" : "self";
+    const label = isAll ? "戦闘詳細（全体）" : "戦闘詳細（自分）";
+    const shortLabel = isAll ? "戦闘（全体）" : "戦闘（自分）";
+    const detailId = `fight-detail-${suffix}-${String(match.match_id || "match").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    const button = text("button", "", "m-fight-toggle");
     button.type = "button";
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", detailId);
-    button.setAttribute("aria-label", `戦闘詳細を開く（${fights.length}件）`);
+    button.setAttribute("aria-label", `${label}を開く（${fights.length}件）`);
     if (!fights.length) button.disabled = true;
     const detail = text("div", "", "fight-detail");
     detail.id = detailId;
     detail.hidden = true;
-    button.addEventListener("click", () => {
-      const opening = detail.hidden;
-      if (opening && detail.dataset.rendered !== "true") {
-        detail.replaceChildren(...fights.map(fightCard));
-        detail.dataset.rendered = "true";
-      }
-      detail.hidden = !opening;
-      button.setAttribute("aria-expanded", String(opening));
-      button.setAttribute("aria-label", opening ? `戦闘詳細を閉じる（${fights.length}件）` : `戦闘詳細を開く（${fights.length}件）`);
-      button.textContent = opening ? "戦闘詳細 ▲" : "戦闘詳細 ▼";
+    setDetailButtonLabel(button, label, shortLabel, false);
+    registerDetail({
+      button,
+      panel: detail,
+      label,
+      shortLabel,
+      render: () => detail.replaceChildren(...fights.map(fightCard)),
     });
     actions.append(button);
     element.append(detail);
@@ -349,7 +388,9 @@
     );
     const primary = text("div", "", "m-primary");
     primary.append(champion, kda);
+    const summary = text("div", "", "m-summary");
     const stats = text("div", "", "m-stats");
+    const summarySeparator = () => text("span", "｜", "m-summary-separator");
     const statRow = (label, value, total = "") => {
       const row = text("div", "", "m-stat-row");
       row.append(
@@ -361,19 +402,26 @@
     };
     stats.append(
       statRow("CS/m", decimal(metrics.rate(match.cs, match), 2), Math.round(match.cs)),
+      summarySeparator(),
       statRow("VS/m", decimal(metrics.rate(match.vision_score, match), 2), Math.round(match.vision_score)),
+      summarySeparator(),
       statRow("DPM", decimal(metrics.rate(match.damage_to_champions, match), 0))
     );
     const when = text("div", "", "m-date");
     when.append(
       text("div", `Time ${duration(match.game_duration_seconds)}`),
+      summarySeparator(),
       text("div", String(match.date || "").slice(0, 16)),
+      summarySeparator(),
       text("div", `Patch ${match.patch || "-"}`)
     );
+    summary.append(stats, when);
     const actions = text("div", "", "m-actions");
-    element.append(result, primary, stats, when, actions);
-    addMatchDetail(element, actions, match);
-    addFightDetail(element, actions, match);
+    const registerDetail = createDetailController();
+    element.append(result, primary, summary, actions);
+    addMatchDetail(element, actions, match, registerDetail);
+    addFightDetail(element, actions, match, registerDetail, "self");
+    addFightDetail(element, actions, match, registerDetail, "all");
     return element;
   }
 

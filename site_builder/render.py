@@ -23,15 +23,18 @@ from data_paths import get_data_paths
 BASE_DIR = Path(__file__).resolve().parent
 _paths = get_data_paths()
 FIGHT_DETAILS_PATH = _paths.csv / "fight_details.json"
+ALL_FIGHT_DETAILS_PATH = _paths.csv / "all_fight_details.json"
 MATCH_DETAILS_PATH = _paths.csv / "match_details.json"
 
 
 def configure_data_root(data_root=None):
-    global FIGHT_DETAILS_PATH, MATCH_DETAILS_PATH
+    global FIGHT_DETAILS_PATH, ALL_FIGHT_DETAILS_PATH, MATCH_DETAILS_PATH
     paths = get_data_paths(data_root)
     FIGHT_DETAILS_PATH = paths.csv / "fight_details.json"
+    ALL_FIGHT_DETAILS_PATH = paths.csv / "all_fight_details.json"
     MATCH_DETAILS_PATH = paths.csv / "match_details.json"
     load_fight_details.cache_clear()
+    load_all_fight_details.cache_clear()
     load_match_details.cache_clear()
 
 
@@ -53,6 +56,23 @@ def load_fight_details():
 
 def load_review_fights(match_id):
     fights = load_fight_details().get(match_id, [])
+    if not isinstance(fights, list):
+        return []
+    return fights
+
+
+@lru_cache(maxsize=1)
+def load_all_fight_details():
+    try:
+        with ALL_FIGHT_DETAILS_PATH.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_all_fights(match_id):
+    fights = load_all_fight_details().get(match_id, [])
     if not isinstance(fights, list):
         return []
     return fights
@@ -178,6 +198,7 @@ def match_history_data(rows):
             "teamfights": row.get("teamfights", 0),
             "detail": load_match_detail(row.get("match_id", "")),
             "fights": load_review_fights(row.get("match_id", "")),
+            "all_fights": load_all_fights(row.get("match_id", "")),
         }
         for row in rows
     ]

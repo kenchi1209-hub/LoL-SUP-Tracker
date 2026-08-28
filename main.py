@@ -34,7 +34,7 @@ from yearly_exporter import export_yearly_summary
 from excel_exporter import export_excel_report
 from timezone_utils import now_jst
 from timeline_summary_exporter import export_timeline_summary
-from fight_detail_exporter import export_fight_details
+from fight_detail_exporter import export_all_fight_details, export_fight_details
 from match_detail_exporter import export_match_details
 from queue_map import is_allowed_queue_id
 from data_paths import get_data_paths
@@ -215,6 +215,11 @@ def run(data_root=None):
     export_timeline_summary(paths.raw, paths.csv / "timeline_summary.csv")
     print("\nExporting Fight Detail JSON")
     export_fight_details(output_path=paths.csv / "fight_details.json", raw_root=paths.raw)
+    print("\nExporting all Fight Detail JSON")
+    export_all_fight_details(
+        output_path=paths.csv / "all_fight_details.json",
+        raw_root=paths.raw,
+    )
     print("\nExporting public Match Detail JSON")
     export_match_details(puuid, paths.raw, paths.csv / "match_details.json")
     print("\nparticipants.csvに出力します")

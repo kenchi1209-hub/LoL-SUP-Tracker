@@ -5,12 +5,14 @@ import os
 import tempfile
 from pathlib import Path
 
+from analyze_timeline import build_all_fight_context_from_timeline, find_player
 from champion_registry import champion_name_ja
 from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_from_path
 from data_paths import CSV_ROOT
 
 
 OUTPUT_PATH = CSV_ROOT / "fight_details.json"
+ALL_OUTPUT_PATH = CSV_ROOT / "all_fight_details.json"
 ROLE_NAMES = {
     "TOP": "TOP",
     "JUNGLE": "JG",
@@ -145,6 +147,16 @@ def compact_review_fight(fight, player_team_id=None, roles_by_participant_id=Non
     }
 
 
+def compact_all_fight(fight, player_team_id=None, roles_by_participant_id=None):
+    """Compact an all-Fight context while preserving non-SELF semantics."""
+    compact = compact_review_fight(fight, player_team_id, roles_by_participant_id)
+    compact["player_involved"] = bool(fight.get("player_involved"))
+    if not compact["player_involved"]:
+        compact["survival"] = "NOT_INVOLVED"
+        compact["my_kda"] = None
+    return compact
+
+
 def build_fight_details(timeline_pattern=None, raw_root=DEFAULT_RAW_ROOT):
     details = {}
     failures = []
@@ -175,6 +187,65 @@ def build_fight_details(timeline_pattern=None, raw_root=DEFAULT_RAW_ROOT):
         except Exception as error:
             failures.append((path, error))
             print(f"Fight Detail読み込み失敗: {path} | {error}")
+
+    return details, failures
+
+
+def build_all_fight_details(timeline_pattern=None, raw_root=DEFAULT_RAW_ROOT):
+    """Build display-ready context for every combat-timeline Fight.
+
+    This deliberately re-reads the original Match-V5 timeline for objective
+    assignment.  The established SELF-review objective context remains solely
+    in the existing combat timeline and is never rewritten here.
+    """
+    details = {}
+    failures = []
+    paths = (
+        sorted(Path(path) for path in glob.glob(timeline_pattern))
+        if timeline_pattern
+        else sorted(iter_combat_timeline_paths(raw_root))
+    )
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                combat_data = json.load(file)
+            if not isinstance(combat_data, dict):
+                raise ValueError("combat timeline root must be an object")
+            match_id = combat_data.get("match_id") or match_id_from_path(path)
+            if match_id in details:
+                raise ValueError(f"duplicate match_id: {match_id}")
+
+            match_path = path.parent / "match.json"
+            timeline_path = path.parent / "timeline.json"
+            with open(match_path, "r", encoding="utf-8") as file:
+                match_data = json.load(file)
+            with open(timeline_path, "r", encoding="utf-8") as file:
+                timeline_data = json.load(file)
+
+            participant_id = (combat_data.get("participant") or {}).get(
+                "participant_id"
+            )
+            if participant_id is None:
+                raise ValueError("combat timeline participant_id is missing")
+            player = find_player(match_data, participant_id=participant_id)
+            all_fights = build_all_fight_context_from_timeline(
+                match_data,
+                timeline_data,
+                player,
+            )
+            roles_by_participant_id = load_participant_roles(match_path)
+            details[match_id] = [
+                compact_all_fight(
+                    fight,
+                    player.get("teamId"),
+                    roles_by_participant_id,
+                )
+                for fight in all_fights
+                if isinstance(fight, dict)
+            ]
+        except Exception as error:
+            failures.append((path, error))
+            print(f"All Fight Detail読み込み失敗: {path} | {error}")
 
     return details, failures
 
@@ -249,6 +320,24 @@ def export_fight_details(
     return output_path
 
 
+def export_all_fight_details(
+    output_path=ALL_OUTPUT_PATH,
+    timeline_pattern=None,
+    raw_root=DEFAULT_RAW_ROOT,
+):
+    details, failures = build_all_fight_details(timeline_pattern, raw_root)
+    if failures:
+        raise FightDetailExportError(
+            f"all Fight解析失敗が{len(failures)}件あるため、出力を中止しました"
+        )
+    write_json_atomic(details, output_path)
+    print(
+        f"all_fight_details.json 出力完了: {len(details)}件 / "
+        f"失敗 {len(failures)}件 / {output_path}"
+    )
+    return output_path
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="combat timelineから公開用Fight Detail JSONを生成します"
@@ -258,12 +347,29 @@ def parse_args():
         action="store_true",
         help="既存公開JSONからMatchが減少する出力を明示的に許可します",
     )
+    parser.add_argument(
+        "--all-output-path",
+        help="全Fight用JSONの出力先。指定時は既存review JSONを変更しません",
+    )
+    parser.add_argument(
+        "--raw-root",
+        help="per-match rawディレクトリを含むdata rootのrawパス",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     try:
-        export_fight_details(allow_removals=args.allow_removals)
+        if args.all_output_path:
+            export_all_fight_details(
+                output_path=args.all_output_path,
+                raw_root=args.raw_root or DEFAULT_RAW_ROOT,
+            )
+        else:
+            export_fight_details(
+                allow_removals=args.allow_removals,
+                raw_root=args.raw_root or DEFAULT_RAW_ROOT,
+            )
     except FightDetailExportError as error:
         raise SystemExit(f"Fight Detail出力中止: {error}") from error

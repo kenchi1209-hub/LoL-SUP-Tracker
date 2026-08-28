@@ -15,6 +15,7 @@ class MainNoopTest(unittest.TestCase):
     EXPORT_FUNCTIONS = (
         "export_timeline_summary",
         "export_fight_details",
+        "export_all_fight_details",
         "export_match_details",
         "export_participants_from_raw",
         "export_my_matches_from_raw",
@@ -180,6 +181,10 @@ class MainNoopTest(unittest.TestCase):
                 )
                 exporters["export_fight_details"].assert_called_once_with(
                     output_path=resolved / "csv/fight_details.json",
+                    raw_root=resolved / "raw",
+                )
+                exporters["export_all_fight_details"].assert_called_once_with(
+                    output_path=resolved / "csv/all_fight_details.json",
                     raw_root=resolved / "raw",
                 )
                 exporters["export_match_details"].assert_called_once_with(

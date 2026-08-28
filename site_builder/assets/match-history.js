@@ -22,6 +22,11 @@
     if (!person) return "Unknown";
     return person.champion_name || person.champion || "Unknown";
   };
+  const fightEventPersonName = (person, rolesByChampion) => {
+    const champion = personName(person);
+    const role = person && rolesByChampion.get(person.champion);
+    return role ? `${role}:${champion}` : champion;
+  };
   const fightPersonName = (person) => {
     const role = person && person.role && person.role !== "UNKNOWN" ? person.role : "不明";
     return `${role}:${personName(person)}`;
@@ -81,6 +86,11 @@
     const notInvolved = fight.player_involved === false || fight.my_kda === null;
     const kda = fight.my_kda || {};
     const people = Array.isArray(fight.participants) ? fight.participants : [];
+    const rolesByChampion = new Map(
+      people
+        .filter((person) => person && person.champion && ["TOP", "JG", "MID", "ADC", "SUP"].includes(person.role))
+        .map((person) => [person.champion, person.role])
+    );
     const friendlyCount = people.filter((person) => person.relation === "FRIENDLY").length;
     const enemyCount = people.filter((person) => person.relation === "ENEMY").length;
     const metrics = text("div", "", "fight-metrics");
@@ -134,9 +144,9 @@
     } else {
       const list = text("div", "", "fight-event-list");
       killEvents.forEach((event) => {
-        const assists = (event.assists || []).map(personName);
+        const assists = (event.assists || []).map((person) => fightEventPersonName(person, rolesByChampion));
         const assistText = assists.length ? ` [A: ${assists.join(", ")}]` : "";
-        list.append(text("div", `${clock(event.timestamp)} K:${personName(event.killer)} → D:${personName(event.victim)}${assistText}`));
+        list.append(text("div", `${clock(event.timestamp)} K:${fightEventPersonName(event.killer, rolesByChampion)} → D:${fightEventPersonName(event.victim, rolesByChampion)}${assistText}`));
       });
       kills.append(list);
     }
@@ -233,9 +243,18 @@
     const allyDamage = participants
       .filter((participant) => participant.relation === "ALLY")
       .reduce((sum, participant) => sum + number(participant.damage_to_champions), 0);
-    const fights = number(match.my_fights);
+    const allFights = Array.isArray(match.all_fights) ? match.all_fights : [];
+    const fights = allFights.length
+      ? allFights.filter((fight) => fight.player_involved === true).length
+      : number(match.my_fights);
+    const totalFights = allFights.length;
     const fightWins = number(match.fight_wins);
     const survived = number(match.survived_fights);
+    const teamfights = number(match.teamfights);
+    const countWithPercent = (numerator, denominator) => {
+      const counts = `${numerator} / ${denominator}`;
+      return denominator ? `${counts}（${percent(numerator, denominator)}）` : counts;
+    };
     const ownKda = (number(match.kills) + number(match.assists)) / Math.max(number(match.deaths), 1);
     const root = text("div", "", "match-detail-content");
     const overview = text("div", "", "match-detail-overview");
@@ -264,11 +283,11 @@
         ["Ward設置", String(number(match.wards_placed))],
         ["Ward破壊", String(number(match.wards_killed))],
         ["Control Ward購入", String(number(match.control_wards_bought))],
-        ["My Fights", String(fights)],
+        ["My Fights", countWithPercent(fights, totalFights)],
         ["W-E-L", `${fightWins}W-${number(match.fight_evens)}E-${number(match.fight_losses)}L`],
-        ["Fight勝率", percent(fightWins, fights)],
+        ["Fight勝率", fights ? `${percent(fightWins, fights)} (${fightWins}/${fights})` : "-"],
         ["生存率", fights ? `${percent(survived, fights)} (${survived}/${fights})` : "-"],
-        ["Teamfight", String(number(match.teamfights))],
+        ["Teamfight", countWithPercent(teamfights, fights)],
       ], "match-detail-vision-fight")
     );
     root.append(overview, text("h4", "味方・敵10人比較", "match-player-title"), playerComparison(match));

@@ -1,7 +1,5 @@
-$publicRepo = "C:\Users\kissx\Desktop\LoL-Analytics"
-$privateRepo = Join-Path (Split-Path -Parent $publicRepo) "LoL-SUP-Tracker-PrivateData"
-Set-Location $publicRepo
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\daily_update.ps1 -PublicRepo $publicRepo -PrivateRepo $privateRepo
+﻿Set-Location C:\Users\kissx\Desktop\LoL-Analytics
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\daily_update.ps1
 if ($LASTEXITCODE -ne 0) {
   throw "LoLデータ更新に失敗しました。上のエラーを確認してください。"
 }

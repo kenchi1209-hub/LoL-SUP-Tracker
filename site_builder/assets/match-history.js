@@ -201,7 +201,7 @@
     table.setAttribute("aria-label", "味方・敵10人比較");
     const header = text("div", "", "match-player-header");
     header.setAttribute("role", "row");
-    ["Role", "Champ", "K/D/A", "CS/m", "VS/m", "DPM"].forEach((label) => {
+    ["Role", "Champ", "Rank", "K/D/A", "KP%", "CS/m", "VS/m", "DMG%", "DPM"].forEach((label) => {
       const cell = text("span", label);
       cell.setAttribute("role", "columnheader");
       header.append(cell);
@@ -222,12 +222,18 @@
       const vision = number(participant.vision_score);
       const damage = number(participant.damage_to_champions);
       const perMinute = (value, digits) => seconds ? decimal(value / (seconds / 60), digits) : "-";
+      const storedPercent = (value) => Number.isFinite(Number(value))
+        ? `${decimal(value, 1)}%`
+        : "-";
       row.append(
         playerCell("Role", ROLE_NAMES[participant.role] || participant.role || "-", "match-player-role"),
         playerCell("Champ", participant.champion_name || participant.champion || "-", "match-player-champion"),
+        playerCell("Rank", participant.rank || "-", "match-player-rank"),
         playerCell("K/D/A", `${number(participant.kills)}/${number(participant.deaths)}/${number(participant.assists)}`),
+        playerCell("KP%", storedPercent(participant.kp_pct)),
         playerCell("CS/m (CS)", `${perMinute(cs, 1)} (${Math.round(cs)})`),
         playerCell("VS/m (VS)", `${perMinute(vision, 2)} (${Math.round(vision)})`),
+        playerCell("DMG%", storedPercent(participant.dmg_pct)),
         playerCell("DPM (DMG)", `${perMinute(damage, 0)} (${Math.round(damage).toLocaleString("ja-JP")})`)
       );
       table.append(row);
@@ -290,7 +296,9 @@
         ["Teamfight", countWithPercent(teamfights, fights)],
       ], "match-detail-vision-fight")
     );
-    root.append(overview, text("h4", "味方・敵10人比較", "match-player-title"), playerComparison(match));
+    const comparisonTitle = text("h4", "味方・敵10人比較", "match-player-title");
+    const rankNote = text("p", "※ Rankはデータ取得時点のSolo/Duo Rank", "match-player-rank-note");
+    root.append(overview, comparisonTitle, rankNote, playerComparison(match));
     if (!self && participants.length) root.prepend(text("p", "自分の参加者データを確認できません", "match-detail-empty"));
     return root;
   }

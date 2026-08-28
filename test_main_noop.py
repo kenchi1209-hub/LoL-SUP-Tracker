@@ -59,8 +59,10 @@ class MainNoopTest(unittest.TestCase):
                 os.chdir(previous)
 
     def test_no_new_match_ids_is_successful_noop(self):
-        detail_mock = self.run_in_temp([])
+        with patch.object(main, "get_league_entries_by_puuid") as rank_fetcher:
+            detail_mock = self.run_in_temp([])
         detail_mock.assert_not_called()
+        rank_fetcher.assert_not_called()
 
     def test_only_ineligible_new_matches_is_successful_noop(self):
         detail_mock = self.run_in_temp(
@@ -161,6 +163,9 @@ class MainNoopTest(unittest.TestCase):
                         },
                     )
                 )
+                rank_snapshots = stack.enter_context(
+                    patch.object(main, "capture_rank_snapshots", return_value=[Path("rank_snapshot.json")])
+                )
                 exporters = {
                     name: stack.enter_context(patch.object(main, name))
                     for name in self.EXPORT_FUNCTIONS
@@ -172,6 +177,9 @@ class MainNoopTest(unittest.TestCase):
                 save_timeline.assert_called_once()
                 analyze.assert_called_once_with(
                     "JP1_NEW", puuid="puuid", raw_root=data_root.resolve() / "raw"
+                )
+                rank_snapshots.assert_called_once_with(
+                    ["JP1_NEW"], data_root.resolve() / "raw", main.get_league_entries_by_puuid
                 )
                 for exporter in exporters.values():
                     exporter.assert_called_once()

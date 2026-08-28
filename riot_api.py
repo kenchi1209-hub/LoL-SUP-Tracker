@@ -7,6 +7,9 @@ from timezone_utils import parse_jst_date
 from raw_paths import DEFAULT_RAW_ROOT, paths_for_match
 
 
+LEAGUE_REQUEST_INTERVAL_SECONDS = 0.1
+
+
 def date_to_unix_seconds(date_text):
     dt = parse_jst_date(date_text)
     return int(dt.timestamp())
@@ -45,14 +48,30 @@ def get_puuid(game_name, tag_line):
 
 
 def get_current_solo_rank(puuid):
-    url = f"https://jp1.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
-    response = requests.get(url, headers=HEADERS)
-    response.raise_for_status()
-    entries = response.json()
+    entries = get_league_entries_by_puuid(puuid)
     for entry in entries:
         if entry.get("queueType") == "RANKED_SOLO_5x5":
             return entry
     return None
+
+
+def get_league_entries_by_puuid(puuid):
+    """Fetch current League-V4 entries, retrying only explicit rate limits."""
+    url = f"https://jp1.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+    while True:
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 429:
+            retry_after = int(response.headers.get("Retry-After", "10"))
+            print(f"429 Rate Limit: {retry_after}秒待機します: League-V4")
+            time.sleep(retry_after)
+            continue
+        response.raise_for_status()
+        entries = response.json()
+        if not isinstance(entries, list):
+            raise ValueError("League-V4 response must be a list")
+        # Keep the new ten-participant snapshot flow comfortably below personal-key bursts.
+        time.sleep(LEAGUE_REQUEST_INTERVAL_SECONDS)
+        return entries
 
 
 def get_match_ids(puuid, count=10):

@@ -18,6 +18,7 @@ from riot_api import (
     get_match_detail,
     save_match_json,
     get_current_solo_rank,
+    get_league_entries_by_puuid,
     get_match_timeline,
     save_match_timeline_json,
 )
@@ -38,6 +39,7 @@ from fight_detail_exporter import export_all_fight_details, export_fight_details
 from match_detail_exporter import export_match_details
 from queue_map import is_allowed_queue_id
 from data_paths import get_data_paths
+from rank_snapshot import capture_rank_snapshots
 
 
 def write_last_updated(csv_root=None):
@@ -210,6 +212,12 @@ def run(data_root=None):
     if timeline_errors:
         failed_ids = ", ".join(match_id for match_id, _ in timeline_errors)
         raise RuntimeError(f"Timeline解析に失敗しました: {failed_ids}")
+
+    print("\n新規MatchのRank snapshotを保存します")
+    rank_snapshot_paths = capture_rank_snapshots(
+        new_match_ids, paths.raw, get_league_entries_by_puuid
+    )
+    print(f"Rank snapshot保存完了: {len(rank_snapshot_paths)}件")
 
     print("\nTimeline Summary CSVに出力します")
     export_timeline_summary(paths.raw, paths.csv / "timeline_summary.csv")

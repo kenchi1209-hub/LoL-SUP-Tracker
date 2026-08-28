@@ -2,7 +2,8 @@ import json
 import os
 import tempfile
 
-from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths, match_id_from_path
+from raw_paths import DEFAULT_RAW_ROOT, iter_match_detail_paths, match_id_from_path, paths_for_match
+from rank_snapshot import rank_short
 from data_paths import CSV_ROOT
 
 
@@ -19,27 +20,54 @@ def is_player(participant, my_puuid):
     return bool(my_puuid) and participant.get("puuid") == my_puuid
 
 
-def compact_participant(participant, player_team_id, my_puuid):
+def percentage(numerator, denominator):
+    if not denominator:
+        return None
+    return round(numerator / denominator * 100, 1)
+
+
+def participant_team_metrics(participants):
+    totals = {}
+    for participant in participants:
+        if not isinstance(participant, dict):
+            continue
+        team_id = participant.get("teamId")
+        if team_id is None:
+            continue
+        total = totals.setdefault(team_id, {"kills": 0, "damage": 0})
+        total["kills"] += participant.get("kills", 0) or 0
+        total["damage"] += participant.get("totalDamageDealtToChampions", 0) or 0
+    return totals
+
+
+def compact_participant(participant, player_team_id, my_puuid, snapshot, team_totals):
     team_id = participant.get("teamId")
     if team_id is None:
         raise ValueError("participant teamId is missing")
     role = participant.get("teamPosition") or participant.get("individualPosition") or ""
+    kills = participant.get("kills", 0) or 0
+    assists = participant.get("assists", 0) or 0
+    damage = participant.get("totalDamageDealtToChampions", 0) or 0
+    totals = team_totals.get(team_id, {})
     return {
         "relation": "ALLY" if team_id == player_team_id else "ENEMY",
         "role": role,
         "champion": participant.get("championName") or "Unknown",
-        "kills": participant.get("kills", 0),
+        "kills": kills,
         "deaths": participant.get("deaths", 0),
-        "assists": participant.get("assists", 0),
+        "assists": assists,
         "cs": participant.get("totalMinionsKilled", 0)
         + participant.get("neutralMinionsKilled", 0),
         "vision_score": participant.get("visionScore", 0),
-        "damage_to_champions": participant.get("totalDamageDealtToChampions", 0),
+        "damage_to_champions": damage,
         "is_self": is_player(participant, my_puuid),
+        "rank": rank_short(snapshot, participant.get("participantId")),
+        "kp_pct": percentage(kills + assists, totals.get("kills", 0)),
+        "dmg_pct": percentage(damage, totals.get("damage", 0)),
     }
 
 
-def compact_match(data, my_puuid):
+def compact_match(data, my_puuid, snapshot=None):
     info = data.get("info") or {}
     participants = info.get("participants") or []
     player = next((p for p in participants if is_player(p, my_puuid)), None)
@@ -50,8 +78,9 @@ def compact_match(data, my_puuid):
     if side is None:
         raise ValueError(f"unsupported player teamId: {player_team_id}")
 
+    team_totals = participant_team_metrics(participants)
     compact = [
-        compact_participant(participant, player_team_id, my_puuid)
+        compact_participant(participant, player_team_id, my_puuid, snapshot, team_totals)
         for participant in participants
         if isinstance(participant, dict)
     ]
@@ -77,9 +106,14 @@ def build_match_details(my_puuid, raw_root=DEFAULT_RAW_ROOT):
             with path.open("r", encoding="utf-8") as file:
                 data = json.load(file)
             match_id = (data.get("metadata") or {}).get("matchId") or match_id_from_path(path)
+            snapshot_path = paths_for_match(match_id, raw_root).rank_snapshot
+            snapshot = None
+            if snapshot_path.is_file():
+                with snapshot_path.open("r", encoding="utf-8") as file:
+                    snapshot = json.load(file)
             if match_id in details:
                 raise ValueError(f"duplicate match_id: {match_id}")
-            details[match_id] = compact_match(data, my_puuid)
+            details[match_id] = compact_match(data, my_puuid, snapshot)
         except Exception as error:
             failures.append((path, error))
             print(f"Match Detail公開データ読み込み失敗: {path} | {error}")

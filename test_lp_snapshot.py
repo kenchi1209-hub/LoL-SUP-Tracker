@@ -1,4 +1,5 @@
 import json
+import csv
 import tempfile
 import unittest
 from datetime import datetime
@@ -7,9 +8,11 @@ from unittest.mock import Mock
 
 from lp_snapshot import (
     AmbiguousHistoryError,
+    CheckpointNotRequiredError,
     LeagueUpdateTimeout,
     build_rank_after,
     capture_one,
+    create_checkpoint,
     create_baseline,
     history_path,
     rank_value,
@@ -87,6 +90,9 @@ class LPSnapshotTest(unittest.TestCase):
 
     def capture(self, details, after, **kwargs):
         ids = list(details)
+        captured_at = kwargs.pop(
+            "captured_at", datetime(2026, 8, 28, 2, 0, tzinfo=JST)
+        )
         return capture_one(
             "self",
             self.raw,
@@ -94,9 +100,32 @@ class LPSnapshotTest(unittest.TestCase):
             lambda _puuid, count=100: ids,
             lambda match_id: details[match_id],
             lambda: after,
-            captured_at=datetime(2026, 8, 28, 2, 0, tzinfo=JST),
+            captured_at=captured_at,
             sleep=lambda _seconds: None,
             **kwargs,
+        )
+
+    def write_local_matches(self, rows):
+        path = self.csv / "my_matches.csv"
+        with path.open("w", encoding="utf-8", newline="") as file:
+            writer = csv.DictWriter(
+                file, fieldnames=("match_id", "date", "queue_id", "patch", "champion", "win")
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def checkpoint_rows(self, first="JP1_GAP_ONE", second="JP1_GAP_TWO", start_hour=1):
+        return [
+            {"match_id": first, "date": f"2026-08-28 {start_hour:02d}:00:00", "queue_id": "420", "patch": "16.17", "champion": "Nami", "win": "True"},
+            {"match_id": second, "date": f"2026-08-28 {start_hour + 1:02d}:00:00", "queue_id": "420", "patch": "16.17", "champion": "Leona", "win": "False"},
+        ]
+
+    def checkpoint(self, after=None, captured_at=None):
+        return create_checkpoint(
+            self.raw,
+            self.csv,
+            lambda: after or league_rank(lp=20, wins=41, losses=56),
+            captured_at=captured_at or datetime(2026, 8, 28, 3, 0, tzinfo=JST),
         )
 
     def test_baseline_is_minimal_immutable_and_history_starts_empty(self):
@@ -286,6 +315,105 @@ class LPSnapshotTest(unittest.TestCase):
         self.assertEqual(config["seasons"][0]["id"], "2026")
         self.assertEqual(config["seasons"][0]["start_jst"], "2026-01-01")
         self.assertIsNone(config["seasons"][0]["end_jst"])
+
+    def test_capture_remains_ambiguous_for_two_uncaptured_matches(self):
+        self.baseline()
+        details = {
+            "JP1_ONE": match_detail("JP1_ONE", hour=1),
+            "JP1_TWO": match_detail("JP1_TWO", hour=2),
+        }
+        with self.assertRaises(AmbiguousHistoryError):
+            self.capture(details, league_rank(wins=41, losses=56))
+        self.assertFalse(paths_for_match("JP1_ONE", self.raw).rank_after.exists())
+        self.assertFalse(paths_for_match("JP1_TWO", self.raw).rank_after.exists())
+
+    def test_checkpoint_records_gap_without_assigning_match_lp(self):
+        baseline_bytes = self.baseline().read_bytes()
+        self.write_local_matches(self.checkpoint_rows())
+        output = self.checkpoint()
+        checkpoint = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(checkpoint["snapshot_type"], "checkpoint")
+        self.assertNotIn("match_id", checkpoint)
+        self.assertNotIn("lp_delta", checkpoint)
+        self.assertEqual(checkpoint["games_since_previous_snapshot"], 2)
+        self.assertEqual(checkpoint["gap"]["match_ids"], ["JP1_GAP_ONE", "JP1_GAP_TWO"])
+        self.assertEqual(checkpoint["gap"]["wins"], 1)
+        self.assertEqual(checkpoint["gap"]["losses"], 1)
+        self.assertNotIn("puuid", json.dumps(checkpoint))
+        self.assertNotIn("summonerId", json.dumps(checkpoint))
+        self.assertNotIn("participantId", json.dumps(checkpoint))
+        self.assertEqual(
+            (self.raw / "lp_progress" / "baseline.json").read_bytes(), baseline_bytes
+        )
+        self.assertFalse(paths_for_match("JP1_GAP_ONE", self.raw).rank_after.exists())
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(len(history["checkpoints"]), 1)
+        self.assertTrue(history["checkpoints"][0]["gap_before"])
+        self.assertEqual(history["matches"], [])
+
+    def test_checkpoint_then_capture_uses_checkpoint_as_before(self):
+        self.baseline()
+        self.write_local_matches(self.checkpoint_rows())
+        self.checkpoint(captured_at=datetime(2026, 8, 28, 3, 0, tzinfo=JST))
+        output = self.capture(
+            {"JP1_AFTER": match_detail("JP1_AFTER", won=True, hour=4)},
+            league_rank(lp=42, wins=42, losses=56),
+            captured_at=datetime(2026, 8, 28, 5, 0, tzinfo=JST),
+        )
+        snapshot = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot["before"]["wins"], 41)
+        self.assertEqual(snapshot["before"]["losses"], 56)
+        self.assertEqual(snapshot["before"]["lp"], 20)
+        self.assertEqual(snapshot["lp_delta"], 22)
+        self.assertEqual(snapshot["games_since_previous_snapshot"], 1)
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(history["matches"][0]["segment_id"], "segment-1")
+
+    def test_checkpoint_rejects_zero_or_one_match_without_writing(self):
+        self.baseline()
+        original = history_path(self.csv).read_bytes()
+        rank_api = Mock()
+        with self.assertRaises(CheckpointNotRequiredError):
+            create_checkpoint(self.raw, self.csv, rank_api)
+        rank_api.assert_not_called()
+        self.assertEqual(history_path(self.csv).read_bytes(), original)
+        self.write_local_matches(self.checkpoint_rows()[:1])
+        with self.assertRaisesRegex(CheckpointNotRequiredError, "use capture"):
+            create_checkpoint(self.raw, self.csv, rank_api)
+        rank_api.assert_not_called()
+        self.assertEqual(history_path(self.csv).read_bytes(), original)
+
+    def test_checkpoint_uses_existing_raw_without_match_v5_or_csv_export(self):
+        self.baseline()
+        for match_id, hour, won in (("JP1_RAW_ONE", 1, True), ("JP1_RAW_TWO", 2, False)):
+            path = paths_for_match(match_id, self.raw).detail
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(match_detail(match_id, won=won, hour=hour)), encoding="utf-8")
+        output = create_checkpoint(
+            self.raw,
+            self.csv,
+            lambda: league_rank(wins=41, losses=56),
+            puuid="self",
+            captured_at=datetime(2026, 8, 28, 3, 0, tzinfo=JST),
+        )
+        checkpoint = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(checkpoint["gap"]["match_ids"], ["JP1_RAW_ONE", "JP1_RAW_TWO"])
+
+    def test_multiple_checkpoints_keep_separate_gap_segments(self):
+        self.baseline()
+        self.write_local_matches(self.checkpoint_rows())
+        self.checkpoint(captured_at=datetime(2026, 8, 28, 3, 0, tzinfo=JST))
+        self.write_local_matches(
+            self.checkpoint_rows("JP1_GAP_THREE", "JP1_GAP_FOUR", start_hour=4)
+        )
+        self.checkpoint(
+            after=league_rank(lp=20, wins=42, losses=57),
+            captured_at=datetime(2026, 8, 28, 6, 0, tzinfo=JST),
+        )
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(len(history["checkpoints"]), 2)
+        self.assertEqual(history["checkpoints"][1]["previous_snapshot_type"], "checkpoint")
+        self.assertEqual(history["checkpoints"][1]["segment_id"], "segment-2")
 
 
 if __name__ == "__main__":

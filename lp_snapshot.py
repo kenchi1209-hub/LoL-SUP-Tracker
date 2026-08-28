@@ -6,6 +6,7 @@ and League-V4 confirms the expected W/L counter transition.
 """
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -25,6 +26,7 @@ SCHEMA_VERSION = 1
 SOLO_QUEUE_TYPE = "RANKED_SOLO_5x5"
 SOLO_QUEUE_ID = 420
 BASELINE_RELATIVE_PATH = Path("lp_progress") / "baseline.json"
+CHECKPOINTS_RELATIVE_PATH = Path("lp_progress") / "checkpoints"
 HISTORY_FILENAME = "lp_history.json"
 TIER_INDEX = {
     "IRON": 0,
@@ -49,6 +51,10 @@ class AmbiguousHistoryError(LPSnapshotError):
 
 class LeagueUpdateTimeout(LPSnapshotError):
     """Raised when League-V4 does not reflect the match before the deadline."""
+
+
+class CheckpointNotRequiredError(LPSnapshotError):
+    """Raised when a checkpoint would hide an exact-capture opportunity."""
 
 
 def iso_jst(value=None):
@@ -121,6 +127,18 @@ def baseline_path(raw_root):
     return Path(raw_root) / BASELINE_RELATIVE_PATH
 
 
+def checkpoints_dir(raw_root):
+    return Path(raw_root) / CHECKPOINTS_RELATIVE_PATH
+
+
+def checkpoint_id(captured_at):
+    return f"checkpoint-{parse_timestamp(captured_at).astimezone(JST).strftime('%Y%m%dT%H%M%S%z')}"
+
+
+def checkpoint_path(raw_root, snapshot_id):
+    return checkpoints_dir(raw_root) / f"{snapshot_id}.json"
+
+
 def history_path(csv_root):
     return Path(csv_root) / HISTORY_FILENAME
 
@@ -149,6 +167,10 @@ def iter_rank_after_paths(raw_root):
     yield from sorted(Path(raw_root).glob("*/rank_after.json"))
 
 
+def iter_checkpoint_paths(raw_root):
+    yield from sorted(checkpoints_dir(raw_root).glob("*.json"))
+
+
 def load_confirmed_snapshots(raw_root):
     snapshots = []
     for path in iter_rank_after_paths(raw_root):
@@ -163,7 +185,24 @@ def load_confirmed_snapshots(raw_root):
             and snapshot.get("queue_id") == SOLO_QUEUE_ID
         ):
             snapshots.append(snapshot)
-    return sorted(snapshots, key=lambda item: (item["game_datetime_jst"], item["match_id"]))
+    return snapshots
+
+
+def load_checkpoints(raw_root):
+    checkpoints = []
+    for path in iter_checkpoint_paths(raw_root):
+        try:
+            checkpoint = load_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            checkpoint.get("schema_version") == SCHEMA_VERSION
+            and checkpoint.get("snapshot_type") == "checkpoint"
+            and checkpoint.get("confidence") == "checkpoint"
+            and checkpoint.get("queue_id") == SOLO_QUEUE_ID
+        ):
+            checkpoints.append(checkpoint)
+    return checkpoints
 
 
 def rank_state(rank):
@@ -173,11 +212,56 @@ def rank_state(rank):
     }
 
 
-def validated_snapshots(raw_root, baseline):
-    """Return the exact chain, refusing corrupt or discontinuous history."""
+def event_timestamp(event):
+    return parse_timestamp(event["captured_at_jst"])
+
+
+def validated_events(raw_root, baseline):
+    """Validate the exact/checkpoint chain and return events with segment IDs."""
     current = rank_state(baseline)
+    previous_type = "baseline"
+    previous_id = "baseline"
+    segment_index = 0
     validated = []
-    for snapshot in load_confirmed_snapshots(raw_root):
+    events = load_confirmed_snapshots(raw_root) + load_checkpoints(raw_root)
+    for snapshot in sorted(events, key=lambda item: (event_timestamp(item), item.get("snapshot_id", item.get("match_id", "")))):
+        kind = snapshot.get("snapshot_type")
+        if kind == "checkpoint":
+            gap = snapshot.get("gap")
+            if not isinstance(gap, dict):
+                raise LPSnapshotError("Checkpoint gap is missing")
+            match_ids = gap.get("match_ids")
+            games = gap.get("games")
+            wins = gap.get("wins")
+            losses = gap.get("losses")
+            if (
+                not isinstance(match_ids, list)
+                or not all(isinstance(match_id, str) and match_id for match_id in match_ids)
+                or games != len(match_ids)
+                or not isinstance(wins, int)
+                or not isinstance(losses, int)
+                or wins + losses != games
+                or games < 2
+            ):
+                raise LPSnapshotError("Invalid checkpoint gap")
+            if snapshot.get("games_since_previous_snapshot") != games:
+                raise LPSnapshotError("Invalid checkpoint game count")
+            if snapshot.get("previous_snapshot_type") != previous_type or snapshot.get("previous_snapshot_id") != previous_id:
+                raise LPSnapshotError("Discontinuous checkpoint")
+            after = rank_state(snapshot)
+            expected = (int(current["wins"]) + wins, int(current["losses"]) + losses)
+            if (after.get("wins"), after.get("losses")) != expected:
+                raise LPSnapshotError("Invalid checkpoint W/L")
+            if "match_id" in snapshot or "lp_delta" in snapshot:
+                raise LPSnapshotError("Checkpoint must not contain match LP fields")
+            segment_index += 1
+            validated.append({"event": snapshot, "segment_id": f"segment-{segment_index}"})
+            current = after
+            previous_type = "checkpoint"
+            previous_id = snapshot.get("snapshot_id")
+            continue
+        if kind != "rank_after":
+            raise LPSnapshotError("Unknown LP history event")
         if snapshot.get("games_since_previous_snapshot") != 1:
             raise LPSnapshotError(
                 f"Invalid game count in LP snapshot: {snapshot.get('match_id')}"
@@ -198,21 +282,29 @@ def validated_snapshots(raw_root, baseline):
             raise LPSnapshotError(
                 f"Invalid LP delta in snapshot: {snapshot.get('match_id')}"
             )
-        validated.append(snapshot)
+        validated.append({"event": snapshot, "segment_id": f"segment-{segment_index}"})
         current = after
+        previous_type = "rank_after"
+        previous_id = snapshot.get("match_id")
     return validated
+
+
+def validated_snapshots(raw_root, baseline):
+    """Backward-compatible exact snapshot view used by existing callers/tests."""
+    return [item["event"] for item in validated_events(raw_root, baseline) if item["event"].get("snapshot_type") == "rank_after"]
 
 
 def previous_state(raw_root):
     baseline = load_json(baseline_path(raw_root))
     if baseline.get("snapshot_type") != "baseline":
         raise LPSnapshotError("Invalid LP baseline")
-    snapshots = validated_snapshots(raw_root, baseline)
-    if snapshots:
-        latest = snapshots[-1]
-        return latest["after"], latest["captured_at_jst"], snapshots
+    events = validated_events(raw_root, baseline)
+    if events:
+        latest = events[-1]["event"]
+        state = latest["after"] if latest["snapshot_type"] == "rank_after" else latest
+        return rank_state(state), latest["captured_at_jst"], events
     rank = {key: baseline.get(key) for key in ("tier", "division", "lp", "wins", "losses")}
-    return rank, baseline["captured_at_jst"], snapshots
+    return rank, baseline["captured_at_jst"], events
 
 
 def match_end_jst(detail):
@@ -261,6 +353,55 @@ def discover_uncaptured_solo_matches(
         if metadata and metadata["game_end_jst"] > cutoff:
             metadata["match_id"] = match_id
             found.append(metadata)
+    return sorted(found, key=lambda item: (item["game_datetime_jst"], item["match_id"]))
+
+
+def parse_match_date(value):
+    return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST)
+
+
+def discover_local_uncaptured_solo_matches(raw_root, csv_root, cutoff_jst, puuid=None):
+    """Find checkpoint gaps from existing PrivateData without Match-V5 calls."""
+    captured_ids = {item["match_id"] for item in load_confirmed_snapshots(raw_root)}
+    cutoff = parse_timestamp(cutoff_jst)
+    found = []
+    if puuid:
+        for detail_path in sorted(Path(raw_root).glob("*/match.json")):
+            detail = load_json(detail_path)
+            metadata = match_metadata(detail, puuid)
+            if (
+                metadata
+                and metadata["match_id"] not in captured_ids
+                and metadata["game_end_jst"] > cutoff
+            ):
+                found.append({key: metadata[key] for key in ("match_id", "game_datetime_jst", "patch", "champion", "win")})
+        return sorted(found, key=lambda item: (item["game_datetime_jst"], item["match_id"]))
+
+    csv_path = Path(csv_root) / "my_matches.csv"
+    if not csv_path.is_file():
+        return []
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
+        for row in csv.DictReader(file):
+            match_id = row.get("match_id", "")
+            if not match_id or match_id in captured_ids or str(row.get("queue_id", "")) != str(SOLO_QUEUE_ID):
+                continue
+            game_datetime = parse_match_date(row.get("date", ""))
+            if game_datetime <= cutoff:
+                continue
+            win_value = str(row.get("win", row.get("result", ""))).strip().lower()
+            if win_value in {"true", "1", "win", "w"}:
+                won = True
+            elif win_value in {"false", "0", "loss", "l"}:
+                won = False
+            else:
+                raise LPSnapshotError(f"Invalid win value for checkpoint gap: {match_id}")
+            found.append({
+                "match_id": match_id,
+                "game_datetime_jst": iso_jst(game_datetime),
+                "patch": row.get("patch", ""),
+                "champion": row.get("champion", ""),
+                "win": won,
+            })
     return sorted(found, key=lambda item: (item["game_datetime_jst"], item["match_id"]))
 
 
@@ -341,6 +482,17 @@ def history_record(snapshot):
     }
 
 
+def checkpoint_record(snapshot, segment_id):
+    return {
+        key: snapshot.get(key)
+        for key in (
+            "snapshot_id", "captured_at_jst", "tier", "division", "lp", "wins", "losses",
+            "confidence", "reason", "games_since_previous_snapshot",
+            "previous_snapshot_type", "previous_snapshot_id", "gap",
+        )
+    } | {"segment_id": segment_id, "gap_before": True}
+
+
 def rebuild_lp_history(raw_root, csv_root):
     baseline = load_json(baseline_path(raw_root))
     public_baseline = {
@@ -349,12 +501,20 @@ def rebuild_lp_history(raw_root, csv_root):
             "captured_at_jst", "tier", "division", "lp", "wins", "losses", "confidence"
         )
     }
+    events = validated_events(raw_root, baseline)
     history = {
         "schema_version": SCHEMA_VERSION,
         "queue_type": SOLO_QUEUE_TYPE,
         "queue_id": SOLO_QUEUE_ID,
-        "baseline": public_baseline,
-        "matches": [history_record(item) for item in validated_snapshots(raw_root, baseline)],
+        "baseline": public_baseline | {"segment_id": "segment-0"},
+        "checkpoints": [
+            checkpoint_record(item["event"], item["segment_id"])
+            for item in events if item["event"].get("snapshot_type") == "checkpoint"
+        ],
+        "matches": [
+            history_record(item["event"]) | {"segment_id": item["segment_id"]}
+            for item in events if item["event"].get("snapshot_type") == "rank_after"
+        ],
     }
     atomic_json_dump(history_path(csv_root), history)
     return history
@@ -390,9 +550,65 @@ def capture_one(
     return output
 
 
+def build_checkpoint(before, previous_events, candidates, after, captured_at=None):
+    captured_at_jst = iso_jst(captured_at)
+    snapshot_id = checkpoint_id(captured_at_jst)
+    previous_type = "baseline"
+    previous_id = "baseline"
+    if previous_events:
+        previous = previous_events[-1]["event"]
+        previous_type = previous["snapshot_type"]
+        previous_id = previous.get("snapshot_id", previous.get("match_id"))
+    wins = sum(1 for candidate in candidates if candidate["win"])
+    losses = len(candidates) - wins
+    expected = (int(before["wins"]) + wins, int(before["losses"]) + losses)
+    if (after["wins"], after["losses"]) != expected:
+        raise AmbiguousHistoryError(
+            f"Checkpoint W/L mismatch: expected {expected}, got {(after['wins'], after['losses'])}"
+        )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "snapshot_type": "checkpoint",
+        "snapshot_id": snapshot_id,
+        "captured_at_jst": captured_at_jst,
+        "queue_type": SOLO_QUEUE_TYPE,
+        "queue_id": SOLO_QUEUE_ID,
+        **rank_state(after),
+        "confidence": "checkpoint",
+        "reason": "multiple_uncaptured_ranked_matches",
+        "games_since_previous_snapshot": len(candidates),
+        "previous_snapshot_type": previous_type,
+        "previous_snapshot_id": previous_id,
+        "gap": {
+            "reason": "multiple_uncaptured_ranked_matches",
+            "match_ids": [candidate["match_id"] for candidate in candidates],
+            "games": len(candidates),
+            "wins": wins,
+            "losses": losses,
+        },
+    }
+
+
+def create_checkpoint(raw_root, csv_root, fetch_current_rank, captured_at=None, puuid=None):
+    before, cutoff_jst, events = previous_state(raw_root)
+    candidates = discover_local_uncaptured_solo_matches(raw_root, csv_root, cutoff_jst, puuid)
+    if not candidates:
+        raise CheckpointNotRequiredError("No uncaptured Solo/Duo match; checkpoint was not created")
+    if len(candidates) == 1:
+        raise CheckpointNotRequiredError("One uncaptured Solo/Duo match; use capture instead")
+    after = compact_rank(fetch_current_rank())
+    checkpoint = build_checkpoint(before, events, candidates, after, captured_at)
+    output = checkpoint_path(raw_root, checkpoint["snapshot_id"])
+    if output.exists():
+        raise LPSnapshotError(f"Checkpoint already exists: {output}")
+    atomic_json_dump(output, checkpoint)
+    rebuild_lp_history(raw_root, csv_root)
+    return output
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("baseline", "capture", "rebuild"))
+    parser.add_argument("command", choices=("baseline", "capture", "checkpoint", "rebuild"))
     parser.add_argument("--data-root")
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--poll-interval", type=float, default=5)
@@ -412,6 +628,19 @@ def main(argv=None):
         if args.command == "rebuild":
             rebuild_lp_history(paths.raw, paths.csv)
             print(f"LP history rebuilt: {history_path(paths.csv)}")
+            return 0
+
+        if args.command == "checkpoint":
+            from riot_api import get_current_solo_rank
+
+            current_rank = load_json(paths.csv / "current_rank.json")
+            puuid = current_rank.get("puuid")
+            if not isinstance(puuid, str) or not puuid:
+                raise LPSnapshotError("current_rank.json does not contain a PUUID for League-V4")
+            output = create_checkpoint(
+                paths.raw, paths.csv, lambda: get_current_solo_rank(puuid), puuid=puuid
+            )
+            print(f"LP checkpoint saved: {output}")
             return 0
 
         # Import API configuration only for the explicit capture command.

@@ -142,7 +142,8 @@ def write_json_atomic(details, output_path):
         prefix=f".{os.path.basename(output_path)}.", suffix=".tmp", dir=output_dir
     )
     try:
-        os.fchmod(descriptor, 0o644)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o644)
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
             json.dump(details, file, ensure_ascii=False, separators=(",", ":"))
             file.write("\n")

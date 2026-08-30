@@ -1,21 +1,34 @@
-"""Windows LCU watcher MVP. It only observes; it never captures or writes LP data."""
+"""Windows LCU watcher with an explicit, opt-in post-ranked live mode."""
 
 import argparse
 import ctypes
 import os
+from pathlib import Path
+import subprocess
+import sys
 import time
 
+from data_paths import get_data_paths
 from lcu_client import LCUError, LCUUnavailable, LCUClient, session_diagnostic
+from lp_snapshot import discover_local_uncaptured_solo_matches, previous_state
 from timezone_utils import now_jst
 
 
 SOLO_QUEUE_ID = 420
 START_PHASES = {"ChampSelect", "InProgress"}
-FINISH_PHASES = {"WaitingForStats", "PreEndOfGame", "EndOfGame"}
 KNOWN_PHASES = {
     "None", "Lobby", "Matchmaking", "ReadyCheck", "ChampSelect", "InProgress",
     "WaitingForStats", "PreEndOfGame", "EndOfGame",
 }
+MAIN_TIMEOUT_SECONDS = 300
+CAPTURE_TIMEOUT_SECONDS = 180
+MATCH_UPDATE_RETRY_SECONDS = 10
+MATCH_UPDATE_MAX_ATTEMPTS = 13
+MATCH_UPDATE_MAX_WAIT_SECONDS = 120
+
+
+class LiveProcessError(RuntimeError):
+    """A live update could not safely reach an exact LP capture."""
 
 
 class SingleInstanceLock:
@@ -59,8 +72,30 @@ def queue_id_from_session(session):
     return None
 
 
+def session_id_from_session(session):
+    """Return a non-PII game session identifier from known LCU fields only."""
+    if not isinstance(session, dict):
+        return None
+    game_data = session.get("gameData")
+    candidates = [
+        game_data.get("gameId") if isinstance(game_data, dict) else None,
+        session.get("gameId"),
+    ]
+    for value in candidates:
+        if value is None or isinstance(value, bool):
+            continue
+        value = str(value).strip()
+        if value:
+            return value
+    return None
+
+
 class LCUWatcher:
-    def __init__(self, client=None, emit=print, sleeper=time.sleep, idle_interval=3, active_interval=1):
+    def __init__(
+        self, client=None, emit=print, sleeper=time.sleep, idle_interval=3,
+        active_interval=1, live=False, data_root=None, process_runner=subprocess.run,
+        repo_root=None, monotonic=time.monotonic,
+    ):
         if idle_interval < 1 or active_interval < 1:
             raise ValueError("Polling intervals must be at least one second")
         self.client = client or LCUClient()
@@ -72,19 +107,30 @@ class LCUWatcher:
         self.pending = None
         self._waiting_logged = False
         self._diagnosed_session = False
+        self.live = live
+        self.data_root = Path(data_root).expanduser().resolve() if data_root else None
+        self.process_runner = process_runner
+        self.repo_root = Path(repo_root or __file__).resolve().parent
+        self.monotonic = monotonic
 
     def _log(self, message):
         self.emit(message)
 
-    def _start_pending(self, phase, queue_id):
+    def _start_pending(self, phase, queue_id, session_id):
         before = self.client.get_solo_rank()
         self.pending = {
             "detected_at_jst": now_jst().replace(microsecond=0).isoformat(),
             "start_phase": phase,
             "queue_id": queue_id,
+            "session_id": session_id,
             "lcu_before_rank": before,
-            "capture_requested": False,
-            "in_progress": phase == "InProgress",
+            "processing_started": False,
+            "capture_attempted": False,
+            "completed": False,
+            "failed": False,
+            "terminal": False,
+            "has_reached_in_progress": phase == "InProgress",
+            "match_update_attempts": 0,
         }
         self._log("[LP] solo ranked detected")
         self._log("[LP] pending started")
@@ -105,6 +151,98 @@ class LCUWatcher:
             f"{rank['wins']}W/{rank['losses']}L"
         )
 
+    def _command(self, script, *arguments):
+        return [sys.executable, str(self.repo_root / script), *arguments]
+
+    def _run_process(self, command, timeout):
+        """Run an existing CLI safely without exposing its output in watcher logs."""
+        return self.process_runner(
+            command,
+            cwd=str(self.repo_root),
+            shell=False,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+    def _uncaptured_solo_matches(self):
+        if self.data_root is None:
+            raise LiveProcessError("live data root is unavailable")
+        paths = get_data_paths(self.data_root)
+        _before, cutoff_jst, _events = previous_state(paths.raw)
+        return discover_local_uncaptured_solo_matches(paths.raw, paths.csv, cutoff_jst)
+
+    def _has_rank_after(self, match_id):
+        return (self.data_root / "raw" / match_id / "rank_after.json").is_file()
+
+    def _live_process(self):
+        """Delegate all writes to the existing update and exact-capture CLIs."""
+        pending = self.pending
+        pending["processing_started"] = True
+        try:
+            retry_deadline = self.monotonic() + MATCH_UPDATE_MAX_WAIT_SECONDS
+            for attempt in range(1, MATCH_UPDATE_MAX_ATTEMPTS + 1):
+                pending["match_update_attempts"] = attempt
+                result = self._run_process(
+                    self._command("main.py", "--data-root", str(self.data_root)),
+                    MAIN_TIMEOUT_SECONDS,
+                )
+                if result.returncode != 0:
+                    raise LiveProcessError(f"main.py exited with code {result.returncode}")
+
+                matches = self._uncaptured_solo_matches()
+                if len(matches) == 1:
+                    match_id = matches[0]["match_id"]
+                    pending["capture_attempted"] = True
+                    capture = self._run_process(
+                        self._command("lp_snapshot.py", "capture", "--data-root", str(self.data_root)),
+                        CAPTURE_TIMEOUT_SECONDS,
+                    )
+                    if capture.returncode == 0:
+                        if not self._has_rank_after(match_id):
+                            raise LiveProcessError("capture completed without rank_after confirmation")
+                        pending["completed"] = True
+                        pending["terminal"] = True
+                        self._log("[LP] exact capture completed")
+                        return
+                    if capture.returncode == 2:
+                        pending["terminal"] = True
+                        self._log("[LP] CHECKPOINT_REQUIRED")
+                        return
+                    raise LiveProcessError(f"lp_snapshot.py exited with code {capture.returncode}")
+
+                if len(matches) > 1:
+                    self._log("[LP] CHECKPOINT_REQUIRED")
+                    return
+                remaining = retry_deadline - self.monotonic()
+                if remaining <= 0:
+                    break
+                if attempt < MATCH_UPDATE_MAX_ATTEMPTS and remaining > 0:
+                    self._log("[LP] waiting for Match-V5 reflection")
+                    self.sleeper(min(MATCH_UPDATE_RETRY_SECONDS, remaining))
+            raise LiveProcessError("Match-V5 reflection timed out")
+        except subprocess.TimeoutExpired:
+            pending["failed"] = True
+            pending["terminal"] = True
+            self._log("[LP] LIVE PROCESS FAILED: subprocess timeout")
+        except (LiveProcessError, OSError, ValueError) as error:
+            pending["failed"] = True
+            pending["terminal"] = True
+            self._log(f"[LP] LIVE PROCESS FAILED: {error}")
+
+    def _finish_pending(self):
+        pending = self.pending
+        pending["processing_started"] = True
+        self._log("[LP] ranked finished")
+        if not self.live:
+            self._log("[LP] WOULD_RUN_MATCH_UPDATE")
+            self._log("[LP] WOULD_RUN_CAPTURE")
+            pending["terminal"] = True
+            return
+        self._live_process()
+
     def _handle_phase(self, phase, session):
         previous = self.last_phase
         if phase != previous:
@@ -118,22 +256,28 @@ class LCUWatcher:
         if session is None:
             self._diagnosed_session = False
         queue_id = queue_id_from_session(session)
+        session_id = session_id_from_session(session)
         if queue_id is not None and phase != previous:
             self._log(f"[LCU] queue: {queue_id}")
-        if queue_id == SOLO_QUEUE_ID and phase in START_PHASES and self.pending is None:
-            self._start_pending(phase, queue_id)
+        if queue_id == SOLO_QUEUE_ID and phase in START_PHASES:
+            if self.pending is None:
+                if session_id is None:
+                    self._log("[LP] session identity unavailable; SAFE_SKIP")
+                else:
+                    self._start_pending(phase, queue_id, session_id)
+            elif self.pending["terminal"] and session_id != self.pending["session_id"]:
+                self._start_pending(phase, queue_id, session_id)
         if self.pending and phase == "InProgress":
-            self.pending["in_progress"] = True
+            self.pending["has_reached_in_progress"] = True
         if (
             self.pending
-            and self.pending["in_progress"]
-            and phase in FINISH_PHASES
-            and not self.pending["capture_requested"]
+            and self.pending["has_reached_in_progress"]
+            and phase == "WaitingForStats"
+            and not self.pending["processing_started"]
+            and queue_id == SOLO_QUEUE_ID
+            and session_id == self.pending["session_id"]
         ):
-            self.pending["capture_requested"] = True
-            self._log("[LP] ranked finished")
-            self._log("[LP] WOULD_RUN_MATCH_UPDATE")
-            self._log("[LP] WOULD_RUN_CAPTURE")
+            self._finish_pending()
 
     def tick(self):
         try:
@@ -170,8 +314,9 @@ class LCUWatcher:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", help="Reserved for future live-mode integration")
+    parser.add_argument("--data-root", help="Absolute PrivateData root required for --live")
     parser.add_argument("--dry-run", action="store_true", default=True, help="Observe only (default)")
+    parser.add_argument("--live", action="store_true", help="Opt in to main.py then exact LP capture")
     return parser.parse_args(argv)
 
 
@@ -181,6 +326,7 @@ def run_watcher(watcher, lock):
         watcher._log("[LCU] another watcher is already running")
         return 2
     try:
+        watcher._log("[LP] mode: LIVE" if watcher.live else "[LP] mode: DRY-RUN")
         watcher.run()
     finally:
         lock.release()
@@ -188,8 +334,18 @@ def run_watcher(watcher, lock):
 
 
 def main(argv=None):
-    parse_args(argv)  # The MVP intentionally never launches update or capture subprocesses.
-    return run_watcher(LCUWatcher(), SingleInstanceLock())
+    args = parse_args(argv)
+    data_root = None
+    if args.live:
+        if not args.data_root:
+            print("[LP] LIVE PROCESS FAILED: --data-root is required for --live")
+            return 1
+        data_root = Path(args.data_root).expanduser().resolve()
+        required = (data_root, data_root / "raw" / "lp_progress" / "baseline.json", data_root / "csv")
+        if not all(path.exists() for path in required):
+            print("[LP] LIVE PROCESS FAILED: invalid PrivateData path")
+            return 1
+    return run_watcher(LCUWatcher(live=args.live, data_root=data_root), SingleInstanceLock())
 
 
 if __name__ == "__main__":

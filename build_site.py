@@ -13,6 +13,11 @@ from champion_registry import registry_version
 from site_builder.data import configure_data_root as configure_site_data, load_matches
 from site_builder.render import configure_data_root as configure_render_data
 from site_builder.history import build_history_html
+from site_builder.lp_progress import (
+    build_lp_page,
+    build_lp_payload,
+    configure_data_root as configure_lp_data,
+)
 from site_builder.role import build_role_pages
 from site_builder.top import build_html
 
@@ -26,6 +31,7 @@ def get_ddragon_version():
 def main(data_root=None):
     configure_site_data(data_root)
     configure_render_data(data_root)
+    configure_lp_data(data_root)
     rows = load_matches()
     if not rows:
         print("警告: 試合データが空です。プレースホルダを生成します。")
@@ -38,6 +44,9 @@ def main(data_root=None):
         f.write(html_out)
     with open(os.path.join(OUT_DIR, "history.html"), "w", encoding="utf-8") as f:
         f.write(build_history_html(rows, version))
+    lp_payload = build_lp_payload(rows, version)
+    with open(os.path.join(OUT_DIR, "lp.html"), "w", encoding="utf-8") as f:
+        f.write(build_lp_page(rows, lp_payload))
     for filename, role_html in build_role_pages(rows, version).items():
         with open(os.path.join(OUT_DIR, filename), "w", encoding="utf-8") as f:
             f.write(role_html)

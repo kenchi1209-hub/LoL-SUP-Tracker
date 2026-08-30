@@ -151,6 +151,7 @@ NAV_ROWS = (
     (
         ("overview", "Overview", "index.html"),
         ("history", "Match History", "history.html"),
+        ("lp", "LP Progress", "lp.html"),
     ),
     (
         ("top", "TOP", "top.html"),

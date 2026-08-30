@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP Progress · {player}</title>
+<link rel="stylesheet" href="assets/common.css">
+<link rel="stylesheet" href="assets/top.css">
+<link rel="stylesheet" href="assets/lp-progress.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero"><h1>LP Progress</h1><div class="meta">{player} · Solo/Duo Ranked のLP記録</div></header>
+    {navigation}
+    <main class="lp-page">
+      <section class="block lp-filter-panel" aria-label="LP Progressフィルター">
+        <div class="lp-filters">
+          <div class="lp-field"><label for="lp-period">期間</label><select id="lp-period"><option value="all">全期間</option><option value="season">今シーズン</option><option value="30d">30日</option><option value="custom">任意期間</option></select></div>
+          <div class="lp-field"><label for="lp-patch">Patch</label><select id="lp-patch"><option value="all">All Patch</option></select></div>
+          <div class="lp-custom" id="lp-custom" hidden>
+            <div class="lp-field"><label for="lp-start">開始日</label><input id="lp-start" type="date"></div>
+            <div class="lp-field"><label for="lp-end">終了日</label><input id="lp-end" type="date"></div>
+          </div>
+        </div>
+        <p class="lp-tracking" id="lp-tracking">LP記録開始：-</p>
+      </section>
+      <section class="block"><h2>Overall summary</h2><div class="cards" id="lp-overall" aria-live="polite"></div></section>
+      <section class="block"><h2>Filtered summary</h2><div class="cards" id="lp-filtered" aria-live="polite"></div></section>
+      <section class="block lp-chart-section"><h2>LP Trend</h2><div id="lp-chart" class="lp-chart" role="region" aria-label="LP推移グラフ"></div><div id="lp-tooltip" class="lp-tooltip" hidden role="status" aria-live="polite"></div><p id="lp-empty" class="lp-empty" hidden>対象期間にLPデータがありません</p></section>
+      <section class="block"><h2>Champion summary</h2><div class="table-wrap lp-table-wrap"><table class="lp-table"><thead><tr><th scope="col">Champ</th><th scope="col">Games</th><th scope="col">W-L</th><th scope="col">Win Rate</th><th scope="col">LP</th></tr></thead><tbody id="lp-champion-body"></tbody></table></div><p id="lp-champion-empty" class="lp-empty" hidden>対象期間にLPデータがありません</p></section>
+    </main>
+    <footer>Riot API のデータを基に自動生成 · GitHub Actions + GitHub Pages<br>このサイトは Riot Games が承認・後援するものではありません。</footer>
+  </div>
+  <script id="lp-progress-data" type="application/json">{payload}</script>
+  <script src="assets/lp-progress.js" defer></script>
+</body>
+</html>

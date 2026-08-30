@@ -1,0 +1,31 @@
+.lp-page { min-width: 0; }
+.lp-filter-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.lp-filters, .lp-custom { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.lp-field { display: grid; gap: 4px; min-width: 132px; }
+.lp-field label { color: var(--muted); font-size: .8rem; }
+.lp-field select, .lp-field input { min-height: 38px; color: var(--text); background: var(--panel2); border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; font: inherit; }
+.lp-tracking { color: var(--muted); font-size: .82rem; margin: 12px 0 0; }
+.lp-chart-section { position: relative; }
+.lp-chart { height: 360px; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.lp-chart svg { width: 100%; height: 100%; display: block; }
+.lp-chart [role="button"] { cursor: pointer; outline: none; }
+.lp-chart [role="button"]:focus { filter: drop-shadow(0 0 4px #f0b429); }
+.lp-tooltip { position: absolute; z-index: 2; max-width: 228px; white-space: pre-line; background: #0d1320; border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: .8rem; pointer-events: none; box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+.lp-empty { color: var(--muted); padding: 20px 0; }
+.lp-table { min-width: 520px; }
+.lp-table th, .lp-table td { text-align: right; }
+.lp-table th:first-child, .lp-table td:first-child { text-align: left; }
+.lp-table small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; white-space: nowrap; }
+.lp-champ { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+.lp-champ img { width: 25px; height: 25px; border-radius: 5px; }
+@media (max-width: 430px) {
+  .lp-filter-panel { padding: 12px; }
+  .lp-field { flex: 1 1 142px; }
+  .lp-custom { width: 100%; }
+  .lp-chart { height: 380px; }
+  .lp-table-wrap { max-width: 100%; }
+}
+@media (max-width: 390px) {
+  .lp-field { min-width: 100%; }
+  .lp-custom .lp-field { min-width: 132px; }
+}

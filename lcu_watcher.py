@@ -131,6 +131,7 @@ class LCUWatcher:
             "terminal": False,
             "has_reached_in_progress": phase == "InProgress",
             "match_update_attempts": 0,
+            "waiting_diagnostics_logged": False,
         }
         self._log("[LP] solo ranked detected")
         self._log("[LP] pending started")
@@ -243,6 +244,25 @@ class LCUWatcher:
             return
         self._live_process()
 
+    def _log_waiting_diagnostics(self, queue_id, session_id):
+        """Log one non-PII trigger check for each pending ranked game."""
+        pending = self.pending
+        if pending["waiting_diagnostics_logged"]:
+            return
+        pending["waiting_diagnostics_logged"] = True
+        pending_id_present = pending["session_id"] is not None
+        current_id_present = session_id is not None
+        id_match = pending_id_present and current_id_present and session_id == pending["session_id"]
+        self._log(
+            "[LP] trigger diagnostics: "
+            f"queue={queue_id} in_progress={pending['has_reached_in_progress']} "
+            f"processing={pending['processing_started']} completed={pending['completed']} "
+            f"terminal={pending['terminal']} pending_id_present={pending_id_present} "
+            f"current_id_present={current_id_present} id_match={id_match}"
+        )
+        if not id_match:
+            self._log("[LP] session id unavailable/mismatch; continuing with phase-safe trigger")
+
     def _handle_phase(self, phase, session):
         previous = self.last_phase
         if phase != previous:
@@ -261,21 +281,22 @@ class LCUWatcher:
             self._log(f"[LCU] queue: {queue_id}")
         if queue_id == SOLO_QUEUE_ID and phase in START_PHASES:
             if self.pending is None:
-                if session_id is None:
-                    self._log("[LP] session identity unavailable; SAFE_SKIP")
-                else:
-                    self._start_pending(phase, queue_id, session_id)
-            elif self.pending["terminal"] and session_id != self.pending["session_id"]:
+                self._start_pending(phase, queue_id, session_id)
+            elif self.pending["terminal"]:
                 self._start_pending(phase, queue_id, session_id)
         if self.pending and phase == "InProgress":
             self.pending["has_reached_in_progress"] = True
+        if self.pending and phase == "WaitingForStats":
+            self._log_waiting_diagnostics(queue_id, session_id)
         if (
             self.pending
+            and self.pending["queue_id"] == SOLO_QUEUE_ID
             and self.pending["has_reached_in_progress"]
             and phase == "WaitingForStats"
             and not self.pending["processing_started"]
+            and not self.pending["completed"]
+            and not self.pending["terminal"]
             and queue_id == SOLO_QUEUE_ID
-            and session_id == self.pending["session_id"]
         ):
             self._finish_pending()
 

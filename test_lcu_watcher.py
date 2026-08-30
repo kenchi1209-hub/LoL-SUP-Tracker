@@ -176,23 +176,52 @@ class LCUWatcherTest(unittest.TestCase):
         watcher.tick()
         self.assertEqual(runner.calls, [])
 
-    def test_live_requires_queue_and_same_session_at_waiting_for_stats(self):
+    def test_live_session_id_missing_or_mismatch_does_not_block_phase_safe_trigger(self):
+        for waiting_game_id in (None, "game-b"):
+            runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+            watcher = self.live_watcher(
+                FakeClient(
+                    phases=["ChampSelect", "InProgress", "WaitingForStats"],
+                    sessions=[session(420, "game-a"), session(420, "game-a"), session(420, waiting_game_id)],
+                ),
+                runner,
+            )
+            watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+            for _ in range(3):
+                watcher.tick()
+            joined = "\n".join(self.logs)
+            self.assertTrue(watcher.pending["completed"])
+            self.assertIn("[LP] session id unavailable/mismatch; continuing with phase-safe trigger", joined)
+            self.assertNotIn("game-a", joined)
+            self.assertNotIn("game-b", joined)
+
+    def test_live_no_session_id_still_triggers_with_phase_continuity(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "WaitingForStats"],
+                sessions=[session(420, None), session(420, None), session(420, None)],
+            ),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        for _ in range(3):
+            watcher.tick()
+        self.assertTrue(watcher.pending["completed"])
+        self.assertIn("pending_id_present=False", "\n".join(self.logs))
+
+    def test_live_requires_current_queue_420(self):
         runner = RecordingRunner()
         watcher = self.live_watcher(
             FakeClient(
                 phases=["ChampSelect", "InProgress", "WaitingForStats"],
-                sessions=[session(420, "game-a"), session(420, "game-a"), session(420, "game-b")],
+                sessions=[session(420), session(420), session(None)],
             ),
             runner,
         )
         for _ in range(3):
             watcher.tick()
         self.assertEqual(runner.calls, [])
-
-        skipped = self.watcher(FakeClient(phases=["ChampSelect"], sessions=[session(420, game_id=None)]))
-        skipped.tick()
-        self.assertIsNone(skipped.pending)
-        self.assertIn("[LP] session identity unavailable; SAFE_SKIP", self.logs)
 
     def test_live_runs_main_then_exact_capture_once_at_waiting_for_stats(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])
@@ -318,16 +347,32 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertTrue(watcher.pending["completed"])
         self.assertEqual(len(runner.calls), 2)
 
-    def test_terminal_pending_accepts_only_a_new_session(self):
+    def test_processing_completed_or_terminal_pending_never_retriggers(self):
+        for field in ("processing_started", "completed", "terminal"):
+            runner = RecordingRunner()
+            watcher = self.live_watcher(
+                FakeClient(
+                    phases=["ChampSelect", "InProgress", "WaitingForStats", "PreEndOfGame", "EndOfGame", "Lobby"],
+                    sessions=[session(420)] * 6,
+                ),
+                runner,
+            )
+            watcher.tick()
+            watcher.tick()
+            watcher.pending[field] = True
+            for _ in range(4):
+                watcher.tick()
+            self.assertEqual(runner.calls, [])
+
+    def test_terminal_pending_accepts_next_champ_select_without_session_id_dependency(self):
         watcher = self.watcher(
             FakeClient(
                 phases=["ChampSelect", "InProgress", "WaitingForStats", "ChampSelect"],
-                sessions=[session(420, "game-a"), session(420, "game-a"), session(420, "game-a"), session(420, "game-b")],
+                sessions=[session(420, "game-a"), session(420, "game-a"), session(420, "game-a"), session(420, "game-a")],
             )
         )
         for _ in range(4):
             watcher.tick()
-        self.assertEqual(watcher.pending["session_id"], "game-b")
         self.assertFalse(watcher.pending["processing_started"])
 
     def test_run_watcher_announces_mode_once(self):

@@ -13,8 +13,8 @@
 .lp-historical-notice { margin: 0 0 10px; color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .lp-chart { height: 360px; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
 .lp-chart svg { width: 100%; height: 100%; display: block; }
-.lp-chart [role="button"] { cursor: pointer; outline: none; }
-.lp-chart [role="button"]:focus { filter: drop-shadow(0 0 4px #f0b429); }
+.lp-chart .lp-point-link { cursor: pointer; outline: none; }
+.lp-chart .lp-point-link:hover, .lp-chart .lp-point-link:focus { filter: drop-shadow(0 0 4px #f0b429); }
 .lp-tooltip { position: absolute; z-index: 2; max-width: 228px; white-space: pre-line; background: #0d1320; border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: .8rem; pointer-events: none; box-shadow: 0 8px 22px rgba(0,0,0,.35); }
 .lp-empty { color: var(--muted); padding: 20px 0; }
 .lp-table { min-width: 520px; }

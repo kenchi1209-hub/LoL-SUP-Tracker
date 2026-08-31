@@ -7,6 +7,7 @@ remains the source of truth for the complete LP history and match data.
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from champion_registry import champion_icon_id, champion_name_ja
 from data_paths import get_data_paths
@@ -130,6 +131,7 @@ def _historical_payload(rows_by_id, official_ids):
         points.append({
             "kind": "historical",
             "match_id": match_id,
+            "match_url": metadata["match_url"],
             "timestamp_jst": timestamp_jst,
             "champion": metadata["champion"],
             "champion_name": metadata["champion_name"],
@@ -192,6 +194,7 @@ def _match_metadata(row, match_id):
     if not isinstance(row, dict):
         return {
             "match_id": match_id,
+            "match_url": _match_url(match_id),
             "game_datetime_jst": "",
             "champion": "Unknown",
             "champion_name": "Unknown",
@@ -203,6 +206,7 @@ def _match_metadata(row, match_id):
     champion = str(row.get("champion", ""))
     return {
         "match_id": match_id,
+        "match_url": _match_url(match_id),
         "game_datetime_jst": str(row.get("date", "")).replace(" ", "T") + "+09:00",
         "champion": champion,
         "champion_name": champion_name_ja(champion),
@@ -211,6 +215,16 @@ def _match_metadata(row, match_id):
         "win": bool(row.get("_win", False)),
         "queue": "RANKED_SOLO_5x5",
     }
+
+
+def _match_url(match_id):
+    """Return the public Match History anchor for a known match only."""
+    match_id = str(match_id or "")
+    if not match_id:
+        return ""
+    # Mirrors encodeURIComponent() used by match-history.js for the DOM id.
+    encoded_match_id = quote(match_id, safe="-_.!~*'()")
+    return f"history.html#match-{encoded_match_id}"
 
 
 def _history_match(record, rows_by_id):
@@ -321,6 +335,7 @@ def build_lp_payload(rows, version):
             "kind": "exact",
             "timestamp_jst": item["game_datetime_jst"],
             "match_id": item["match_id"],
+            "match_url": item["match_url"],
             "champion": item["champion"],
             "champion_name": item["champion_name"],
             "patch": item["patch"],

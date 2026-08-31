@@ -80,6 +80,9 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(match["before"]["score"], 823)
         self.assertEqual(match["after"]["score"], 844)
         self.assertEqual(match["lp_delta"], 21)
+        self.assertEqual(match["match_url"], "history.html#match-JP1_EXACT")
+        point = next(item for item in self.payload["points"] if item["kind"] == "exact")
+        self.assertEqual(point["match_url"], "history.html#match-JP1_EXACT")
 
     def test_payload_excludes_private_identifiers(self):
         encoded = json.dumps(self.payload).lower()
@@ -128,6 +131,7 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(len(historical["gaps"]), 1)
         self.assertEqual([point["segment_id"] for point in historical["points"]], ["historical-0", "historical-1", "historical-1"])
         self.assertEqual(sum(point["candidate_lp_delta"] is not None for point in historical["points"]), 1)
+        self.assertTrue(all(point["match_url"].startswith("history.html#match-") for point in historical["points"]))
         official_ids = {point["match_id"] for point in payload["points"] if point["kind"] == "exact"}
         self.assertFalse(official_ids & {point["match_id"] for point in historical["points"]})
         serialized = json.dumps(historical).lower()

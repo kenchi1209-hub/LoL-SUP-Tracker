@@ -56,6 +56,8 @@
   grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px;
   margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--border);
 }
+.match { scroll-margin-top: 18px; }
+.match:target { box-shadow: 0 0 0 2px rgba(240, 180, 41, .65); }
 .match-detail[hidden],
 .fight-detail[hidden] { display: none; }
 .match-detail-content { display: grid; gap: 12px; min-width: 0; }

@@ -3,6 +3,7 @@
 
   const PAGE_SIZE = 20;
   const ROLE_NAMES = { UTILITY: "SUP", MIDDLE: "MID", TOP: "TOP", BOTTOM: "ADC", JUNGLE: "JG" };
+  const matchAnchorId = (matchId) => `match-${encodeURIComponent(String(matchId || ""))}`;
   const text = (tag, value, className) => {
     const element = global.document.createElement(tag);
     element.textContent = value;
@@ -394,6 +395,8 @@
   function card(match, version) {
     const metrics = global.MatchHistoryMetrics;
     const element = text("article", "", `match ${match.win ? "win" : "loss"}`);
+    element.id = matchAnchorId(match.match_id);
+    element.tabIndex = -1;
     element.dataset.matchId = match.match_id || "";
     const result = text("div", match.win ? "WIN" : "LOSS", "m-result");
     const champion = text("div", "", "m-champ");
@@ -466,6 +469,29 @@
     let source = initialMatches.slice();
     let visible = PAGE_SIZE;
 
+    function hashMatchId() {
+      const hash = global.location?.hash || "";
+      if (!hash.startsWith("#match-")) return "";
+      try { return decodeURIComponent(hash.slice("#match-".length)); } catch (_error) { return ""; }
+    }
+
+    function applyHashTargetFilters() {
+      const matchId = hashMatchId();
+      const target = source.find((match) => match.match_id === matchId);
+      if (!target || !topControls) return target;
+      topControls.period.value = "custom";
+      topControls.champion.value = "ALL";
+      topControls.queue.value = "all";
+      topControls.role.value = "ALL";
+      resultControl.value = "ALL";
+      sortControl.value = "date";
+      directionControl.value = "desc";
+      const date = String(target.date || "").slice(0, 10);
+      topControls.start.value = date;
+      topControls.end.value = date;
+      return target;
+    }
+
     const topControls = mode === "top" ? {
       period: section.querySelector("#mh-period"), champion: section.querySelector("#mh-champion"),
       queue: section.querySelector("#mh-queue"), role: section.querySelector("#mh-role"),
@@ -498,13 +524,33 @@
       return matches;
     }
 
+    function showHashTarget() {
+      const target = applyHashTargetFilters();
+      if (!target) return false;
+      const targetIndex = selectedMatches().findIndex((match) => match.match_id === target.match_id);
+      visible = Math.max(PAGE_SIZE, targetIndex + 1);
+      render(false);
+      const cardElement = global.document.getElementById(matchAnchorId(target.match_id));
+      if (!cardElement) return false;
+      const detailButton = cardElement.querySelector(".m-detail-toggle:not(:disabled)");
+      if (detailButton?.getAttribute("aria-expanded") !== "true") detailButton.click();
+      cardElement.scrollIntoView({ block: "start" });
+      cardElement.focus({ preventScroll: true });
+      return true;
+    }
+
     [resultControl, sortControl, directionControl].forEach((control) => control.addEventListener("change", () => render(true)));
     if (topControls) {
       [topControls.period, topControls.champion, topControls.queue, topControls.role, topControls.start, topControls.end]
         .forEach((control) => control.addEventListener("change", () => render(true)));
     }
     section.querySelector("[data-match-history-more]").addEventListener("click", () => { visible += PAGE_SIZE; render(false); });
-    return { render, setMatches(matches) { source = matches.slice(); return render(true); }, getMatches: selectedMatches };
+    return {
+      render,
+      showHashTarget,
+      setMatches(matches) { source = matches.slice(); return render(true); },
+      getMatches: selectedMatches,
+    };
   }
 
   function init() {
@@ -518,11 +564,12 @@
     if (mode === "role") {
       global.document.addEventListener("role-filter:change", (event) => component.setMatches(event.detail.matches));
     } else {
-      component.render(true);
+      if (!component.showHashTarget()) component.render(true);
+      global.addEventListener("hashchange", () => component.showHashTarget());
     }
   }
 
   if (global.document) init();
-  const api = { PAGE_SIZE, card, create };
+  const api = { PAGE_SIZE, card, create, matchAnchorId };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

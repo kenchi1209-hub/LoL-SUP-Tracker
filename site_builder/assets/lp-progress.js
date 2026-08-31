@@ -170,6 +170,17 @@
     return `${rankLabel(point.rank)}\nLP: ${signed(point.lp_delta)}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
   }
 
+  function pointMatchUrl(point) {
+    return typeof point.match_url === "string" && point.match_url.startsWith("history.html#match-")
+      ? point.match_url
+      : "";
+  }
+
+  function openMatchDetail(point) {
+    const url = pointMatchUrl(point);
+    if (url) global.location.assign(url);
+  }
+
   function showTooltip(point, event) {
     const tooltip = global.document.getElementById("lp-tooltip");
     tooltip.textContent = pointLabel(point);
@@ -251,13 +262,31 @@
     renderSegments(officialPoints, { stroke: "#5b8cff", "stroke-width": 3 });
     [...historicalPoints, ...officialPoints].forEach((point) => {
       const marker = pointShape(point, x(point), y(point.score));
+      const matchUrl = pointMatchUrl(point);
+      const label = pointLabel(point).replaceAll("\n", ", ");
       marker.setAttribute("tabindex", "0");
-      marker.setAttribute("role", "button");
-      marker.setAttribute("aria-label", pointLabel(point).replaceAll("\n", ", "));
+      marker.setAttribute("role", matchUrl ? "link" : "img");
+      marker.setAttribute("aria-label", matchUrl ? `${label}、試合詳細を見る` : label);
+      if (matchUrl) marker.classList.add("lp-point-link");
       marker.append(el("title", {}, pointLabel(point)));
       marker.addEventListener("pointerdown", (event) => showTooltip(point, event));
       marker.addEventListener("focus", () => showTooltip(point));
-      marker.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); showTooltip(point); } });
+      if (matchUrl) {
+        marker.addEventListener("click", () => openMatchDetail(point));
+        marker.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openMatchDetail(point);
+          }
+        });
+      } else {
+        marker.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            showTooltip(point);
+          }
+        });
+      }
       svg.append(marker);
     });
     const dates = [...new Set(points.map((point) => localDate(point.timestamp_jst)))];
@@ -319,7 +348,7 @@
     render();
   }
 
-  global.LPProgress = { rankLabel, record, exactCoverage, filterMatches };
+  global.LPProgress = { rankLabel, record, exactCoverage, filterMatches, pointMatchUrl };
   try {
     const source = global.document.getElementById("lp-progress-data");
     if (!source) throw new Error("payload unavailable");

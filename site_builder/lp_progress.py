@@ -5,6 +5,7 @@ remains the source of truth for the complete LP history and match data.
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from champion_registry import champion_icon_id, champion_name_ja
@@ -17,18 +18,32 @@ from site_builder.render import (
     page_header_context,
     render_navigation,
 )
+from timezone_utils import JST
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 SEASONS_PATH = REPOSITORY_ROOT / "lp_seasons.json"
 _paths = get_data_paths()
 LP_HISTORY_PATH = _paths.csv / "lp_history.json"
+HISTORICAL_RECONSTRUCTED_PATH = (
+    _paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
+)
+HISTORICAL_MAPPING_PATH = (
+    _paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_match_mapping.json"
+)
 
 
 def configure_data_root(data_root=None):
     """Point the build at a local or PrivateData root."""
-    global LP_HISTORY_PATH
-    LP_HISTORY_PATH = get_data_paths(data_root).csv / "lp_history.json"
+    global LP_HISTORY_PATH, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH
+    paths = get_data_paths(data_root)
+    LP_HISTORY_PATH = paths.csv / "lp_history.json"
+    HISTORICAL_RECONSTRUCTED_PATH = (
+        paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
+    )
+    HISTORICAL_MAPPING_PATH = (
+        paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_match_mapping.json"
+    )
 
 
 def _load_json(path, fallback):
@@ -43,6 +58,102 @@ def _load_json(path, fallback):
 def load_lp_history():
     value = _load_json(LP_HISTORY_PATH, {})
     return value if isinstance(value, dict) else {}
+
+
+def _timestamp_jst(timestamp):
+    try:
+        return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).astimezone(JST).isoformat()
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _historical_payload(rows_by_id, official_ids):
+    """Build an optional, display-safe Blitz recovered series.
+
+    The source remains explicitly separate from official exact LP history.  Only
+    reconstructed exact mappings are exposed, and official match overlaps are
+    withheld so the chart cannot draw the same match twice.
+    """
+    recovered = _load_json(HISTORICAL_RECONSTRUCTED_PATH, {})
+    mapping = _load_json(HISTORICAL_MAPPING_PATH, {})
+    if (
+        not isinstance(recovered, dict)
+        or recovered.get("source") != "blitz"
+        or recovered.get("confidence") != "historical_reconstructed"
+        or not isinstance(recovered.get("matches"), list)
+    ):
+        return None
+
+    mapping_by_game = {
+        item.get("games"): item
+        for item in mapping.get("mappings", [])
+        if isinstance(item, dict) and isinstance(item.get("games"), int)
+    }
+    gaps = [
+        {
+            "game_number": item["games"],
+            "timestamp_jst": _timestamp_jst(item.get("timestamp")),
+            "reason": str((item.get("evidence") or {}).get("reason", "ambiguous")),
+        }
+        for item in mapping_by_game.values()
+        if item.get("status") != "exact_match"
+    ]
+    points = []
+    segment_index = -1
+    previous_game = None
+    for record in sorted(recovered["matches"], key=lambda item: item.get("game_number", -1)):
+        if not isinstance(record, dict):
+            continue
+        match_id = str(record.get("match_id", ""))
+        game_number = record.get("game_number")
+        rank = _rank({
+            "tier": record.get("tier_after"),
+            "division": record.get("division_after"),
+            "lp": record.get("lp_after"),
+        })
+        timestamp_jst = _timestamp_jst(record.get("blitz_timestamp"))
+        row = rows_by_id.get(match_id)
+        if (
+            not match_id
+            or not isinstance(game_number, int)
+            or rank is None
+            or not timestamp_jst
+            or not isinstance(row, dict)
+        ):
+            continue
+        if previous_game is None or game_number != previous_game + 1:
+            segment_index += 1
+        previous_game = game_number
+        if match_id in official_ids:
+            continue
+        metadata = _match_metadata(row, match_id)
+        points.append({
+            "kind": "historical",
+            "match_id": match_id,
+            "timestamp_jst": timestamp_jst,
+            "champion": metadata["champion"],
+            "champion_name": metadata["champion_name"],
+            "champion_icon_id": metadata["champion_icon_id"],
+            "patch": metadata["patch"],
+            "win": metadata["win"],
+            "rank": rank,
+            "score": rank["score"],
+            "candidate_lp_delta": record.get("candidate_lp_delta"),
+            "segment_id": f"historical-{segment_index}",
+            "source": "blitz",
+            "confidence": "historical_reconstructed",
+        })
+
+    if not points:
+        return None
+    return {
+        "source": "blitz",
+        "confidence": "historical_reconstructed",
+        "notice": "過去履歴の一部はBlitz保存データから復元した参考値です。正式取得LPとは区別して表示しています。",
+        "points": points,
+        "gaps": gaps,
+        "overlap_excluded": len(recovered["matches"]) - len(points),
+    }
 
 
 def load_seasons():
@@ -140,6 +251,7 @@ def _history_match(record, rows_by_id):
 def build_lp_payload(rows, version):
     """Build a minimum public LP payload from PrivateData read-only inputs."""
     history = load_lp_history()
+    rows_by_id = {str(row.get("match_id", "")): row for row in rows}
     baseline = _rank(history.get("baseline", {}))
     if baseline is None:
         return {
@@ -150,6 +262,7 @@ def build_lp_payload(rows, version):
             "checkpoints": [],
             "points": [],
             "matches": [],
+            "historical": _historical_payload(rows_by_id, set()),
             "seasons": load_seasons(),
             "ddragon_version": version,
         }
@@ -161,7 +274,6 @@ def build_lp_payload(rows, version):
         "score": baseline["score"],
         "segment_id": str(history["baseline"].get("segment_id", "segment-0")),
     }
-    rows_by_id = {str(row.get("match_id", "")): row for row in rows}
     checkpoints = []
     points = [base_event]
     ambiguous_matches = []
@@ -229,6 +341,10 @@ def build_lp_payload(rows, version):
         latest_rank = checkpoints[-1]["rank"]
     else:
         latest_rank = latest["after"] if latest else baseline
+    historical = _historical_payload(
+        rows_by_id,
+        {item["match_id"] for item in exact_matches},
+    )
     return {
         "schema_version": 1,
         "tracking_started_jst": base_event["timestamp_jst"],
@@ -237,6 +353,7 @@ def build_lp_payload(rows, version):
         "checkpoints": checkpoints,
         "points": points,
         "matches": matches,
+        "historical": historical,
         "latest_rank": latest_rank,
         "seasons": load_seasons(),
         "ddragon_version": version,

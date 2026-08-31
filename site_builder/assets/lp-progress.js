@@ -61,8 +61,17 @@
     return data.seasons.find((season) => season.start_jst <= today && (!season.end_jst || season.end_jst >= today)) || data.seasons.at(-1) || null;
   }
 
+  function chartStart(data) {
+    const historical = data.historical?.points || [];
+    const dates = [data.tracking_started_jst, ...historical.map((point) => point.timestamp_jst)]
+      .map(localDate)
+      .filter(Boolean)
+      .sort();
+    return dates[0] || "";
+  }
+
   function rangeFor(period, data, controls) {
-    const start = localDate(data.tracking_started_jst);
+    const start = chartStart(data);
     if (period === "30d") {
       const current = new Date();
       current.setDate(current.getDate() - 29);
@@ -87,6 +96,12 @@
       if (patch === "all") return true;
       return point.kind === "exact" && point.patch === patch;
     });
+  }
+
+  function filterHistoricalPoints(data, range, patch) {
+    return (data.historical?.points || []).filter((point) => (
+      inRange(point.timestamp_jst, range) && (patch === "all" || point.patch === patch)
+    ));
   }
 
   function statCard(label, value, sub, valueClass) {
@@ -148,6 +163,10 @@
   function pointLabel(point) {
     if (point.kind === "baseline") return `Baseline\n${rankLabel(point.rank)}\n${dateTimeLabel(point.timestamp_jst)}`;
     if (point.kind === "checkpoint") return `Checkpoint\n${rankLabel(point.rank)}\nGap: ${point.gap.games} games (${point.gap.wins}W-${point.gap.losses}L)`;
+    if (point.kind === "historical") {
+      const delta = Number.isFinite(point.candidate_lp_delta) ? `\nCandidate LP: ${signed(point.candidate_lp_delta)}` : "";
+      return `Blitz復元（参考・非公式）\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
+    }
     return `${rankLabel(point.rank)}\nLP: ${signed(point.lp_delta)}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
   }
 
@@ -165,14 +184,18 @@
   function pointShape(point, x, y) {
     if (point.kind === "checkpoint") return el("circle", { cx: x, cy: y, r: 6, fill: "#171d2b", stroke: "#f0b429", "stroke-width": 3 });
     if (point.kind === "baseline") return el("path", { d: `M ${x} ${y - 7} L ${x + 7} ${y} L ${x} ${y + 7} L ${x - 7} ${y} Z`, fill: "#e7ecf4", stroke: "#5b8cff", "stroke-width": 2 });
+    if (point.kind === "historical") return el("circle", { cx: x, cy: y, r: 4, fill: "#171d2b", stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .65 });
     if (point.win) return el("path", { d: `M ${x} ${y - 7} L ${x + 7} ${y + 6} L ${x - 7} ${y + 6} Z`, fill: "#38d39f", stroke: "#e7ecf4", "stroke-width": 1 });
     return el("rect", { x: x - 5, y: y - 5, width: 10, height: 10, rx: 1, fill: "#ff6b81", stroke: "#e7ecf4", "stroke-width": 1 });
   }
 
-  function renderChart(points) {
+  function renderChart(officialPoints, historicalPoints) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
+    const points = [...officialPoints, ...historicalPoints].sort((left, right) => (
+      Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst)
+    ));
     tooltip.hidden = true;
     chart.replaceChildren();
     if (!points.length) { empty.hidden = false; return; }
@@ -196,7 +219,7 @@
       svg.append(el("line", { x1: margin.left, y1: y(score), x2: width - margin.right, y2: y(score), stroke: boundary ? "#3b4861" : "#252e40", "stroke-width": boundary ? 1.2 : 1 }));
       if (boundary) svg.append(el("text", { x: margin.left - 9, y: y(score) + 4, fill: "#aeb9ca", "font-size": 10, "text-anchor": "end" }, `${rankTick(score)} ${score % 100}`));
     }
-    const exact = points.filter((point) => point.kind === "exact");
+    const exact = officialPoints.filter((point) => point.kind === "exact");
     let priorPatch = "";
     exact.forEach((point) => {
       if (point.patch && point.patch !== priorPatch) {
@@ -206,13 +229,27 @@
         svg.append(el("text", { x: pointX + 4, y: margin.top - 10, fill: "#f0b429", "font-size": 11 }, point.patch));
       }
     });
-    const segments = new Map();
-    points.forEach((point) => { if (!segments.has(point.segment_id)) segments.set(point.segment_id, []); segments.get(point.segment_id).push(point); });
-    segments.forEach((segment) => {
-      if (segment.length < 2) return;
-      svg.append(el("polyline", { points: segment.map((point) => `${x(point)},${y(point.score)}`).join(" "), fill: "none", stroke: "#5b8cff", "stroke-width": 3, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-    });
-    points.forEach((point) => {
+    function renderSegments(series, attrs) {
+      const segments = new Map();
+      series.forEach((point) => {
+        if (!segments.has(point.segment_id)) segments.set(point.segment_id, []);
+        segments.get(point.segment_id).push(point);
+      });
+      segments.forEach((segment) => {
+        if (segment.length < 2) return;
+        svg.append(el("polyline", {
+          points: segment.map((point) => `${x(point)},${y(point.score)}`).join(" "),
+          fill: "none",
+          "stroke-linejoin": "round",
+          "stroke-linecap": "round",
+          ...attrs,
+        }));
+      });
+    }
+
+    renderSegments(historicalPoints, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" });
+    renderSegments(officialPoints, { stroke: "#5b8cff", "stroke-width": 3 });
+    [...historicalPoints, ...officialPoints].forEach((point) => {
       const marker = pointShape(point, x(point), y(point.score));
       marker.setAttribute("tabindex", "0");
       marker.setAttribute("role", "button");
@@ -254,9 +291,20 @@
 
   function init(data) {
     const controls = { period: global.document.getElementById("lp-period"), patch: global.document.getElementById("lp-patch"), start: global.document.getElementById("lp-start"), end: global.document.getElementById("lp-end"), custom: global.document.getElementById("lp-custom") };
-    const patches = [...new Set(data.matches.map((match) => match.patch).filter(Boolean))].sort().reverse();
+    const historicalPoints = data.historical?.points || [];
+    const patches = [...new Set([
+      ...data.matches.map((match) => match.patch),
+      ...historicalPoints.map((point) => point.patch),
+    ].filter(Boolean))].sort().reverse();
     patches.forEach((patch) => { const option = global.document.createElement("option"); option.value = patch; option.textContent = patch; controls.patch.append(option); });
     global.document.getElementById("lp-tracking").textContent = `LP記録開始：${localDate(data.tracking_started_jst).replaceAll("-", "/")}`;
+    const legend = global.document.getElementById("lp-chart-legend");
+    const notice = global.document.getElementById("lp-historical-notice");
+    if (historicalPoints.length) {
+      legend.hidden = false;
+      notice.hidden = false;
+      notice.textContent = data.historical.notice;
+    }
     renderOverall(data);
     function render() {
       controls.custom.hidden = controls.period.value !== "custom";
@@ -264,7 +312,8 @@
       const matches = filterMatches(data, range, controls.patch.value);
       let points = filterPoints(data, range, controls.patch.value);
       if (controls.patch.value === "all") points = points.filter((point) => inRange(point.timestamp_jst, range));
-      renderFiltered(matches); renderChart(points); renderChampionTable(matches, data.ddragon_version);
+      const historical = filterHistoricalPoints(data, range, controls.patch.value);
+      renderFiltered(matches); renderChart(points, historical); renderChampionTable(matches, data.ddragon_version);
     }
     [controls.period, controls.patch, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
     render();

@@ -17,12 +17,13 @@
 .lp-chart .lp-point-link:hover, .lp-chart .lp-point-link:focus { filter: drop-shadow(0 0 4px #f0b429); }
 .lp-tooltip { position: absolute; z-index: 2; max-width: 228px; white-space: pre-line; background: #0d1320; border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: .8rem; pointer-events: none; box-shadow: 0 8px 22px rgba(0,0,0,.35); }
 .lp-empty { color: var(--muted); padding: 20px 0; }
-.lp-table { min-width: 520px; }
+.lp-table { min-width: 1000px; }
 .lp-table th, .lp-table td { text-align: right; }
 .lp-table th:first-child, .lp-table td:first-child { text-align: left; }
 .lp-table small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; white-space: nowrap; }
 .lp-champ { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
 .lp-champ img { width: 25px; height: 25px; border-radius: 5px; }
+.lp-kda { white-space: nowrap; }
 @media (max-width: 430px) {
   .lp-filter-panel { padding: 12px; }
   .lp-field { flex: 1 1 142px; }

@@ -100,6 +100,7 @@ def _historical_payload(rows_by_id, official_ids):
         if item.get("status") != "exact_match"
     ]
     points = []
+    usable_matches = []
     segment_index = -1
     previous_game = None
     for record in sorted(recovered["matches"], key=lambda item: item.get("game_number", -1)):
@@ -125,36 +126,50 @@ def _historical_payload(rows_by_id, official_ids):
         if previous_game is None or game_number != previous_game + 1:
             segment_index += 1
         previous_game = game_number
-        if match_id in official_ids:
-            continue
         metadata = _match_metadata(row, match_id)
-        points.append({
+        item = {
             "kind": "historical",
             "match_id": match_id,
             "match_url": metadata["match_url"],
             "timestamp_jst": timestamp_jst,
+            "game_datetime_jst": timestamp_jst,
             "champion": metadata["champion"],
             "champion_name": metadata["champion_name"],
             "champion_icon_id": metadata["champion_icon_id"],
             "patch": metadata["patch"],
             "win": metadata["win"],
+            "kills": metadata["kills"],
+            "deaths": metadata["deaths"],
+            "assists": metadata["assists"],
+            "kp_pct": metadata["kp_pct"],
+            "vision_score": metadata["vision_score"],
+            "vision_score_per_min": metadata["vision_score_per_min"],
             "rank": rank,
+            "after": rank,
             "score": rank["score"],
             "candidate_lp_delta": record.get("candidate_lp_delta"),
+            "lp_delta": record.get("candidate_lp_delta"),
+            "game_number": game_number,
+            "wins_after": record.get("wins_after"),
+            "losses_after": record.get("losses_after"),
             "segment_id": f"historical-{segment_index}",
             "source": "blitz",
             "confidence": "historical_reconstructed",
-        })
+        }
+        usable_matches.append(item)
+        if match_id not in official_ids:
+            points.append(item)
 
-    if not points:
+    if not usable_matches:
         return None
     return {
         "source": "blitz",
         "confidence": "historical_reconstructed",
         "notice": "過去履歴の一部はBlitz保存データから復元した参考値です。正式取得LPとは区別して表示しています。",
         "points": points,
+        "usable_matches": usable_matches,
         "gaps": gaps,
-        "overlap_excluded": len(recovered["matches"]) - len(points),
+        "overlap_excluded": len(usable_matches) - len(points),
     }
 
 
@@ -201,9 +216,44 @@ def _match_metadata(row, match_id):
             "champion_icon_id": "",
             "patch": "",
             "win": None,
+            "kills": None,
+            "deaths": None,
+            "assists": None,
+            "kp_pct": None,
+            "vision_score": None,
+            "vision_score_per_min": None,
             "queue": "RANKED_SOLO_5x5",
         }
     champion = str(row.get("champion", ""))
+
+    def match_integer(name):
+        try:
+            return int(float(row.get(name)))
+        except (TypeError, ValueError):
+            return None
+
+    def match_float(name):
+        try:
+            value = row.get(name)
+            return float(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    kills = match_integer("kills")
+    deaths = match_integer("deaths")
+    assists = match_integer("assists")
+    team_kills = match_integer("team_kills")
+    vision_score = match_float("vision_score")
+    vision_score_per_min = match_float("vision_score_per_min")
+    duration_seconds = match_float("game_duration_seconds")
+    if vision_score_per_min is None and vision_score is not None and duration_seconds and duration_seconds > 0:
+        vision_score_per_min = vision_score / (duration_seconds / 60)
+    kp_pct = (
+        (kills + assists) / team_kills * 100
+        if kills is not None and assists is not None and team_kills and team_kills > 0
+        else None
+    )
+
     return {
         "match_id": match_id,
         "match_url": _match_url(match_id),
@@ -213,6 +263,12 @@ def _match_metadata(row, match_id):
         "champion_icon_id": champion_icon_id(champion),
         "patch": normalize_patch(row.get("patch", "")),
         "win": bool(row.get("_win", False)),
+        "kills": kills,
+        "deaths": deaths,
+        "assists": assists,
+        "kp_pct": kp_pct,
+        "vision_score": vision_score,
+        "vision_score_per_min": vision_score_per_min,
         "queue": "RANKED_SOLO_5x5",
     }
 
@@ -262,6 +318,101 @@ def _history_match(record, rows_by_id):
     return metadata
 
 
+def _assign_official_game_numbers(exact_matches, historical_matches):
+    """Attach verified cumulative game numbers to official exact records.
+
+    Recovered records are the direct source when IDs overlap.  An official-only
+    run is numbered only when known recovered anchors surround it and its exact
+    win/loss sequence exactly reaches the next anchor's cumulative record.
+    """
+    historical_by_id = {item["match_id"]: item for item in historical_matches}
+    for item in exact_matches:
+        historical = historical_by_id.get(item["match_id"])
+        if historical:
+            item["game_number"] = historical["game_number"]
+            item["wins_after"] = historical.get("wins_after")
+            item["losses_after"] = historical.get("losses_after")
+
+    known = [index for index, item in enumerate(exact_matches) if isinstance(item.get("game_number"), int)]
+    for left_index, right_index in zip(known, known[1:]):
+        left = exact_matches[left_index]
+        right = exact_matches[right_index]
+        span = right_index - left_index
+        left_game, right_game = left["game_number"], right["game_number"]
+        if right_game - left_game != span:
+            continue
+        left_wins, left_losses = left.get("wins_after"), left.get("losses_after")
+        right_wins, right_losses = right.get("wins_after"), right.get("losses_after")
+        if not all(isinstance(value, int) for value in (left_wins, left_losses, right_wins, right_losses)):
+            continue
+        bridge = exact_matches[left_index + 1:right_index + 1]
+        wins = sum(item.get("win") is True for item in bridge)
+        losses = sum(item.get("win") is False for item in bridge)
+        if (left_wins + wins, left_losses + losses) != (right_wins, right_losses):
+            continue
+        for offset, item in enumerate(bridge, start=1):
+            item["game_number"] = left_game + offset
+
+
+def _usable_matches(exact_matches, historical):
+    """Create one public-safe summary series with official exact precedence."""
+    recovered = list((historical or {}).get("usable_matches", []))
+    by_match_id = {item["match_id"]: item for item in recovered}
+    _assign_official_game_numbers(exact_matches, recovered)
+    for exact in exact_matches:
+        historical_item = by_match_id.get(exact["match_id"], {})
+        summary = dict(historical_item)
+        summary.update(exact)
+        summary["kind"] = "exact"
+        summary["source"] = "exact"
+        summary["rank"] = exact.get("after")
+        summary["score"] = exact.get("score")
+        summary["lp_delta"] = exact.get("lp_delta")
+        if "game_number" not in summary and historical_item.get("game_number") is not None:
+            summary["game_number"] = historical_item["game_number"]
+        by_match_id[exact["match_id"]] = summary
+    return sorted(
+        by_match_id.values(),
+        key=lambda item: (item.get("game_number") is None, item.get("game_number", 0), item.get("game_datetime_jst", "")),
+    )
+
+
+def _summary_for_matches(matches, latest_rank=None):
+    """Return compact metrics for the already de-duplicated usable history."""
+    ordered = [item for item in matches if isinstance(item.get("rank"), dict)]
+    ordered.sort(key=lambda item: (item.get("game_number") is None, item.get("game_number", 0), item.get("game_datetime_jst", "")))
+    known = [item for item in ordered if isinstance(item.get("win"), bool)]
+    wins = sum(item["win"] for item in known)
+    losses = len(known) - wins
+    latest_record = next(
+        (
+            item for item in reversed(ordered)
+            if isinstance(item.get("wins_after"), int) and isinstance(item.get("losses_after"), int)
+        ),
+        None,
+    )
+    if latest_record:
+        wins, losses = latest_record["wins_after"], latest_record["losses_after"]
+    deltas = [item for item in ordered if isinstance(item.get("lp_delta"), (int, float))]
+    start_rank = (ordered[0].get("before") or ordered[0]["rank"]) if ordered else None
+    end_rank = latest_rank or (ordered[-1]["rank"] if ordered else None)
+    peak = max(ordered, key=lambda item: (item["rank"]["score"], item.get("game_number", -1))) if ordered else None
+    total_games = max((item.get("game_number", 0) for item in ordered if isinstance(item.get("game_number"), int)), default=0)
+    tracked = len({item.get("game_number") for item in ordered if isinstance(item.get("game_number"), int)})
+    return {
+        "record": {"wins": wins, "losses": losses, "known": len(known)},
+        "net_lp": (end_rank["score"] - start_rank["score"]) if start_rank and end_rank else None,
+        "start_rank": start_rank,
+        "end_rank": end_rank,
+        "peak_rank": peak["rank"] if peak else None,
+        "peak_game_number": peak.get("game_number") if peak else None,
+        "games_tracked": tracked,
+        "games_total": total_games,
+        "lp_available": len(deltas),
+        "lp_delta": sum(item["lp_delta"] for item in deltas) if deltas else None,
+    }
+
+
 def build_lp_payload(rows, version):
     """Build a minimum public LP payload from PrivateData read-only inputs."""
     history = load_lp_history()
@@ -271,11 +422,14 @@ def build_lp_payload(rows, version):
         return {
             "schema_version": 1,
             "tracking_started_jst": "",
+            "history_started_jst": "",
             "queue": "RANKED_SOLO_5x5",
             "baseline": None,
             "checkpoints": [],
             "points": [],
             "matches": [],
+            "usable_matches": [],
+            "usable_summary": _summary_for_matches([]),
             "historical": _historical_payload(rows_by_id, set()),
             "seasons": load_seasons(),
             "ddragon_version": version,
@@ -286,6 +440,7 @@ def build_lp_payload(rows, version):
         "timestamp_jst": str(history["baseline"].get("captured_at_jst", "")),
         "rank": baseline,
         "score": baseline["score"],
+        "game_number": int(history["baseline"].get("wins", 0)) + int(history["baseline"].get("losses", 0)),
         "segment_id": str(history["baseline"].get("segment_id", "segment-0")),
     }
     checkpoints = []
@@ -310,6 +465,7 @@ def build_lp_payload(rows, version):
             "timestamp_jst": str(checkpoint.get("captured_at_jst", "")),
             "rank": rank,
             "score": rank["score"],
+            "game_number": int(checkpoint.get("wins", 0)) + int(checkpoint.get("losses", 0)),
             "segment_id": str(checkpoint.get("segment_id", "")),
             "gap": public_gap,
         }
@@ -330,7 +486,14 @@ def build_lp_payload(rows, version):
         for record in history.get("matches", [])
         if isinstance(record, dict) and record.get("confidence") == "exact"
     ]
+    historical = _historical_payload(
+        rows_by_id,
+        {item["match_id"] for item in exact_matches},
+    )
+    usable_matches = _usable_matches(exact_matches, historical)
+    usable_by_id = {item["match_id"]: item for item in usable_matches}
     for item in exact_matches:
+        usable = usable_by_id.get(item["match_id"], {})
         points.append({
             "kind": "exact",
             "timestamp_jst": item["game_datetime_jst"],
@@ -343,6 +506,7 @@ def build_lp_payload(rows, version):
             "queue": item["queue"],
             "rank": item["after"],
             "score": item["score"],
+            "game_number": usable.get("game_number"),
             "lp_delta": item["lp_delta"],
             "confidence": item["confidence"],
             "segment_id": item["segment_id"],
@@ -356,18 +520,17 @@ def build_lp_payload(rows, version):
         latest_rank = checkpoints[-1]["rank"]
     else:
         latest_rank = latest["after"] if latest else baseline
-    historical = _historical_payload(
-        rows_by_id,
-        {item["match_id"] for item in exact_matches},
-    )
     return {
         "schema_version": 1,
         "tracking_started_jst": base_event["timestamp_jst"],
+        "history_started_jst": usable_matches[0].get("game_datetime_jst", "") if usable_matches else base_event["timestamp_jst"],
         "queue": str(history.get("queue_type", "RANKED_SOLO_5x5")),
         "baseline": base_event,
         "checkpoints": checkpoints,
         "points": points,
         "matches": matches,
+        "usable_matches": usable_matches,
+        "usable_summary": _summary_for_matches(usable_matches, latest_rank),
         "historical": historical,
         "latest_rank": latest_rank,
         "seasons": load_seasons(),

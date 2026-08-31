@@ -104,6 +104,16 @@
     ));
   }
 
+  function usableMatches(data) {
+    return Array.isArray(data.usable_matches) ? data.usable_matches : data.matches;
+  }
+
+  function filterUsableMatches(data, range, patch) {
+    return usableMatches(data).filter((match) => (
+      inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch)
+    ));
+  }
+
   function statCard(label, value, sub, valueClass) {
     const card = htmlEl("article", "card");
     card.append(htmlEl("div", "stat-label", label));
@@ -124,32 +134,53 @@
     return { exact, delta: exact.length ? exact.reduce((total, match) => total + match.lp_delta, 0) : null };
   }
 
+  function usableCoverage(matches) {
+    const available = matches.filter((match) => Number.isFinite(match.lp_delta));
+    return { available, delta: available.length ? available.reduce((total, match) => total + match.lp_delta, 0) : null };
+  }
+
+  function usableMetrics(matches) {
+    const ordered = [...matches].filter((match) => match.rank).sort((left, right) => (
+      (left.game_number ?? Infinity) - (right.game_number ?? Infinity) || String(left.game_datetime_jst).localeCompare(String(right.game_datetime_jst))
+    ));
+    const result = record(ordered);
+    const coverage = usableCoverage(ordered);
+    return {
+      ordered,
+      result,
+      coverage,
+      start: ordered[0]?.before || ordered[0]?.rank || null,
+      end: ordered.at(-1)?.rank || null,
+    };
+  }
+
   function renderOverall(data) {
     const container = global.document.getElementById("lp-overall");
-    const allRecord = record(data.matches);
-    const recent = data.matches.slice(-10);
-    const coverage = exactCoverage(recent);
+    const summary = data.usable_summary || {};
+    const recordSummary = summary.record || { wins: 0, losses: 0 };
+    const totalGames = recordSummary.wins + recordSummary.losses;
+    const recent = [...usableMatches(data)].filter((match) => Number.isFinite(match.game_number)).sort((left, right) => left.game_number - right.game_number).slice(-10);
+    const coverage = usableCoverage(recent);
     container.replaceChildren(
       statCard("Current Rank", rankLabel(data.latest_rank), "最新の正式LP point"),
-      statCard("All-period record", `${allRecord.wins}W-${allRecord.losses}L`, `${allRecord.games} games（gapを含む）`),
-      statCard("All-period win rate", percentage(allRecord.wins, allRecord.known), allRecord.known === allRecord.games ? "LP記録開始以降" : `${allRecord.known}/${allRecord.games} games confirmed`),
-      statCard("Recent 10 LP", signed(coverage.delta), `${coverage.exact.length} / ${recent.length} games captured`, coverage.delta >= 0 ? "good" : "bad")
+      statCard("All-period record", `${recordSummary.wins}W-${recordSummary.losses}L`, `${summary.games_tracked || 0} / ${totalGames || summary.games_total || 0} games tracked`),
+      statCard("All-period win rate", percentage(recordSummary.wins, totalGames), "取得できたLP履歴全体"),
+      statCard("Net LP", signed(summary.net_lp), "最古の利用可能pointから現在rank", Number.isFinite(summary.net_lp) ? summary.net_lp >= 0 ? "good" : "bad" : ""),
+      statCard("Peak Rank", rankLabel(summary.peak_rank), summary.peak_game_number ? `第${summary.peak_game_number}戦` : "利用可能履歴内"),
+      statCard("Recent 10 LP", signed(coverage.delta), `${coverage.available.length} / ${recent.length} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : "")
     );
   }
 
   function renderFiltered(matches) {
     const container = global.document.getElementById("lp-filtered");
-    const result = record(matches);
-    const coverage = exactCoverage(matches);
-    const points = matches.filter((match) => match.source === "exact" && match.after);
-    const start = points[0]?.before;
-    const end = points.at(-1)?.after;
+    const metrics = usableMetrics(matches);
+    const { result, coverage, start, end } = metrics;
     container.replaceChildren(
-      statCard("LP delta", signed(coverage.delta), `${coverage.exact.length} / ${matches.length} games captured`, coverage.delta >= 0 ? "good" : "bad"),
+      statCard("LP delta", signed(coverage.delta), `${coverage.available.length} / ${metrics.ordered.length} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : ""),
       statCard("Record", `${result.wins}W-${result.losses}L`, `${result.games} games`),
-      statCard("Win Rate", percentage(result.wins, result.known), result.known === result.games ? "" : `${result.known}/${result.games} games confirmed`),
-      statCard("Start Rank", rankLabel(start), "正式LP pointから算出"),
-      statCard("End Rank", rankLabel(end), "正式LP pointから算出")
+      statCard("Win Rate", percentage(result.wins, result.known), result.known === result.games ? "" : `${result.known}/${result.games} games available`),
+      statCard("Start Rank", rankLabel(start), "表示中の利用可能point"),
+      statCard("End Rank", rankLabel(end), "表示中の利用可能point")
     );
   }
 
@@ -161,13 +192,14 @@
   }
 
   function pointLabel(point) {
-    if (point.kind === "baseline") return `Baseline\n${rankLabel(point.rank)}\n${dateTimeLabel(point.timestamp_jst)}`;
-    if (point.kind === "checkpoint") return `Checkpoint\n${rankLabel(point.rank)}\nGap: ${point.gap.games} games (${point.gap.wins}W-${point.gap.losses}L)`;
+    const game = Number.isFinite(point.game_number) ? `第${point.game_number}戦\n` : "";
+    if (point.kind === "baseline") return `${game}Baseline\n${rankLabel(point.rank)}\n${dateTimeLabel(point.timestamp_jst)}`;
+    if (point.kind === "checkpoint") return `${game}Checkpoint\n${rankLabel(point.rank)}\nGap: ${point.gap.games} games (${point.gap.wins}W-${point.gap.losses}L)`;
     if (point.kind === "historical") {
       const delta = Number.isFinite(point.candidate_lp_delta) ? `\nCandidate LP: ${signed(point.candidate_lp_delta)}` : "";
-      return `Blitz復元（参考・非公式）\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
+      return `${game}Blitz復元（参考・非公式）\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
     }
-    return `${rankLabel(point.rank)}\nLP: ${signed(point.lp_delta)}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
+    return `${game}${rankLabel(point.rank)}\nLP: ${signed(point.lp_delta)}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
   }
 
   function pointMatchUrl(point) {
@@ -204,9 +236,9 @@
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
-    const points = [...officialPoints, ...historicalPoints].sort((left, right) => (
-      Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst)
-    ));
+    const points = [...officialPoints, ...historicalPoints]
+      .filter((point) => Number.isFinite(point.game_number))
+      .sort((left, right) => left.game_number - right.game_number || Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst));
     tooltip.hidden = true;
     chart.replaceChildren();
     if (!points.length) { empty.hidden = false; return; }
@@ -217,12 +249,12 @@
     let min = Math.floor(Math.min(...values) / 100) * 100;
     let max = Math.ceil(Math.max(...values) / 100) * 100;
     if (min === max) { min -= 100; max += 100; }
-    const times = points.map((point) => Date.parse(point.timestamp_jst)).filter(Number.isFinite);
-    let first = Math.min(...times), last = Math.max(...times);
-    if (first === last) { first -= 3600000; last += 3600000; }
+    let first = Math.min(...points.map((point) => point.game_number));
+    let last = Math.max(...points.map((point) => point.game_number));
+    if (first === last) { first -= 1; last += 1; }
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
-    const x = (point) => margin.left + ((Date.parse(point.timestamp_jst) - first) / (last - first)) * chartWidth;
+    const x = (point) => margin.left + ((point.game_number - first) / (last - first)) * chartWidth;
     const y = (score) => margin.top + ((max - score) / (max - min)) * chartHeight;
     const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Solo/Duo LP推移" });
     for (let score = min; score <= max; score += 25) {
@@ -230,6 +262,17 @@
       svg.append(el("line", { x1: margin.left, y1: y(score), x2: width - margin.right, y2: y(score), stroke: boundary ? "#3b4861" : "#252e40", "stroke-width": boundary ? 1.2 : 1 }));
       if (boundary) svg.append(el("text", { x: margin.left - 9, y: y(score) + 4, fill: "#aeb9ca", "font-size": 10, "text-anchor": "end" }, `${rankTick(score)} ${score % 100}`));
     }
+    const desiredTicks = global.innerWidth <= 430 ? 4 : 6;
+    const rawStep = Math.max(1, Math.ceil((last - first) / desiredTicks));
+    const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+    const normalized = rawStep / magnitude;
+    const step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude;
+    const tickValues = new Set([first, last]);
+    for (let game = Math.ceil(first / step) * step; game <= last; game += step) tickValues.add(game);
+    [...tickValues].sort((left, right) => left - right).forEach((game) => {
+      svg.append(el("text", { x: margin.left + ((game - first) / (last - first)) * chartWidth, y: height - 21, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, String(game)));
+    });
+    svg.append(el("text", { x: margin.left + chartWidth / 2, y: height - 5, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, "累積ランク試合数（第N戦）"));
     const exact = officialPoints.filter((point) => point.kind === "exact");
     let priorPatch = "";
     exact.forEach((point) => {
@@ -289,32 +332,77 @@
       }
       svg.append(marker);
     });
-    const dates = [...new Set(points.map((point) => localDate(point.timestamp_jst)))];
-    dates.slice(0, 6).forEach((day) => {
-      const point = points.find((item) => localDate(item.timestamp_jst) === day);
-      svg.append(el("text", { x: x(point), y: height - 21, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, dateLabel(day)));
-    });
     chart.append(svg);
+  }
+
+  function championSummary(matches) {
+    const groups = new Map();
+    matches.forEach((match) => {
+      const key = match.champion || "Unknown";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(match);
+    });
+    return [...groups.entries()].map(([champion, values]) => {
+      const result = record(values);
+      const coverage = usableCoverage(values);
+      const stats = values.filter((match) => [match.kills, match.deaths, match.assists].every(Number.isFinite));
+      const totals = stats.reduce((total, match) => ({
+        kills: total.kills + match.kills,
+        deaths: total.deaths + match.deaths,
+        assists: total.assists + match.assists,
+      }), { kills: 0, deaths: 0, assists: 0 });
+      const average = (key) => {
+        const available = values.map((match) => match[key]).filter(Number.isFinite);
+        return available.length ? available.reduce((total, value) => total + value, 0) / available.length : null;
+      };
+      return {
+        champion,
+        name: values[0].champion_name || champion,
+        icon: values[0].champion_icon_id,
+        result,
+        coverage,
+        stats,
+        averages: stats.length ? {
+          kills: totals.kills / stats.length,
+          deaths: totals.deaths / stats.length,
+          assists: totals.assists / stats.length,
+          kda: (totals.kills + totals.assists) / Math.max(totals.deaths, 1),
+        } : null,
+        kp: average("kp_pct"),
+        vision: average("vision_score"),
+        vspm: average("vision_score_per_min"),
+      };
+    }).sort((a, b) => b.result.games - a.result.games || (b.coverage.delta ?? -Infinity) - (a.coverage.delta ?? -Infinity) || a.name.localeCompare(b.name, "ja"));
   }
 
   function renderChampionTable(matches, version) {
     const body = global.document.getElementById("lp-champion-body");
     const empty = global.document.getElementById("lp-champion-empty");
-    const groups = new Map();
-    matches.forEach((match) => { const key = match.champion || "Unknown"; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(match); });
-    const rows = [...groups.entries()].map(([champion, values]) => {
-      const result = record(values); const coverage = exactCoverage(values);
-      return { champion, name: values[0].champion_name || champion, icon: values[0].champion_icon_id, values, result, coverage };
-    }).sort((a, b) => b.result.games - a.result.games || (b.coverage.delta ?? -Infinity) - (a.coverage.delta ?? -Infinity) || a.name.localeCompare(b.name, "ja"));
+    const rows = championSummary(matches);
     body.replaceChildren(); empty.hidden = rows.length !== 0;
     rows.forEach((row) => {
       const tr = global.document.createElement("tr");
       const champ = htmlEl("td", "lp-champ");
       if (row.icon) { const image = global.document.createElement("img"); image.loading = "lazy"; image.alt = ""; image.src = `https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${row.icon}.png`; champ.append(image); }
       champ.append(htmlEl("span", "", row.name));
-      tr.append(champ, htmlEl("td", "", String(row.result.games)), htmlEl("td", "", `${row.result.wins}-${row.result.losses}`), htmlEl("td", "", percentage(row.result.wins, row.result.known)));
+      const kda = row.averages;
+      const kdaText = kda ? `${kda.kills.toFixed(1)} / ${kda.deaths.toFixed(1)} / ${kda.assists.toFixed(1)}` : "-";
+      const formatDecimal = (value, digits) => Number.isFinite(value) ? value.toFixed(digits) : "-";
+      const formatPercent = (value) => Number.isFinite(value) ? `${value.toFixed(1)}%` : "-";
+      tr.append(
+        champ,
+        htmlEl("td", "", String(row.result.games)),
+        htmlEl("td", "", `${row.result.wins}-${row.result.losses}`),
+        htmlEl("td", "", percentage(row.result.wins, row.result.known)),
+        htmlEl("td", "", kda ? kda.kda.toFixed(2) : "-"),
+        htmlEl("td", "lp-kda", kdaText),
+        htmlEl("td", "", formatPercent(row.kp)),
+        htmlEl("td", "", formatDecimal(row.vision, 1)),
+        htmlEl("td", "", formatDecimal(row.vspm, 2)),
+      );
       const lp = htmlEl("td", Number.isFinite(row.coverage.delta) ? row.coverage.delta >= 0 ? "good" : "bad" : "", signed(row.coverage.delta));
-      lp.append(htmlEl("small", "", `${row.coverage.exact.length}/${row.result.games} captured`)); tr.append(lp); body.append(tr);
+      tr.append(lp, htmlEl("td", "", `${row.coverage.available.length} / ${row.result.games}`));
+      body.append(tr);
     });
   }
 
@@ -326,7 +414,7 @@
       ...historicalPoints.map((point) => point.patch),
     ].filter(Boolean))].sort().reverse();
     patches.forEach((patch) => { const option = global.document.createElement("option"); option.value = patch; option.textContent = patch; controls.patch.append(option); });
-    global.document.getElementById("lp-tracking").textContent = `LP記録開始：${localDate(data.tracking_started_jst).replaceAll("-", "/")}`;
+    global.document.getElementById("lp-tracking").textContent = `LP履歴開始：${localDate(data.history_started_jst || data.tracking_started_jst).replaceAll("-", "/")}`;
     const legend = global.document.getElementById("lp-chart-legend");
     const notice = global.document.getElementById("lp-historical-notice");
     if (historicalPoints.length) {
@@ -339,16 +427,17 @@
       controls.custom.hidden = controls.period.value !== "custom";
       const range = rangeFor(controls.period.value, data, controls);
       const matches = filterMatches(data, range, controls.patch.value);
+      const usable = filterUsableMatches(data, range, controls.patch.value);
       let points = filterPoints(data, range, controls.patch.value);
       if (controls.patch.value === "all") points = points.filter((point) => inRange(point.timestamp_jst, range));
       const historical = filterHistoricalPoints(data, range, controls.patch.value);
-      renderFiltered(matches); renderChart(points, historical); renderChampionTable(matches, data.ddragon_version);
+      renderFiltered(usable); renderChart(points, historical); renderChampionTable(usable, data.ddragon_version);
     }
     [controls.period, controls.patch, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
     render();
   }
 
-  global.LPProgress = { rankLabel, record, exactCoverage, filterMatches, pointMatchUrl };
+  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, championSummary, filterMatches, filterUsableMatches, pointMatchUrl };
   try {
     const source = global.document.getElementById("lp-progress-data");
     if (!source) throw new Error("payload unavailable");

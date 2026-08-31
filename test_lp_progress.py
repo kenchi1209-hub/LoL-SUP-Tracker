@@ -8,13 +8,21 @@ from pathlib import Path
 from site_builder import lp_progress
 
 
-def row(match_id, date, champion, win):
+def row(match_id, date, champion, win, kills=1, deaths=2, assists=3, team_kills=10,
+        vision_score=70, vision_score_per_min=2.33, game_duration_seconds=0):
     return {
         "match_id": match_id,
         "date": date,
         "champion": champion,
         "patch": "16.17.810.4348",
         "_win": win,
+        "kills": kills,
+        "deaths": deaths,
+        "assists": assists,
+        "team_kills": team_kills,
+        "vision_score": vision_score,
+        "vision_score_per_min": vision_score_per_min,
+        "game_duration_seconds": game_duration_seconds,
     }
 
 
@@ -97,15 +105,23 @@ class LPProgressPayloadTest(unittest.TestCase):
 
     def test_missing_recovered_history_keeps_official_payload_compatible(self):
         self.assertIsNone(self.payload["historical"])
+        self.assertEqual([item["match_id"] for item in self.payload["usable_matches"]], ["JP1_EXACT"])
+        self.assertFalse({"JP1_GAP1", "JP1_GAP2"} & {item["match_id"] for item in self.payload["usable_matches"]})
+        self.assertEqual(self.payload["usable_summary"]["net_lp"], 21)
+        usable = self.payload["usable_matches"][0]
+        self.assertEqual((usable["kills"], usable["deaths"], usable["assists"]), (1, 2, 3))
+        self.assertEqual(usable["kp_pct"], 40.0)
+        self.assertEqual(usable["vision_score"], 70.0)
+        self.assertEqual(usable["vision_score_per_min"], 2.33)
 
     def test_recovered_history_excludes_official_overlap_and_preserves_gaps(self):
         recovered_dir = self.root / "raw" / "lp_progress" / "recovered"
         recovered_dir.mkdir(parents=True)
         records = [
-            {"match_id": "JP1_REC_ONE", "game_number": 1, "blitz_timestamp": 1768620000, "tier_after": "BRONZE", "division_after": "III", "lp_after": 10, "candidate_lp_delta": None},
-            {"match_id": "JP1_EXACT", "game_number": 2, "blitz_timestamp": 1768623600, "tier_after": "BRONZE", "division_after": "III", "lp_after": 30, "candidate_lp_delta": 20},
-            {"match_id": "JP1_REC_THREE", "game_number": 4, "blitz_timestamp": 1768630800, "tier_after": "BRONZE", "division_after": "III", "lp_after": 40, "candidate_lp_delta": None},
-            {"match_id": "JP1_REC_FOUR", "game_number": 5, "blitz_timestamp": 1768634400, "tier_after": "BRONZE", "division_after": "III", "lp_after": 60, "candidate_lp_delta": 20},
+            {"match_id": "JP1_REC_ONE", "game_number": 1, "blitz_timestamp": 1768620000, "tier_after": "BRONZE", "division_after": "III", "lp_after": 10, "wins_after": 1, "losses_after": 0, "candidate_lp_delta": None},
+            {"match_id": "JP1_EXACT", "game_number": 2, "blitz_timestamp": 1768623600, "tier_after": "BRONZE", "division_after": "III", "lp_after": 30, "wins_after": 2, "losses_after": 0, "candidate_lp_delta": 20},
+            {"match_id": "JP1_REC_THREE", "game_number": 4, "blitz_timestamp": 1768630800, "tier_after": "BRONZE", "division_after": "III", "lp_after": 40, "wins_after": 2, "losses_after": 2, "candidate_lp_delta": None},
+            {"match_id": "JP1_REC_FOUR", "game_number": 5, "blitz_timestamp": 1768634400, "tier_after": "BRONZE", "division_after": "III", "lp_after": 60, "wins_after": 3, "losses_after": 2, "candidate_lp_delta": 20},
         ]
         (recovered_dir / "blitz_2026-08-31_reconstructed.json").write_text(json.dumps({
             "source": "blitz", "confidence": "historical_reconstructed", "matches": records,
@@ -120,9 +136,9 @@ class LPProgressPayloadTest(unittest.TestCase):
             ],
         }), encoding="utf-8")
         rows = self.rows + [
-            row("JP1_REC_ONE", "2026-01-17 18:00:00", "Nami", True),
-            row("JP1_REC_THREE", "2026-01-17 21:00:00", "Leona", False),
-            row("JP1_REC_FOUR", "2026-01-17 22:00:00", "Morgana", True),
+            row("JP1_REC_ONE", "2026-01-17 18:00:00", "Nami", True, 2, 0, 4),
+            row("JP1_REC_THREE", "2026-01-17 21:00:00", "Leona", False, 0, 3, 5),
+            row("JP1_REC_FOUR", "2026-01-17 22:00:00", "Morgana", True, 1, 2, 8),
         ]
         payload = lp_progress.build_lp_payload(rows, "16.17.1")
         historical = payload["historical"]
@@ -134,9 +150,54 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertTrue(all(point["match_url"].startswith("history.html#match-") for point in historical["points"]))
         official_ids = {point["match_id"] for point in payload["points"] if point["kind"] == "exact"}
         self.assertFalse(official_ids & {point["match_id"] for point in historical["points"]})
+        usable = payload["usable_matches"]
+        self.assertEqual([item["game_number"] for item in usable], [1, 2, 4, 5])
+        self.assertEqual(len({item["match_id"] for item in usable}), 4)
+        official = next(item for item in usable if item["match_id"] == "JP1_EXACT")
+        self.assertEqual(official["source"], "exact")
+        self.assertEqual(official["lp_delta"], 21)
+        self.assertEqual(payload["usable_summary"]["record"], {"wins": 3, "losses": 2, "known": 4})
+        self.assertEqual(payload["usable_summary"]["games_tracked"], 4)
+        self.assertEqual(payload["usable_summary"]["games_total"], 5)
+        recovered_usable = next(item for item in usable if item["match_id"] == "JP1_REC_ONE")
+        self.assertEqual((recovered_usable["kills"], recovered_usable["deaths"], recovered_usable["assists"]), (2, 0, 4))
+        self.assertEqual(recovered_usable["kp_pct"], 60.0)
         serialized = json.dumps(historical).lower()
         for forbidden in ("puuid", "summonerid", "privateData".lower(), "/users/"):
             self.assertNotIn(forbidden, serialized)
+
+    def test_official_bridge_gets_game_numbers_only_when_record_sequence_matches(self):
+        historical = [
+            {"match_id": "LEFT", "game_number": 6, "wins_after": 3, "losses_after": 3},
+            {"match_id": "RIGHT", "game_number": 8, "wins_after": 2, "losses_after": 6},
+        ]
+        exact = [
+            {"match_id": "LEFT", "win": False},
+            {"match_id": "MIDDLE", "win": True},
+            {"match_id": "RIGHT", "win": False},
+        ]
+        lp_progress._assign_official_game_numbers(exact, historical)
+        self.assertEqual([item.get("game_number") for item in exact], [6, None, 8])
+
+        historical[-1]["game_number"] = 8
+        historical[-1]["wins_after"] = 4
+        historical[-1]["losses_after"] = 4
+        exact = [
+            {"match_id": "LEFT", "win": False},
+            {"match_id": "MIDDLE", "win": True},
+            {"match_id": "RIGHT", "win": False},
+        ]
+        lp_progress._assign_official_game_numbers(exact, historical)
+        self.assertEqual([item.get("game_number") for item in exact], [6, 7, 8])
+
+    def test_match_metadata_keeps_existing_match_statistics_and_handles_zero_team_kills(self):
+        metadata = lp_progress._match_metadata(
+            row("JP1_STATS", "2026-08-31 12:00:00", "Nami", True, 3, 0, 7, 0, 88, None, 600),
+            "JP1_STATS",
+        )
+        self.assertEqual((metadata["kills"], metadata["deaths"], metadata["assists"]), (3, 0, 7))
+        self.assertIsNone(metadata["kp_pct"])
+        self.assertAlmostEqual(metadata["vision_score_per_min"], 8.8)
 
 
 if __name__ == "__main__":

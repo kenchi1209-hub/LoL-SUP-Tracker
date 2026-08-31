@@ -89,6 +89,20 @@ class PrivateDataPublisher:
         return self._run(["git", *arguments], check=check)
 
     @staticmethod
+    def _paths_from_name_status(output):
+        """Read staged name-status output without materializing any file diff."""
+        paths = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = line.split("\t")
+            status = fields[0]
+            if status not in {"A", "M"} or len(fields) != 2 or not fields[1]:
+                raise PublishError("staged changes include rename, copy, deletion, or unreadable status")
+            paths.append(fields[1])
+        return paths
+
+    @staticmethod
     def _paths_from_status(output):
         """Read ordinary porcelain v1 status, rejecting risky rename/copy states."""
         paths = []
@@ -149,13 +163,20 @@ class PrivateDataPublisher:
             raise PublishError("remote main advanced during update; publish stopped")
 
         self._git("add", "--", *paths)
-        staged = self._git("diff", "--cached", "--name-only").stdout.splitlines()
+        staged = self._paths_from_name_status(
+            self._git("--no-pager", "diff", "--cached", "--name-status").stdout
+        )
         if sorted(staged) != sorted(paths) or any(
             not is_allowed_match_path(path, match_id) for path in staged
         ):
             raise PublishError("staged paths failed validation; publish stopped")
-        self._git("diff", "--cached", "--check")
-        if self._git("diff", "--cached", "--quiet", check=False).returncode == 0:
+        # Accept CRLF line endings from Windows CSV exporters, but retain all
+        # other whitespace checks.  --no-pager also makes this safe for the
+        # non-interactive watcher subprocess on Git for Windows.
+        self._git(
+            "-c", "core.whitespace=cr-at-eol", "--no-pager", "diff", "--cached", "--check",
+        )
+        if self._git("--no-pager", "diff", "--cached", "--quiet", check=False).returncode == 0:
             raise PublishError("no staged PrivateData changes found")
 
         self._git("config", "user.name", "LoL LCU watcher")

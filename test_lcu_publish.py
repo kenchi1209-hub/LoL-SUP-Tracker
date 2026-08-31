@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+import tempfile
 import unittest
 
 from lcu_publish import PrivateDataPublisher, PublishError, is_allowed_match_path
@@ -44,9 +45,9 @@ class GitRunner:
             else:
                 counts = (0, 0)
             return Result(stdout=f"{counts[0]}\t{counts[1]}\n")
-        if command[:4] == ["git", "diff", "--cached", "--name-only"]:
-            return Result(stdout="".join(f"{path}\n" for path in self.changed_paths))
-        if command[:4] == ["git", "diff", "--cached", "--quiet"]:
+        if command[:5] == ["git", "--no-pager", "diff", "--cached", "--name-status"]:
+            return Result(stdout="".join(f"M\t{path}\n" for path in self.changed_paths))
+        if command[:5] == ["git", "--no-pager", "diff", "--cached", "--quiet"]:
             return Result(returncode=1)
         if command[:2] == ["git", "commit"]:
             self.committed = True
@@ -98,6 +99,10 @@ class PrivateDataPublisherTest(unittest.TestCase):
         self.assertEqual(publisher.publish(self.match_id), "commit-sha")
         commands = [" ".join(command) for command in runner.calls]
         self.assertIn("git add -- " + " ".join(self.expected_paths), commands)
+        self.assertIn("git --no-pager diff --cached --name-status", commands)
+        self.assertIn(
+            "git -c core.whitespace=cr-at-eol --no-pager diff --cached --check", commands,
+        )
         self.assertTrue(any(command.startswith("git push origin HEAD:main") for command in commands))
         trigger_index = next(i for i, command in enumerate(commands) if command.startswith("gh workflow run"))
         push_index = next(i for i, command in enumerate(commands) if command.startswith("git push origin"))
@@ -155,6 +160,64 @@ class PrivateDataPublisherTest(unittest.TestCase):
         self.assertIn("default: false", workflow)
         condition = "github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed"
         self.assertGreaterEqual(workflow.count(condition), 6)
+
+    def test_staged_name_status_rejects_unknown_rename_and_delete_statuses(self):
+        publisher = self.publisher(GitRunner())
+        self.assertEqual(
+            publisher._paths_from_name_status("A\traw/JP1_123/match.json\nM\tcsv/my_matches.csv\n"),
+            ["raw/JP1_123/match.json", "csv/my_matches.csv"],
+        )
+        for output in (
+            "D\traw/JP1_123/match.json\n",
+            "R100\traw/JP1_123/match.json\traw/JP1_123/timeline.json\n",
+            "C100\traw/JP1_123/match.json\traw/JP1_123/timeline.json\n",
+            "M\n",
+        ):
+            with self.assertRaisesRegex(PublishError, "staged changes"):
+                publisher._paths_from_name_status(output)
+
+    def test_real_git_large_staged_crlf_data_uses_name_status_without_pager(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+            csv_path = repo / "csv" / "my_matches.csv"
+            json_path = repo / "raw" / self.match_id / "timeline.json"
+            csv_path.parent.mkdir(parents=True)
+            json_path.parent.mkdir(parents=True)
+            csv_path.write_bytes(b"match_id,value\r\nJP1_123,1\r\n")
+            json_path.write_bytes(b'{"events":"' + (b"x" * 1_000_000) + b'"}\r\n')
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "--", "csv/my_matches.csv", "raw/JP1_123/timeline.json"],
+                check=True,
+                capture_output=True,
+            )
+
+            publisher = PrivateDataPublisher(repo, "owner/public")
+            name_status = publisher._git(
+                "--no-pager", "diff", "--cached", "--name-status",
+            ).stdout
+            self.assertEqual(
+                sorted(publisher._paths_from_name_status(name_status)),
+                ["csv/my_matches.csv", "raw/JP1_123/timeline.json"],
+            )
+            publisher._git(
+                "-c", "core.whitespace=cr-at-eol", "--no-pager", "diff", "--cached", "--check",
+            )
+
+            dirty_path = repo / "csv" / "ordinary-trailing-whitespace.txt"
+            dirty_path.write_bytes(b"must still fail \n")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "--", "csv/ordinary-trailing-whitespace.txt"],
+                check=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(
+                publisher._git(
+                    "-c", "core.whitespace=cr-at-eol", "--no-pager", "diff", "--cached", "--check",
+                    check=False,
+                ).returncode,
+                0,
+            )
 
 
 if __name__ == "__main__":

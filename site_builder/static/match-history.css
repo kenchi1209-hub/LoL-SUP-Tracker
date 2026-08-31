@@ -179,6 +179,11 @@
   .m-stat-row { display: inline-grid; }
   .m-actions { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .match-detail, .fight-detail { grid-column: 1 / -1; }
+  /* Keep unclassified detail text at the same mobile body scale as its metrics. */
+  .match-detail-content,
+  .match-detail-group,
+  .match-detail-metrics,
+  .fight-detail { font-size: .67rem; }
   .fight-item { padding: 5px 6px; }
   .fight-item-header { gap: 3px; margin-bottom: 3px; }
   .fight-title-line { gap: 4px; }

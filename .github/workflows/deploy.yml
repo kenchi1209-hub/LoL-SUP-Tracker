@@ -5,7 +5,13 @@ on:
     branches: [build]
   schedule:
     - cron: "0 1 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      private_data_pushed:
+        description: "Build and deploy the current PrivateData commit without fetching Riot data"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -35,7 +41,7 @@ jobs:
 
       - name: Record base revisions
         id: bases
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed)
         run: |
           set -euo pipefail
           test -z "$(git -C tracker status --porcelain)"
@@ -53,12 +59,12 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Refresh Champion Registry
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed)
         working-directory: tracker
         run: python champion_registry.py update
 
       - name: Fetch latest match data into PrivateData
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed)
         working-directory: tracker
         env:
           RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
@@ -67,14 +73,14 @@ jobs:
         run: python main.py --data-root "${{ github.workspace }}/private-data"
 
       - name: Verify PrivateData completeness
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed)
         working-directory: tracker
         run: >-
           python verify_fight_raw_completeness.py
           --data-root "${{ github.workspace }}/private-data"
 
       - name: Commit refreshed PrivateData
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed)
         working-directory: private-data
         env:
           PRIVATE_BASE_SHA: ${{ steps.bases.outputs.private_sha }}
@@ -124,7 +130,7 @@ jobs:
           fi
 
       - name: Commit Champion Registry only
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.private_data_pushed)
         working-directory: tracker
         env:
           TRACKER_BASE_SHA: ${{ steps.bases.outputs.tracker_sha }}

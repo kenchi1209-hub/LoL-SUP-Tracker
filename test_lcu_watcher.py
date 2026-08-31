@@ -3,6 +3,7 @@ import sys
 import unittest
 
 from lcu_client import LCUUnavailable
+from lcu_publish import PublishError
 from lcu_watcher import (
     LCUWatcher,
     MATCH_UPDATE_MAX_ATTEMPTS,
@@ -81,6 +82,24 @@ class RecordingRunner:
         if isinstance(result, BaseException):
             raise result
         return result
+
+
+class FakePublisher:
+    def __init__(self, preflight_error=None, publish_error=None):
+        self.preflight_error = preflight_error
+        self.publish_error = publish_error
+        self.calls = []
+
+    def preflight(self):
+        self.calls.append("preflight")
+        if self.preflight_error:
+            raise self.preflight_error
+
+    def publish(self, match_id):
+        self.calls.append(("publish", match_id))
+        if self.publish_error:
+            raise self.publish_error
+        return "commit-sha"
 
 
 class LCUWatcherTest(unittest.TestCase):
@@ -163,7 +182,9 @@ class LCUWatcherTest(unittest.TestCase):
     def test_default_cli_is_dry_run_and_live_is_explicit(self):
         self.assertFalse(parse_args([]).live)
         self.assertTrue(parse_args(["--live", "--data-root", "C:/PrivateData"]).live)
+        self.assertTrue(parse_args(["--live", "--auto-publish", "--data-root", "C:/PrivateData"]).auto_publish)
         self.assertEqual(main(["--live"]), 1)
+        self.assertEqual(main(["--auto-publish"]), 1)
 
     def test_live_requires_pending_and_in_progress_before_waiting_for_stats(self):
         runner = RecordingRunner()
@@ -243,6 +264,51 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertEqual(runner.calls[1][0][0], sys.executable)
         self.assertFalse(runner.calls[0][1]["shell"])
         self.assertEqual(self.logs.count("[LP] exact capture completed"), 1)
+
+    def test_auto_publish_runs_only_after_exact_capture(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        publisher = FakePublisher()
+        watcher = self.live_watcher(
+            FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
+            runner,
+            auto_publish=True,
+            publisher=publisher,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        watcher.tick()
+        watcher.tick()
+        self.assertEqual(publisher.calls, ["preflight", ("publish", "JP1_TEST")])
+        self.assertTrue(watcher.pending["published"])
+        self.assertIn("[DONE] automatic publish complete", self.logs)
+
+    def test_auto_publish_ambiguous_capture_never_publishes(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(2)])
+        publisher = FakePublisher()
+        watcher = self.live_watcher(
+            FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
+            runner,
+            auto_publish=True,
+            publisher=publisher,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        watcher.tick()
+        watcher.tick()
+        self.assertEqual(publisher.calls, ["preflight"])
+
+    def test_auto_publish_preflight_or_trigger_failure_stops_without_retrigger(self):
+        for publisher in (FakePublisher(preflight_error=PublishError("remote main is ahead")), FakePublisher(publish_error=PublishError("trigger failed"))):
+            runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+            watcher = self.live_watcher(
+                FakeClient(phases=["InProgress", "WaitingForStats", "WaitingForStats"], sessions=[session(420)] * 3),
+                runner,
+                auto_publish=True,
+                publisher=publisher,
+            )
+            watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+            for _ in range(3):
+                watcher.tick()
+            self.assertTrue(watcher.pending["failed"])
+            self.assertEqual(publisher.calls.count(("publish", "JP1_TEST")), 1 if len(publisher.calls) > 1 else 0)
 
     def test_live_retries_main_when_match_is_not_reflected_then_captures(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0), FakeResult(0)])

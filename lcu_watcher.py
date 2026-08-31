@@ -10,6 +10,7 @@ import time
 
 from data_paths import get_data_paths
 from lcu_client import LCUError, LCUUnavailable, LCUClient, session_diagnostic
+from lcu_publish import PrivateDataPublisher, PublishError
 from lp_snapshot import discover_local_uncaptured_solo_matches, previous_state
 from timezone_utils import now_jst
 
@@ -94,7 +95,7 @@ class LCUWatcher:
     def __init__(
         self, client=None, emit=print, sleeper=time.sleep, idle_interval=3,
         active_interval=1, live=False, data_root=None, process_runner=subprocess.run,
-        repo_root=None, monotonic=time.monotonic,
+        repo_root=None, monotonic=time.monotonic, auto_publish=False, publisher=None,
     ):
         if idle_interval < 1 or active_interval < 1:
             raise ValueError("Polling intervals must be at least one second")
@@ -112,6 +113,8 @@ class LCUWatcher:
         self.process_runner = process_runner
         self.repo_root = Path(repo_root or __file__).resolve().parent
         self.monotonic = monotonic
+        self.auto_publish = auto_publish
+        self.publisher = publisher
 
     def _log(self, message):
         self.emit(message)
@@ -126,6 +129,7 @@ class LCUWatcher:
             "lcu_before_rank": before,
             "processing_started": False,
             "capture_attempted": False,
+            "published": False,
             "completed": False,
             "failed": False,
             "terminal": False,
@@ -183,6 +187,8 @@ class LCUWatcher:
         pending = self.pending
         pending["processing_started"] = True
         try:
+            if self.auto_publish:
+                self._publisher().preflight()
             retry_deadline = self.monotonic() + MATCH_UPDATE_MAX_WAIT_SECONDS
             for attempt in range(1, MATCH_UPDATE_MAX_ATTEMPTS + 1):
                 pending["match_update_attempts"] = attempt
@@ -196,6 +202,7 @@ class LCUWatcher:
                 matches = self._uncaptured_solo_matches()
                 if len(matches) == 1:
                     match_id = matches[0]["match_id"]
+                    self._log("[DATA] match update complete")
                     pending["capture_attempted"] = True
                     capture = self._run_process(
                         self._command("lp_snapshot.py", "capture", "--data-root", str(self.data_root)),
@@ -204,9 +211,13 @@ class LCUWatcher:
                     if capture.returncode == 0:
                         if not self._has_rank_after(match_id):
                             raise LiveProcessError("capture completed without rank_after confirmation")
+                        self._log("[LP] exact capture completed")
+                        if self.auto_publish:
+                            self._publisher().publish(match_id)
+                            pending["published"] = True
+                            self._log("[DONE] automatic publish complete")
                         pending["completed"] = True
                         pending["terminal"] = True
-                        self._log("[LP] exact capture completed")
                         return
                     if capture.returncode == 2:
                         pending["terminal"] = True
@@ -228,10 +239,19 @@ class LCUWatcher:
             pending["failed"] = True
             pending["terminal"] = True
             self._log("[LP] LIVE PROCESS FAILED: subprocess timeout")
-        except (LiveProcessError, OSError, ValueError) as error:
+        except (LiveProcessError, PublishError, OSError, ValueError) as error:
             pending["failed"] = True
             pending["terminal"] = True
             self._log(f"[LP] LIVE PROCESS FAILED: {error}")
+
+    def _publisher(self):
+        if self.publisher is None:
+            self.publisher = PrivateDataPublisher(
+                private_root=self.data_root,
+                public_repo="kenchi1209-hub/LoL-SUP-Tracker",
+                emit=self._log,
+            )
+        return self.publisher
 
     def _finish_pending(self):
         pending = self.pending
@@ -338,6 +358,11 @@ def parse_args(argv=None):
     parser.add_argument("--data-root", help="Absolute PrivateData root required for --live")
     parser.add_argument("--dry-run", action="store_true", default=True, help="Observe only (default)")
     parser.add_argument("--live", action="store_true", help="Opt in to main.py then exact LP capture")
+    parser.add_argument(
+        "--auto-publish",
+        action="store_true",
+        help="With --live only, commit one validated PrivateData update and trigger Pages",
+    )
     return parser.parse_args(argv)
 
 
@@ -357,6 +382,9 @@ def run_watcher(watcher, lock):
 def main(argv=None):
     args = parse_args(argv)
     data_root = None
+    if args.auto_publish and not args.live:
+        print("[LP] LIVE PROCESS FAILED: --auto-publish requires --live")
+        return 1
     if args.live:
         if not args.data_root:
             print("[LP] LIVE PROCESS FAILED: --data-root is required for --live")
@@ -366,7 +394,10 @@ def main(argv=None):
         if not all(path.exists() for path in required):
             print("[LP] LIVE PROCESS FAILED: invalid PrivateData path")
             return 1
-    return run_watcher(LCUWatcher(live=args.live, data_root=data_root), SingleInstanceLock())
+    return run_watcher(
+        LCUWatcher(live=args.live, data_root=data_root, auto_publish=args.auto_publish),
+        SingleInstanceLock(),
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,48 @@
-﻿Set-Location C:\Users\kissx\Desktop\LoL-Analytics
+LoL SUP Tracker - Windows daily operation
+
+1. 通常の本番起動（Solo/Duo Rankedの自動更新・自動publish）
+
+Set-Location C:\Users\kissx\Desktop\LoL-Analytics
+
+python .\lcu_watcher.py `
+  --data-root C:\Users\kissx\Desktop\LoL-SUP-Tracker-PrivateData `
+  --live `
+  --auto-publish
+
+2. モードの意味
+
+- --live --auto-publish: 通常の本番運用。Solo/Duo Ranked終了後、データ更新、exact LP capture、PrivateData commit/push、Pages build triggerまで実行。
+- --live: データ更新とexact LP captureまで実行。自動commit/push・Pages triggerは行わない。
+- --liveなし: 確認用 / DRY-RUN。データ更新・capture・Git操作は行わない。
+- --auto-publish単独: 安全停止する。
+
+確認用 / DRY-RUN 起動:
+
+Set-Location C:\Users\kissx\Desktop\LoL-Analytics
+
+python .\lcu_watcher.py --data-root C:\Users\kissx\Desktop\LoL-SUP-Tracker-PrivateData
+
+3. 正常終了時の期待ログ
+
+[LP] ranked finished
+[GIT] PrivateData preflight verified
+[DATA] match update complete
+[LP] exact capture completed
+[GIT] committed <SHA>
+[GIT] pushed origin/main
+[PAGES] deploy workflow triggered
+[DONE] automatic publish complete
+
+4. 注意事項
+
+- 自動publishの対象はSolo/Duo Ranked（Queue 420）のみ。Draft / Swift / ARAM等は対象外。
+- Ranked終了はWaitingForStatsまたはEndOfGameを安全な終了トリガーとして扱う。
+- PrivateDataがdirty、remote ahead/diverge、exact capture失敗、対象外ファイル変更時は自動publishしない。
+- force pushは行わない。PrivateData push成功後のみPages build triggerを実行する。
+
+5. 従来の通常データ更新（daily_update.ps1）
+
+Set-Location C:\Users\kissx\Desktop\LoL-Analytics
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\daily_update.ps1
 if ($LASTEXITCODE -ne 0) {
   throw "LoLデータ更新に失敗しました。上のエラーを確認してください。"

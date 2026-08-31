@@ -17,6 +17,7 @@ from timezone_utils import now_jst
 
 SOLO_QUEUE_ID = 420
 START_PHASES = {"ChampSelect", "InProgress"}
+FINISH_PHASES = {"WaitingForStats", "EndOfGame"}
 KNOWN_PHASES = {
     "None", "Lobby", "Matchmaking", "ReadyCheck", "ChampSelect", "InProgress",
     "WaitingForStats", "PreEndOfGame", "EndOfGame",
@@ -312,7 +313,7 @@ class LCUWatcher:
             self.pending
             and self.pending["queue_id"] == SOLO_QUEUE_ID
             and self.pending["has_reached_in_progress"]
-            and phase == "WaitingForStats"
+            and phase in FINISH_PHASES
             and not self.pending["processing_started"]
             and not self.pending["completed"]
             and not self.pending["terminal"]

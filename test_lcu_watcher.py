@@ -265,6 +265,62 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertFalse(runner.calls[0][1]["shell"])
         self.assertEqual(self.logs.count("[LP] exact capture completed"), 1)
 
+    def test_end_of_game_is_a_phase_safe_fallback_finish_trigger(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "PreEndOfGame", "EndOfGame"],
+                sessions=[session(420)] * 4,
+            ),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        for _ in range(4):
+            watcher.tick()
+        self.assertTrue(watcher.pending["completed"])
+        self.assertEqual(self.logs.count("[LP] ranked finished"), 1)
+        self.assertEqual(len(runner.calls), 2)
+
+    def test_waiting_for_stats_then_end_of_game_runs_once(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "PreEndOfGame", "WaitingForStats", "EndOfGame"],
+                sessions=[session(420)] * 5,
+            ),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        for _ in range(5):
+            watcher.tick()
+        self.assertEqual(self.logs.count("[LP] ranked finished"), 1)
+        self.assertEqual(len(runner.calls), 2)
+
+    def test_end_of_game_requires_existing_ranked_pending_and_in_progress(self):
+        cases = (
+            (["ChampSelect", "EndOfGame"], [session(420)] * 2),
+            (["InProgress", "EndOfGame"], [session(400)] * 2),
+            (["EndOfGame"], [session(420)]),
+        )
+        for phases, sessions in cases:
+            watcher = self.watcher(FakeClient(phases=phases, sessions=sessions))
+            for _ in phases:
+                watcher.tick()
+            self.assertNotIn("[LP] ranked finished", self.logs)
+
+    def test_repeated_end_of_game_and_lobby_none_never_retrigger(self):
+        watcher = self.watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "PreEndOfGame", "EndOfGame", "EndOfGame", "Lobby", "None"],
+                sessions=[session(420)] * 6 + [None],
+            )
+        )
+        for _ in range(7):
+            watcher.tick()
+        self.assertTrue(watcher.pending["terminal"])
+        self.assertEqual(self.logs.count("[LP] ranked finished"), 1)
+        self.assertEqual(self.logs.count("[LP] WOULD_RUN_CAPTURE"), 1)
+
     def test_auto_publish_runs_only_after_exact_capture(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])
         publisher = FakePublisher()

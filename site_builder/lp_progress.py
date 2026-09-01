@@ -330,6 +330,10 @@ def _history_match(record, rows_by_id):
         "segment_id": str(record.get("segment_id", "")),
         "source": "exact",
     })
+    rank_after_record = _rank_after_record(match_id, after)
+    if rank_after_record:
+        metadata["wins_after"] = rank_after_record["wins"]
+        metadata["losses_after"] = rank_after_record["losses"]
     return metadata
 
 
@@ -347,6 +351,8 @@ def _assign_official_game_numbers(exact_matches, historical_matches):
             item["game_number"] = historical["game_number"]
             item["wins_after"] = historical.get("wins_after")
             item["losses_after"] = historical.get("losses_after")
+        elif isinstance(item.get("wins_after"), int) and isinstance(item.get("losses_after"), int):
+            item["game_number"] = item["wins_after"] + item["losses_after"]
 
     known = [index for index, item in enumerate(exact_matches) if isinstance(item.get("game_number"), int)]
     for left_index, right_index in zip(known, known[1:]):

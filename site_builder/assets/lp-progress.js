@@ -145,11 +145,19 @@
     ));
     const result = record(ordered);
     const coverage = usableCoverage(ordered);
+    const peak = ordered.reduce((best, match) => (
+      !best
+      || match.rank.score > best.rank.score
+      || (match.rank.score === best.rank.score && (match.game_number ?? -1) > (best.game_number ?? -1))
+        ? match
+        : best
+    ), null);
     return {
       ordered,
       result,
       coverage,
       start: ordered[0]?.rank || null,
+      peak: peak?.rank || null,
       end: ordered.at(-1)?.rank || null,
     };
   }
@@ -162,11 +170,10 @@
     const recent = [...usableMatches(data)].filter((match) => Number.isFinite(match.game_number)).sort((left, right) => left.game_number - right.game_number).slice(-10);
     const coverage = usableCoverage(recent);
     container.replaceChildren(
-      statCard("Current Rank", rankLabel(data.latest_rank), "最新の正式LP point"),
+      statCard("Current Rank", rankLabel(data.latest_rank), "最新の正式LP point", "rank-value"),
       statCard("All-period record", `${recordSummary.wins}W-${recordSummary.losses}L`, `${summary.games_tracked || 0} / ${totalGames || summary.games_total || 0} games tracked`),
       statCard("All-period win rate", percentage(recordSummary.wins, totalGames), "全期間Ranked"),
       statCard("Net LP", signed(summary.net_lp), `${summary.lp_available || 0} / ${summary.games_tracked || 0} games LP available`, Number.isFinite(summary.net_lp) ? summary.net_lp >= 0 ? "good" : "bad" : ""),
-      statCard("Peak Rank", rankLabel(summary.peak_rank), summary.peak_game_number ? `第${summary.peak_game_number}戦` : "利用可能履歴内"),
       statCard("Recent 10 LP", signed(coverage.delta), `${coverage.available.length} / ${recent.length} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : "")
     );
   }
@@ -174,13 +181,14 @@
   function renderFiltered(matches) {
     const container = global.document.getElementById("lp-filtered");
     const metrics = usableMetrics(matches);
-    const { result, coverage, start, end } = metrics;
+    const { result, coverage, start, peak, end } = metrics;
     container.replaceChildren(
       statCard("LP delta", signed(coverage.delta), `${coverage.available.length} / ${metrics.ordered.length} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : ""),
       statCard("Record", `${result.wins}W-${result.losses}L`, `${result.games} games`),
       statCard("Win Rate", percentage(result.wins, result.known), result.known === result.games ? "" : `${result.known}/${result.games} games available`),
-      statCard("Start Rank", rankLabel(start), "表示中の利用可能point"),
-      statCard("End Rank", rankLabel(end), "表示中の利用可能point")
+      statCard("Start Rank", rankLabel(start), "表示中の利用可能point", "rank-value"),
+      statCard("Peak Rank", rankLabel(peak), "表示中の利用可能point", "rank-value"),
+      statCard("End Rank", rankLabel(end), "表示中の利用可能point", "rank-value")
     );
   }
 
@@ -236,8 +244,12 @@
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
-    const points = [...officialPoints, ...historicalPoints]
-      .filter((point) => Number.isFinite(point.game_number))
+    const chartable = (series) => series.filter((point) => (
+      Number.isFinite(point.game_number) && Number.isFinite(point.score)
+    ));
+    const chartOfficial = chartable(officialPoints);
+    const chartHistorical = chartable(historicalPoints);
+    const points = [...chartOfficial, ...chartHistorical]
       .sort((left, right) => left.game_number - right.game_number || Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst));
     tooltip.hidden = true;
     chart.replaceChildren();
@@ -273,7 +285,7 @@
       svg.append(el("text", { x: margin.left + ((game - first) / (last - first)) * chartWidth, y: height - 21, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, String(game)));
     });
     svg.append(el("text", { x: margin.left + chartWidth / 2, y: height - 5, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, "累積ランク試合数（第N戦）"));
-    const exact = officialPoints.filter((point) => point.kind === "exact");
+    const exact = chartOfficial.filter((point) => point.kind === "exact");
     let priorPatch = "";
     exact.forEach((point) => {
       if (point.patch && point.patch !== priorPatch) {
@@ -301,9 +313,9 @@
       });
     }
 
-    renderSegments(historicalPoints, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" });
-    renderSegments(officialPoints, { stroke: "#5b8cff", "stroke-width": 3 });
-    [...historicalPoints, ...officialPoints].forEach((point) => {
+    renderSegments(chartHistorical, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" });
+    renderSegments(chartOfficial, { stroke: "#5b8cff", "stroke-width": 3 });
+    [...chartHistorical, ...chartOfficial].forEach((point) => {
       const marker = pointShape(point, x(point), y(point.score));
       const matchUrl = pointMatchUrl(point);
       const label = pointLabel(point).replaceAll("\n", ", ");

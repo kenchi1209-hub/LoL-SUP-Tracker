@@ -125,6 +125,12 @@ class LPProgressPayloadTest(unittest.TestCase):
 
         self.assertEqual(payload["latest_rank"], {"tier": "SILVER", "division": "IV", "lp": 44, "score": 844})
         self.assertEqual(payload["usable_summary"]["record"], {"wins": 41, "losses": 56, "known": 1})
+        exact_point = next(item for item in payload["points"] if item.get("match_id") == "JP1_EXACT")
+        self.assertEqual(exact_point["game_number"], 97)
+
+    def test_exact_point_without_verified_sequence_remains_unresolved(self):
+        exact_point = next(item for item in self.payload["points"] if item.get("match_id") == "JP1_EXACT")
+        self.assertIsNone(exact_point["game_number"])
 
     def test_recovered_history_excludes_official_overlap_and_preserves_gaps(self):
         recovered_dir = self.root / "raw" / "lp_progress" / "recovered"

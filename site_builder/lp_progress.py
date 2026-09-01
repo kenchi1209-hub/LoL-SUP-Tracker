@@ -26,6 +26,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 SEASONS_PATH = REPOSITORY_ROOT / "lp_seasons.json"
 _paths = get_data_paths()
 LP_HISTORY_PATH = _paths.csv / "lp_history.json"
+RAW_ROOT = _paths.raw
 HISTORICAL_RECONSTRUCTED_PATH = (
     _paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
 )
@@ -36,9 +37,10 @@ HISTORICAL_MAPPING_PATH = (
 
 def configure_data_root(data_root=None):
     """Point the build at a local or PrivateData root."""
-    global LP_HISTORY_PATH, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH
+    global LP_HISTORY_PATH, RAW_ROOT, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH
     paths = get_data_paths(data_root)
     LP_HISTORY_PATH = paths.csv / "lp_history.json"
+    RAW_ROOT = paths.raw
     HISTORICAL_RECONSTRUCTED_PATH = (
         paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
     )
@@ -59,6 +61,19 @@ def _load_json(path, fallback):
 def load_lp_history():
     value = _load_json(LP_HISTORY_PATH, {})
     return value if isinstance(value, dict) else {}
+
+
+def _rank_after_record(match_id, expected_rank):
+    """Read only the public-safe W/L pair from the selected exact snapshot."""
+    snapshot = _load_json(RAW_ROOT / str(match_id) / "rank_after.json", {})
+    after = snapshot.get("after") if isinstance(snapshot, dict) else None
+    rank = _rank(after) if isinstance(after, dict) else None
+    if rank != expected_rank:
+        return None
+    wins, losses = after.get("wins"), after.get("losses")
+    if not isinstance(wins, int) or not isinstance(losses, int):
+        return None
+    return {"wins": wins, "losses": losses}
 
 
 def _timestamp_jst(timestamp):
@@ -377,31 +392,33 @@ def _usable_matches(exact_matches, historical):
     )
 
 
-def _summary_for_matches(matches, latest_rank=None):
+def _summary_for_matches(matches, latest_rank=None, latest_record=None):
     """Return compact metrics for the already de-duplicated usable history."""
     ordered = [item for item in matches if isinstance(item.get("rank"), dict)]
     ordered.sort(key=lambda item: (item.get("game_number") is None, item.get("game_number", 0), item.get("game_datetime_jst", "")))
     known = [item for item in ordered if isinstance(item.get("win"), bool)]
     wins = sum(item["win"] for item in known)
     losses = len(known) - wins
-    latest_record = next(
+    latest_history_record = next(
         (
             item for item in reversed(ordered)
             if isinstance(item.get("wins_after"), int) and isinstance(item.get("losses_after"), int)
         ),
         None,
     )
+    if latest_history_record:
+        wins, losses = latest_history_record["wins_after"], latest_history_record["losses_after"]
     if latest_record:
-        wins, losses = latest_record["wins_after"], latest_record["losses_after"]
+        wins, losses = latest_record["wins"], latest_record["losses"]
     deltas = [item for item in ordered if isinstance(item.get("lp_delta"), (int, float))]
-    start_rank = (ordered[0].get("before") or ordered[0]["rank"]) if ordered else None
+    start_rank = ordered[0]["rank"] if ordered else None
     end_rank = latest_rank or (ordered[-1]["rank"] if ordered else None)
     peak = max(ordered, key=lambda item: (item["rank"]["score"], item.get("game_number", -1))) if ordered else None
     total_games = max((item.get("game_number", 0) for item in ordered if isinstance(item.get("game_number"), int)), default=0)
     tracked = len({item.get("game_number") for item in ordered if isinstance(item.get("game_number"), int)})
     return {
         "record": {"wins": wins, "losses": losses, "known": len(known)},
-        "net_lp": (end_rank["score"] - start_rank["score"]) if start_rank and end_rank else None,
+        "net_lp": sum(item["lp_delta"] for item in deltas) if deltas else None,
         "start_rank": start_rank,
         "end_rank": end_rank,
         "peak_rank": peak["rank"] if peak else None,
@@ -515,11 +532,16 @@ def build_lp_payload(rows, version):
     matches = ambiguous_matches + exact_matches
     matches.sort(key=lambda item: (item.get("game_datetime_jst", ""), item["match_id"]))
     points.sort(key=lambda item: (item.get("timestamp_jst", ""), item.get("match_id", "")))
-    latest = next((item for item in reversed(exact_matches) if item.get("after")), None)
+    latest = max(
+        (item for item in exact_matches if item.get("after")),
+        key=lambda item: item.get("game_datetime_jst", ""),
+        default=None,
+    )
     if latest is None and checkpoints:
         latest_rank = checkpoints[-1]["rank"]
     else:
         latest_rank = latest["after"] if latest else baseline
+    latest_record = _rank_after_record(latest["match_id"], latest_rank) if latest else None
     return {
         "schema_version": 1,
         "tracking_started_jst": base_event["timestamp_jst"],
@@ -530,7 +552,7 @@ def build_lp_payload(rows, version):
         "points": points,
         "matches": matches,
         "usable_matches": usable_matches,
-        "usable_summary": _summary_for_matches(usable_matches, latest_rank),
+        "usable_summary": _summary_for_matches(usable_matches, latest_rank, latest_record),
         "historical": historical,
         "latest_rank": latest_rank,
         "seasons": load_seasons(),

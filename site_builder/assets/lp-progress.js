@@ -149,7 +149,7 @@
       ordered,
       result,
       coverage,
-      start: ordered[0]?.before || ordered[0]?.rank || null,
+      start: ordered[0]?.rank || null,
       end: ordered.at(-1)?.rank || null,
     };
   }
@@ -164,8 +164,8 @@
     container.replaceChildren(
       statCard("Current Rank", rankLabel(data.latest_rank), "最新の正式LP point"),
       statCard("All-period record", `${recordSummary.wins}W-${recordSummary.losses}L`, `${summary.games_tracked || 0} / ${totalGames || summary.games_total || 0} games tracked`),
-      statCard("All-period win rate", percentage(recordSummary.wins, totalGames), "取得できたLP履歴全体"),
-      statCard("Net LP", signed(summary.net_lp), "最古の利用可能pointから現在rank", Number.isFinite(summary.net_lp) ? summary.net_lp >= 0 ? "good" : "bad" : ""),
+      statCard("All-period win rate", percentage(recordSummary.wins, totalGames), "全期間Ranked"),
+      statCard("Net LP", signed(summary.net_lp), `${summary.lp_available || 0} / ${summary.games_tracked || 0} games LP available`, Number.isFinite(summary.net_lp) ? summary.net_lp >= 0 ? "good" : "bad" : ""),
       statCard("Peak Rank", rankLabel(summary.peak_rank), summary.peak_game_number ? `第${summary.peak_game_number}戦` : "利用可能履歴内"),
       statCard("Recent 10 LP", signed(coverage.delta), `${coverage.available.length} / ${recent.length} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : "")
     );
@@ -243,7 +243,7 @@
     chart.replaceChildren();
     if (!points.length) { empty.hidden = false; return; }
     empty.hidden = true;
-    const width = 800, height = 360, margin = { top: 32, right: 26, bottom: 54, left: 86 };
+    const width = Math.max(1, Math.round(chart.clientWidth)), height = 360, margin = { top: 32, right: 26, bottom: 54, left: 86 };
     const values = points.map((point) => point.score).filter(Number.isFinite);
     if (!values.length) { empty.hidden = false; return; }
     let min = Math.floor(Math.min(...values) / 100) * 100;
@@ -434,10 +434,11 @@
       renderFiltered(usable); renderChart(points, historical); renderChampionTable(usable, data.ddragon_version);
     }
     [controls.period, controls.patch, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
+    global.addEventListener("resize", render);
     render();
   }
 
-  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, championSummary, filterMatches, filterUsableMatches, pointMatchUrl };
+  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl };
   try {
     const source = global.document.getElementById("lp-progress-data");
     if (!source) throw new Error("payload unavailable");

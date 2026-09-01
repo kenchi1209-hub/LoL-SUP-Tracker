@@ -114,6 +114,18 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(usable["vision_score"], 70.0)
         self.assertEqual(usable["vision_score_per_min"], 2.33)
 
+    def test_latest_exact_rank_after_record_overrides_stale_history_record(self):
+        snapshot = self.root / "raw" / "JP1_EXACT" / "rank_after.json"
+        snapshot.parent.mkdir(parents=True)
+        snapshot.write_text(json.dumps({
+            "after": {"tier": "SILVER", "division": "IV", "lp": 44, "wins": 41, "losses": 56},
+        }), encoding="utf-8")
+
+        payload = lp_progress.build_lp_payload(self.rows, "16.17.1")
+
+        self.assertEqual(payload["latest_rank"], {"tier": "SILVER", "division": "IV", "lp": 44, "score": 844})
+        self.assertEqual(payload["usable_summary"]["record"], {"wins": 41, "losses": 56, "known": 1})
+
     def test_recovered_history_excludes_official_overlap_and_preserves_gaps(self):
         recovered_dir = self.root / "raw" / "lp_progress" / "recovered"
         recovered_dir.mkdir(parents=True)
@@ -159,6 +171,9 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(payload["usable_summary"]["record"], {"wins": 3, "losses": 2, "known": 4})
         self.assertEqual(payload["usable_summary"]["games_tracked"], 4)
         self.assertEqual(payload["usable_summary"]["games_total"], 5)
+        self.assertEqual(payload["usable_summary"]["net_lp"], 41)
+        self.assertEqual(payload["usable_summary"]["lp_available"], 2)
+        self.assertEqual(payload["latest_rank"], official["after"])
         recovered_usable = next(item for item in usable if item["match_id"] == "JP1_REC_ONE")
         self.assertEqual((recovered_usable["kills"], recovered_usable["deaths"], recovered_usable["assists"]), (2, 0, 4))
         self.assertEqual(recovered_usable["kp_pct"], 60.0)

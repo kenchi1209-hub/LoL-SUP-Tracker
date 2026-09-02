@@ -263,6 +263,14 @@
     return result;
   }
 
+  function hasKnownGapBetween(left, right, gaps) {
+    return gaps.some((gap) => (
+      Number.isFinite(gap.game_number)
+      && left.game_number < gap.game_number
+      && gap.game_number < right.game_number
+    ));
+  }
+
   function gapLabel(connection) {
     const range = connection.first === connection.last
       ? `第${connection.first}戦`
@@ -333,21 +341,35 @@
         svg.append(el("text", { x: pointX + 4, y: margin.top - 10, fill: "#f0b429", "font-size": 11 }, point.patch));
       }
     });
-    function renderSegments(series, attrs) {
+    function renderSegments(series, attrs, gaps = []) {
       const segments = new Map();
       series.forEach((point) => {
         if (!segments.has(point.segment_id)) segments.set(point.segment_id, []);
         segments.get(point.segment_id).push(point);
       });
       segments.forEach((segment) => {
-        if (segment.length < 2) return;
-        svg.append(el("polyline", {
-          points: segment.map((point) => `${x(point)},${y(point.score)}`).join(" "),
-          fill: "none",
-          "stroke-linejoin": "round",
-          "stroke-linecap": "round",
-          ...attrs,
-        }));
+        const runs = [];
+        let run = [];
+        [...segment]
+          .sort((left, right) => left.game_number - right.game_number || Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst))
+          .forEach((point) => {
+            const prior = run[run.length - 1];
+            if (prior && hasKnownGapBetween(prior, point, gaps)) {
+              if (run.length > 1) runs.push(run);
+              run = [];
+            }
+            run.push(point);
+          });
+        if (run.length > 1) runs.push(run);
+        runs.forEach((points) => {
+          svg.append(el("polyline", {
+            points: points.map((point) => `${x(point)},${y(point.score)}`).join(" "),
+            fill: "none",
+            "stroke-linejoin": "round",
+            "stroke-linecap": "round",
+            ...attrs,
+          }));
+        });
       });
     }
 
@@ -357,8 +379,9 @@
         const x1 = x(connection.left), y1 = y(connection.left.score);
         const x2 = x(connection.right), y2 = y(connection.right.score);
         const visual = el("line", {
-          x1, y1, x2, y2, stroke: "#aeb9ca", "stroke-width": 2,
-          "stroke-opacity": .85, "stroke-dasharray": "2 6", "stroke-linecap": "round",
+          x1, y1, x2, y2, stroke: "#93a4bf", "stroke-width": 2.5,
+          "stroke-opacity": .95, "stroke-dasharray": "3 5", "stroke-linecap": "round",
+          "vector-effect": "non-scaling-stroke",
           "pointer-events": "none", "data-gap-connector": `${connection.first}-${connection.last}`,
         });
         visual.append(el("title", {}, label));
@@ -379,7 +402,7 @@
       });
     }
 
-    renderSegments(chartHistorical, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" });
+    renderSegments(chartHistorical, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" }, historicalGaps);
     renderSegments(chartOfficial, { stroke: "#5b8cff", "stroke-width": 3 });
     renderGapConnections(chartHistorical, historicalGaps);
     [...chartHistorical, ...chartOfficial].forEach((point) => {

@@ -104,6 +104,11 @@
     ));
   }
 
+  function filterHistoricalGaps(data, range, patch) {
+    if (patch !== "all") return [];
+    return (data.historical?.gaps || []).filter((gap) => inRange(gap.timestamp_jst, range));
+  }
+
   function usableMatches(data) {
     return Array.isArray(data.usable_matches) ? data.usable_matches : data.matches;
   }
@@ -225,15 +230,44 @@
     if (url) global.location.assign(url);
   }
 
-  function showTooltip(point, event) {
+  function showTooltipText(text, event) {
     const tooltip = global.document.getElementById("lp-tooltip");
-    tooltip.textContent = pointLabel(point);
+    tooltip.textContent = text;
     tooltip.hidden = false;
     const chart = global.document.getElementById("lp-chart");
     const rect = chart.getBoundingClientRect();
     const x = event?.clientX ? event.clientX - rect.left : rect.width / 2;
     tooltip.style.left = `${Math.max(8, Math.min(rect.width - 236, x - 105))}px`;
     tooltip.style.top = "10px";
+  }
+
+  function showTooltip(point, event) {
+    showTooltipText(pointLabel(point), event);
+  }
+
+  function gapConnections(points, gaps) {
+    const ordered = [...points]
+      .filter((point) => Number.isFinite(point.game_number) && Number.isFinite(point.score))
+      .sort((left, right) => left.game_number - right.game_number || Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst));
+    const result = [];
+    for (let index = 1; index < ordered.length; index += 1) {
+      const left = ordered[index - 1], right = ordered[index];
+      if (right.game_number <= left.game_number + 1) continue;
+      const missing = gaps.filter((gap) => (
+        Number.isFinite(gap.game_number)
+        && gap.game_number > left.game_number
+        && gap.game_number < right.game_number
+      ));
+      if (missing.length) result.push({ left, right, first: left.game_number + 1, last: right.game_number - 1, gaps: missing });
+    }
+    return result;
+  }
+
+  function gapLabel(connection) {
+    const range = connection.first === connection.last
+      ? `第${connection.first}戦`
+      : `第${connection.first}戦〜第${connection.last}戦`;
+    return `LP未確定区間\n${range}\nこの点線はLP値の補間・推測ではありません`;
   }
 
   function pointShape(point, x, y) {
@@ -244,7 +278,7 @@
     return el("rect", { x: x - 5, y: y - 5, width: 10, height: 10, rx: 1, fill: "#ff6b81", stroke: "#e7ecf4", "stroke-width": 1 });
   }
 
-  function renderChart(officialPoints, historicalPoints) {
+  function renderChart(officialPoints, historicalPoints, historicalGaps) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
@@ -317,8 +351,37 @@
       });
     }
 
+    function renderGapConnections(series, gaps) {
+      gapConnections(series, gaps).forEach((connection) => {
+        const label = gapLabel(connection);
+        const x1 = x(connection.left), y1 = y(connection.left.score);
+        const x2 = x(connection.right), y2 = y(connection.right.score);
+        const visual = el("line", {
+          x1, y1, x2, y2, stroke: "#aeb9ca", "stroke-width": 2,
+          "stroke-opacity": .85, "stroke-dasharray": "2 6", "stroke-linecap": "round",
+          "pointer-events": "none", "data-gap-connector": `${connection.first}-${connection.last}`,
+        });
+        visual.append(el("title", {}, label));
+        svg.append(visual);
+        const target = el("line", {
+          x1, y1, x2, y2, stroke: "transparent", "stroke-width": 16,
+          tabindex: 0, role: "img", "aria-label": label.replaceAll("\n", "、"),
+        });
+        target.addEventListener("pointerdown", (event) => showTooltipText(label, event));
+        target.addEventListener("focus", () => showTooltipText(label));
+        target.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            showTooltipText(label);
+          }
+        });
+        svg.append(target);
+      });
+    }
+
     renderSegments(chartHistorical, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" });
     renderSegments(chartOfficial, { stroke: "#5b8cff", "stroke-width": 3 });
+    renderGapConnections(chartHistorical, historicalGaps);
     [...chartHistorical, ...chartOfficial].forEach((point) => {
       const marker = pointShape(point, x(point), y(point.score));
       const matchUrl = pointMatchUrl(point);
@@ -447,14 +510,15 @@
       let points = filterPoints(data, range, controls.patch.value);
       if (controls.patch.value === "all") points = points.filter((point) => inRange(point.timestamp_jst, range));
       const historical = filterHistoricalPoints(data, range, controls.patch.value);
-      renderFiltered(usable); renderChart(points, historical); renderChampionTable(usable, data.ddragon_version);
+      const historicalGaps = filterHistoricalGaps(data, range, controls.patch.value);
+      renderFiltered(usable); renderChart(points, historical, historicalGaps); renderChampionTable(usable, data.ddragon_version);
     }
     [controls.period, controls.patch, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
     global.addEventListener("resize", render);
     render();
   }
 
-  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl };
+  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl, gapConnections };
   try {
     const source = global.document.getElementById("lp-progress-data");
     if (!source) throw new Error("payload unavailable");

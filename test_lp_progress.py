@@ -225,6 +225,31 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertFalse(any(gap["game_number"] == 11 for gap in historical["gaps"]))
         self.assertEqual([point["segment_id"] for point in historical["points"]], ["historical-0"] * 3)
 
+    def test_historical_gap_keeps_missing_games_out_of_points_and_summary(self):
+        recovered_dir = self.root / "raw" / "lp_progress" / "recovered"
+        recovered_dir.mkdir(parents=True)
+        (recovered_dir / "blitz_2026-08-31_reconstructed.json").write_text(json.dumps({
+            "source": "blitz", "confidence": "historical_reconstructed", "matches": [
+                {"match_id": "JP1_LEFT", "game_number": 6, "blitz_timestamp": 1768620000, "tier_after": "BRONZE", "division_after": "III", "lp_after": 86, "wins_after": 2, "losses_after": 4, "candidate_lp_delta": 26},
+                {"match_id": "JP1_RIGHT", "game_number": 9, "blitz_timestamp": 1768630800, "tier_after": "BRONZE", "division_after": "III", "lp_after": 82, "wins_after": 3, "losses_after": 6},
+            ],
+        }), encoding="utf-8")
+        (recovered_dir / "blitz_2026-08-31_match_mapping.json").write_text(json.dumps({
+            "mappings": [{"games": 8, "status": "ambiguous", "timestamp": 1768623600, "evidence": {"reason": "gap"}}],
+        }), encoding="utf-8")
+        rows = self.rows + [
+            row("JP1_LEFT", "2026-01-17 20:00:00", "Nami", True),
+            row("JP1_RIGHT", "2026-01-18 00:00:00", "Janna", False),
+        ]
+
+        payload = lp_progress.build_lp_payload(rows, "16.17.1")
+        historical = payload["historical"]
+
+        self.assertEqual([point["game_number"] for point in historical["points"]], [6, 9])
+        self.assertEqual([gap["game_number"] for gap in historical["gaps"]], [8])
+        self.assertEqual(payload["usable_summary"]["games_tracked"], 2)
+        self.assertEqual(payload["usable_summary"]["lp_available"], 2)
+
     def test_official_bridge_gets_game_numbers_only_when_record_sequence_matches(self):
         historical = [
             {"match_id": "LEFT", "game_number": 6, "wins_after": 3, "losses_after": 3},

@@ -33,11 +33,14 @@ HISTORICAL_RECONSTRUCTED_PATH = (
 HISTORICAL_MAPPING_PATH = (
     _paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_match_mapping.json"
 )
+MOBALYTICS_HISTORICAL_PATH = (
+    _paths.raw / "lp_progress" / "recovered" / "mobalytics_historical.json"
+)
 
 
 def configure_data_root(data_root=None):
     """Point the build at a local or PrivateData root."""
-    global LP_HISTORY_PATH, RAW_ROOT, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH
+    global LP_HISTORY_PATH, RAW_ROOT, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH, MOBALYTICS_HISTORICAL_PATH
     paths = get_data_paths(data_root)
     LP_HISTORY_PATH = paths.csv / "lp_history.json"
     RAW_ROOT = paths.raw
@@ -46,6 +49,9 @@ def configure_data_root(data_root=None):
     )
     HISTORICAL_MAPPING_PATH = (
         paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_match_mapping.json"
+    )
+    MOBALYTICS_HISTORICAL_PATH = (
+        paths.raw / "lp_progress" / "recovered" / "mobalytics_historical.json"
     )
 
 
@@ -92,6 +98,7 @@ def _historical_payload(rows_by_id, official_ids):
     """
     recovered = _load_json(HISTORICAL_RECONSTRUCTED_PATH, {})
     mapping = _load_json(HISTORICAL_MAPPING_PATH, {})
+    mobalytics = _load_json(MOBALYTICS_HISTORICAL_PATH, {})
     if (
         not isinstance(recovered, dict)
         or recovered.get("source") != "blitz"
@@ -100,10 +107,30 @@ def _historical_payload(rows_by_id, official_ids):
     ):
         return None
 
+    mobalytics_records = []
+    if (
+        isinstance(mobalytics, dict)
+        and mobalytics.get("source") == "mobalytics"
+        and mobalytics.get("confidence") == "mobalytics_historical_verified"
+        and isinstance(mobalytics.get("matches"), list)
+    ):
+        mobalytics_records = [
+            record
+            for record in mobalytics["matches"]
+            if isinstance(record, dict)
+            and record.get("source") == "mobalytics_historical"
+            and record.get("confidence") == "mobalytics_historical_verified"
+        ]
+
     mapping_by_game = {
         item.get("games"): item
         for item in mapping.get("mappings", [])
         if isinstance(item, dict) and isinstance(item.get("games"), int)
+    }
+    resolved_games = {
+        record.get("game_number")
+        for record in mobalytics_records
+        if isinstance(record.get("game_number"), int)
     }
     gaps = [
         {
@@ -112,13 +139,14 @@ def _historical_payload(rows_by_id, official_ids):
             "reason": str((item.get("evidence") or {}).get("reason", "ambiguous")),
         }
         for item in mapping_by_game.values()
-        if item.get("status") != "exact_match"
+        if item.get("status") != "exact_match" and item.get("games") not in resolved_games
     ]
     points = []
     usable_matches = []
     segment_index = -1
     previous_game = None
-    for record in sorted(recovered["matches"], key=lambda item: item.get("game_number", -1)):
+    records = [*recovered["matches"], *mobalytics_records]
+    for record in sorted(records, key=lambda item: item.get("game_number", -1)):
         if not isinstance(record, dict):
             continue
         match_id = str(record.get("match_id", ""))
@@ -128,7 +156,7 @@ def _historical_payload(rows_by_id, official_ids):
             "division": record.get("division_after"),
             "lp": record.get("lp_after"),
         })
-        timestamp_jst = _timestamp_jst(record.get("blitz_timestamp"))
+        timestamp_jst = str(record.get("game_datetime_jst", "")) or _timestamp_jst(record.get("blitz_timestamp"))
         row = rows_by_id.get(match_id)
         if (
             not match_id
@@ -162,14 +190,14 @@ def _historical_payload(rows_by_id, official_ids):
             "rank": rank,
             "after": rank,
             "score": rank["score"],
-            "candidate_lp_delta": record.get("candidate_lp_delta"),
-            "lp_delta": record.get("candidate_lp_delta"),
+            "candidate_lp_delta": record.get("lp_delta", record.get("candidate_lp_delta")),
+            "lp_delta": record.get("lp_delta", record.get("candidate_lp_delta")),
             "game_number": game_number,
             "wins_after": record.get("wins_after"),
             "losses_after": record.get("losses_after"),
             "segment_id": f"historical-{segment_index}",
-            "source": "blitz",
-            "confidence": "historical_reconstructed",
+            "source": str(record.get("source", "blitz")),
+            "confidence": str(record.get("confidence", "historical_reconstructed")),
         }
         usable_matches.append(item)
         if match_id not in official_ids:
@@ -178,9 +206,9 @@ def _historical_payload(rows_by_id, official_ids):
     if not usable_matches:
         return None
     return {
-        "source": "blitz",
-        "confidence": "historical_reconstructed",
-        "notice": "過去履歴の一部はBlitz保存データから復元した参考値です。正式取得LPとは区別して表示しています。",
+        "source": "historical",
+        "confidence": "mixed_historical",
+        "notice": "過去履歴の一部はBlitzまたはMobalyticsのMatch記録から復元した参考値です。正式取得LPとは区別して表示しています。",
         "points": points,
         "usable_matches": usable_matches,
         "gaps": gaps,

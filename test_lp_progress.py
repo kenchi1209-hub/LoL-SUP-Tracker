@@ -187,6 +187,44 @@ class LPProgressPayloadTest(unittest.TestCase):
         for forbidden in ("puuid", "summonerid", "privateData".lower(), "/users/"):
             self.assertNotIn(forbidden, serialized)
 
+    def test_verified_mobalytics_match_resolves_only_its_historical_gap(self):
+        recovered_dir = self.root / "raw" / "lp_progress" / "recovered"
+        recovered_dir.mkdir(parents=True)
+        (recovered_dir / "blitz_2026-08-31_reconstructed.json").write_text(json.dumps({
+            "source": "blitz", "confidence": "historical_reconstructed", "matches": [
+                {"match_id": "JP1_LEFT", "game_number": 10, "blitz_timestamp": 1768620000, "tier_after": "BRONZE", "division_after": "II", "lp_after": 10, "wins_after": 4, "losses_after": 6},
+                {"match_id": "JP1_RIGHT", "game_number": 12, "blitz_timestamp": 1768630800, "tier_after": "BRONZE", "division_after": "II", "lp_after": 29, "wins_after": 5, "losses_after": 7},
+            ],
+        }), encoding="utf-8")
+        (recovered_dir / "blitz_2026-08-31_match_mapping.json").write_text(json.dumps({
+            "mappings": [{"games": 11, "status": "ambiguous", "timestamp": 1768623600, "evidence": {"reason": "gap"}}],
+        }), encoding="utf-8")
+        (recovered_dir / "mobalytics_historical.json").write_text(json.dumps({
+            "source": "mobalytics", "confidence": "mobalytics_historical_verified", "matches": [{
+                "match_id": "JP1_MOBA", "game_number": 11, "game_datetime_jst": "2026-01-17T22:00:00+09:00",
+                "tier_after": "BRONZE", "division_after": "II", "lp_after": 39,
+                "wins_after": 5, "losses_after": 6, "lp_delta": 29,
+                "source": "mobalytics_historical", "confidence": "mobalytics_historical_verified",
+            }],
+        }), encoding="utf-8")
+        rows = self.rows + [
+            row("JP1_LEFT", "2026-01-17 20:00:00", "Nami", True),
+            row("JP1_MOBA", "2026-01-17 22:00:00", "Janna", True),
+            row("JP1_RIGHT", "2026-01-18 00:00:00", "Morgana", False),
+        ]
+
+        payload = lp_progress.build_lp_payload(rows, "16.17.1")
+        historical = payload["historical"]
+        mobalytics = next(point for point in historical["points"] if point["match_id"] == "JP1_MOBA")
+
+        self.assertEqual(mobalytics["game_number"], 11)
+        self.assertEqual(mobalytics["rank"]["score"], 639)
+        self.assertEqual(mobalytics["lp_delta"], 29)
+        self.assertEqual(mobalytics["source"], "mobalytics_historical")
+        self.assertEqual(mobalytics["confidence"], "mobalytics_historical_verified")
+        self.assertFalse(any(gap["game_number"] == 11 for gap in historical["gaps"]))
+        self.assertEqual([point["segment_id"] for point in historical["points"]], ["historical-0"] * 3)
+
     def test_official_bridge_gets_game_numbers_only_when_record_sequence_matches(self):
         historical = [
             {"match_id": "LEFT", "game_number": 6, "wins_after": 3, "losses_after": 3},

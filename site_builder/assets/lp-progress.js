@@ -204,8 +204,12 @@
     if (point.kind === "baseline") return `${game}Baseline\n${rankLabel(point.rank)}\n${dateTimeLabel(point.timestamp_jst)}`;
     if (point.kind === "checkpoint") return `${game}Checkpoint\n${rankLabel(point.rank)}\nGap: ${point.gap.games} games (${point.gap.wins}W-${point.gap.losses}L)`;
     if (point.kind === "historical") {
-      const delta = Number.isFinite(point.candidate_lp_delta) ? `\nCandidate LP: ${signed(point.candidate_lp_delta)}` : "";
-      return `${game}Blitz復元（参考・非公式）\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
+      const mobalytics = point.source === "mobalytics_historical";
+      const source = mobalytics ? "Mobalytics復元（参考・非公式）" : "Blitz復元（参考・非公式）";
+      const delta = Number.isFinite(point.candidate_lp_delta)
+        ? `\n${mobalytics ? "LP" : "Candidate LP"}: ${signed(point.candidate_lp_delta)}`
+        : "";
+      return `${game}${source}\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
     }
     return `${game}${rankLabel(point.rank)}\nLP: ${signed(point.lp_delta)}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
   }

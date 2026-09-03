@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from lcu_client import LCUUnavailable
 from lcu_publish import PublishError
@@ -276,6 +277,86 @@ class LCUWatcherTest(unittest.TestCase):
                 watcher.tick()
             capture_command = runner.calls[1][0]
             self.assertNotIn("--next-rank-before-json", capture_command)
+
+    def test_queue_420_recheck_polls_after_cancel_and_adopts_the_latest_rank(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+            )
+            clock = [0]
+            client = FakeClient(
+                phases=["Matchmaking", "Lobby", "ChampSelect", "InProgress"],
+                sessions=[session(420)] * 4,
+                ranks=[
+                    {"tier": "SILVER", "division": "IV", "leaguePoints": 50, "wins": 46, "losses": 60},
+                    {"tier": "SILVER", "division": "IV", "leaguePoints": 69, "wins": 46, "losses": 60},
+                ],
+                puuid="matching-puuid",
+            )
+            client.connected = True
+            logs = []
+            watcher = LCUWatcher(
+                client=client,
+                emit=logs.append,
+                sleeper=lambda _seconds: None,
+                live=True,
+                data_root=data_root,
+                monotonic=lambda: clock[0],
+            )
+            with patch(
+                "lcu_watcher.reconcile_previous_rank_after",
+                side_effect=[
+                    {"status": "confirmed", "changed": False},
+                    {"status": "corrected", "changed": False, "match_id": "JP1_PREVIOUS"},
+                ],
+            ) as preview:
+                watcher.tick()
+                clock[0] = 31
+                watcher.tick()
+                watcher.tick()
+                watcher.tick()
+            self.assertEqual(preview.call_count, 2)
+            self.assertEqual(watcher.pending["lcu_before_rank"]["leaguePoints"], 69)
+            self.assertIsNone(watcher.recheck)
+            joined = "\n".join(logs)
+            self.assertIn("recheck session started", joined)
+            self.assertIn("post-match correction candidate detected", joined)
+            self.assertIn("recheck session ended: game_start", joined)
+
+    def test_recheck_ignores_other_queues_does_not_duplicate_and_expires(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+            )
+            clock = [0]
+            client = FakeClient(
+                phases=["Matchmaking", "Matchmaking", "Matchmaking"],
+                sessions=[session(400), session(420), session(420)],
+                puuid="matching-puuid",
+            )
+            client.connected = True
+            watcher = LCUWatcher(
+                client=client,
+                emit=lambda _message: None,
+                sleeper=lambda _seconds: None,
+                live=True,
+                data_root=data_root,
+                monotonic=lambda: clock[0],
+            )
+            with patch("lcu_watcher.reconcile_previous_rank_after", return_value={"status": "confirmed"}):
+                watcher.tick()
+                self.assertIsNone(watcher.recheck)
+                watcher.tick()
+                original = watcher.recheck
+                watcher.tick()
+                self.assertIs(watcher.recheck, original)
+                clock[0] = 301
+                watcher._poll_recheck()
+            self.assertIsNone(watcher.recheck)
 
     def test_live_no_session_id_still_triggers_with_phase_continuity(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])

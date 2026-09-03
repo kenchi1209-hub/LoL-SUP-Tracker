@@ -200,6 +200,7 @@ Match Historyの詳細UIをRole別概要・共通詳細Stats・コピー機能�
 
 - LP Progressは実装済み。LP未確定区間は値を補完せず、usable point間を点線connectorで表示する。
 - Queue 420の次試合開始前に同一アカウントのLCU Rankを取得できた場合だけ、直前の`rank_after`を再検証する。W/Lが同一でLPだけ異なる時は、終了直後の観測値を保持したまま最終LPへ補正する。照合不能・不一致の原因が確定できない場合は自動補正しない。
+- Queue 420の`Matchmaking`検知時には、LCU Rankの再検証セッションを開始する。30秒間隔・最大5分で読み取り、queueキャンセル後も継続し、最新の安全なRankを次試合beforeへ渡す。ポーリング中はPrivateDataを書き換えない。
 
 ## 次にやること
 

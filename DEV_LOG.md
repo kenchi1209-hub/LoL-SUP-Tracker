@@ -361,11 +361,13 @@
 
 - LCU Watcherの次Queue 420開始前Rankを利用し、直前の`rank_after`を再検証するLP後補正基盤を追加した。
 - 観測直後のLP差分と最終LP差分、補正量、状態を区別して公開payloadへ渡すようにした。
+- Queue 420の`Matchmaking`を起点に、30秒間隔・最大5分のLCU Rank再検証ポーリングを追加した。queueキャンセル後も継続し、補正候補を読み取り専用で検出する。
 
 ### 決定事項
 
 - 同一PUUID、時系列、Queue 420、W/L一致を満たす場合だけ補正する。不一致の理由を確定できない場合は`needs_review`としてデータを変更しない。
 - 補正済みのTrendとNet LPには最終差分だけを使用し、終了直後の観測差分は補足表示に限定する。
+- ポーリングはPrivateDataをdirtyにせず、最終的な補正の永続化は既存captureの安全条件を通過した時だけ行う。
 
 ### 実装・変更ファイル
 
@@ -375,11 +377,14 @@
 - `lcu_publish.py`
 - `site_builder/lp_progress.py`
 - `site_builder/assets/lp-progress.js`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
 - 関連unit test
 
 ### 動作確認
 
 - 0LP、通常差分、W/L不一致停止、PUUID不一致停止、補正後のTrend / Net LPをunit testで確認した。
+- Queue IN、30秒poll、queueキャンセル後継続、再Queue非重複、timeout、最新before採用をmock testで確認した。
 - 実PrivateDataのLP履歴および`JP1_600584640`は変更していない。
 
 ### 未解決

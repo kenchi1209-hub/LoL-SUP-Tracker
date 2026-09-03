@@ -223,6 +223,23 @@ class LPSnapshotTest(unittest.TestCase):
         self.assertEqual(snapshot["after"]["losses"], 60)
         self.assertEqual(history["matches"][0]["lp_delta"], 0)
 
+    def test_recheck_preview_detects_correction_without_writing_private_data(self):
+        path = self._write_observed_loss()
+        history_before = history_path(self.csv).read_bytes()
+        snapshot_before = path.read_bytes()
+        result = reconcile_previous_rank_after(
+            self.raw,
+            self.csv,
+            league_rank(lp=69, wins=46, losses=60),
+            "2026-08-28T02:00:00+09:00",
+            apply=False,
+        )
+        self.assertEqual(result["status"], "corrected")
+        self.assertEqual(result["lp_delta"], 0)
+        self.assertEqual(result["observed_lp_delta"], -19)
+        self.assertEqual(path.read_bytes(), snapshot_before)
+        self.assertEqual(history_path(self.csv).read_bytes(), history_before)
+
     def test_matching_next_rank_before_confirms_observed_delta_without_rewriting_it(self):
         path = self._write_observed_loss()
         result = reconcile_previous_rank_after(

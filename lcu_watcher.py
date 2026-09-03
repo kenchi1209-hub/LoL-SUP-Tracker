@@ -12,7 +12,12 @@ import time
 from data_paths import get_data_paths
 from lcu_client import LCUError, LCUUnavailable, LCUClient, session_diagnostic
 from lcu_publish import PrivateDataPublisher, PublishError
-from lp_snapshot import discover_local_uncaptured_solo_matches, previous_state
+from lp_snapshot import (
+    LPSnapshotError,
+    discover_local_uncaptured_solo_matches,
+    previous_state,
+    reconcile_previous_rank_after,
+)
 from timezone_utils import now_jst
 
 
@@ -28,6 +33,8 @@ CAPTURE_TIMEOUT_SECONDS = 180
 MATCH_UPDATE_RETRY_SECONDS = 10
 MATCH_UPDATE_MAX_ATTEMPTS = 13
 MATCH_UPDATE_MAX_WAIT_SECONDS = 120
+RANK_RECHECK_INTERVAL_SECONDS = 30
+RANK_RECHECK_MAX_SECONDS = 300
 
 
 class LiveProcessError(RuntimeError):
@@ -117,12 +124,15 @@ class LCUWatcher:
         self.monotonic = monotonic
         self.auto_publish = auto_publish
         self.publisher = publisher
+        self.recheck = None
 
     def _log(self, message):
         self.emit(message)
 
     def _start_pending(self, phase, queue_id, session_id):
-        before = self._verified_lcu_before_rank(self.client.get_solo_rank())
+        before = self._latest_recheck_rank()
+        if before is None:
+            before = self._verified_lcu_before_rank(self.client.get_solo_rank())
         self.pending = {
             "detected_at_jst": now_jst().replace(microsecond=0).isoformat(),
             "start_phase": phase,
@@ -141,6 +151,77 @@ class LCUWatcher:
         }
         self._log("[LP] solo ranked detected")
         self._log("[LP] pending started")
+
+    def _latest_recheck_rank(self):
+        if not isinstance(self.recheck, dict):
+            return None
+        rank = self.recheck.get("latest_rank")
+        return dict(rank) if isinstance(rank, dict) else None
+
+    def _format_rank(self, rank):
+        return (
+            f"{rank['tier']} {rank['division']} {rank['leaguePoints']}LP "
+            f"{rank['wins']}W/{rank['losses']}L"
+        )
+
+    def _start_recheck(self):
+        """Start one read-only Queue 420 rank recheck session."""
+        if not self.live or self.data_root is None or self.recheck is not None:
+            return
+        started = self.monotonic()
+        self.recheck = {
+            "started_at_jst": now_jst().replace(microsecond=0).isoformat(),
+            "deadline": started + RANK_RECHECK_MAX_SECONDS,
+            "next_poll_at": started,
+            "latest_rank": None,
+            "correction_candidate": None,
+        }
+        self._log("[LP] recheck session started")
+        self._poll_recheck(force=True)
+
+    def _end_recheck(self, reason):
+        if self.recheck is None:
+            return
+        latest_rank = self._latest_recheck_rank()
+        if reason == "game_start" and self.pending and latest_rank is not None:
+            self.pending["lcu_before_rank"] = latest_rank
+        self._log(f"[LP] recheck session ended: {reason}")
+        self.recheck = None
+
+    def _poll_recheck(self, force=False):
+        """Read the current rank at a bounded cadence without writing data."""
+        if self.recheck is None:
+            return
+        now = self.monotonic()
+        if now >= self.recheck["deadline"]:
+            self._end_recheck("timeout")
+            return
+        if not force and now < self.recheck["next_poll_at"]:
+            return
+        self.recheck["next_poll_at"] = now + RANK_RECHECK_INTERVAL_SECONDS
+        try:
+            rank = self._verified_lcu_before_rank(self.client.get_solo_rank())
+        except LCUError:
+            rank = None
+        if rank is None:
+            self._log("[LP] recheck rank unavailable")
+            return
+        self.recheck["latest_rank"] = rank
+        self._log(f"[LP] recheck rank: {self._format_rank(rank)}")
+        try:
+            paths = get_data_paths(self.data_root)
+            result = reconcile_previous_rank_after(
+                paths.raw,
+                paths.csv,
+                rank,
+                now_jst().replace(microsecond=0).isoformat(),
+                apply=False,
+            )
+        except (LPSnapshotError, OSError, ValueError):
+            return
+        if result.get("status") == "corrected":
+            self.recheck["correction_candidate"] = result.get("match_id")
+            self._log("[LP] post-match correction candidate detected")
 
     def _verified_lcu_before_rank(self, rank):
         """Return an in-memory pre-match rank only for the stored account.
@@ -359,8 +440,11 @@ class LCUWatcher:
                 self._start_pending(phase, queue_id, session_id)
             elif self.pending["terminal"]:
                 self._start_pending(phase, queue_id, session_id)
+        if queue_id == SOLO_QUEUE_ID and phase == "Matchmaking":
+            self._start_recheck()
         if self.pending and phase == "InProgress":
             self.pending["has_reached_in_progress"] = True
+            self._end_recheck("game_start")
         if self.pending and phase == "WaitingForStats":
             self._log_waiting_diagnostics(queue_id, session_id)
         if (
@@ -386,6 +470,7 @@ class LCUWatcher:
             phase = self.client.get_gameflow_phase()
             session = self.client.get_gameflow_session()
             self._handle_phase(phase, session)
+            self._poll_recheck()
             return phase not in {None, "None"}
         except LCUUnavailable:
             self.client.disconnect()

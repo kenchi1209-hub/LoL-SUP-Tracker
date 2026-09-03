@@ -330,7 +330,9 @@ def previous_state(raw_root):
     return rank, baseline["captured_at_jst"], events
 
 
-def reconcile_previous_rank_after(raw_root, csv_root, next_before, next_game_datetime_jst, captured_at=None):
+def reconcile_previous_rank_after(
+    raw_root, csv_root, next_before, next_game_datetime_jst, captured_at=None, apply=True,
+):
     """Confirm or correct only the immediately preceding exact LP snapshot.
 
     ``next_before`` is an LCU rank observation from the start of the next
@@ -362,7 +364,7 @@ def reconcile_previous_rank_after(raw_root, csv_root, next_before, next_game_dat
 
     snapshot_path = paths_for_match(previous["match_id"], raw_root).rank_after
     if observed_after == next_before:
-        if previous.get("lp_status") == "confirmed":
+        if previous.get("lp_status") == "confirmed" or not apply:
             return {"status": "confirmed", "changed": False, "match_id": previous["match_id"]}
         previous["lp_status"] = "confirmed"
         previous.setdefault("lp_delta_source", "post_match_snapshot")
@@ -374,6 +376,14 @@ def reconcile_previous_rank_after(raw_root, csv_root, next_before, next_game_dat
     if not isinstance(observed_delta, (int, float)):
         return {"status": "needs_review", "changed": False}
     final_delta = rank_value(next_before) - rank_value(rank_state(previous.get("before") or {}))
+    if not apply:
+        return {
+            "status": "corrected",
+            "changed": False,
+            "match_id": previous["match_id"],
+            "lp_delta": final_delta,
+            "observed_lp_delta": observed_delta,
+        }
     previous["after_observed"] = observed_after
     previous["observed_lp_delta"] = observed_delta
     previous["after"] = next_before

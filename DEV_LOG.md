@@ -319,6 +319,42 @@
 - Filter、日時sort、さらに20件、独立開閉、複数試合同時展開、全7ページをブラウザで回帰確認した。
 - PC / 390pxとも横方向のはみ出しなし、browser console error / warning 0件。
 
+## 2026-09-03
+
+### 今日やったこと
+
+- Match Historyのカード内操作を5つへ再編し、試合概要・戦闘詳細（自分／全体）・全Role共通の試合詳細・コピー設定panelを追加した。
+- 既存の試合行と匿名化済み`match_details.json`だけを使い、Role別概要、Fight Summary、共通詳細Statsを表示した。
+
+### 決定事項
+
+- Role別概要はfield definitionで管理し、現時点では推測値や未取得Statsを使わない。
+- コピーはカード内panelからプレーンテキストを生成し、展開済みのDOMには依存しない。
+
+### 実装・変更ファイル
+
+- `site_builder/render.py`
+- `site_builder/assets/match-history.js`
+- `site_builder/static/match-history.css`
+- `test_match_history.js`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+
+### 動作確認
+
+- Match Historyの5操作、Role別概要、Fight Summary、詳細Stats、コピー既定値・成功表示をローカル生成ページで確認した。
+- Desktop 1280 / 1440 / 1920px、Mobile 375 / 390 / 430pxで横overflowなし、browser console error / warning 0件を確認した。
+- JavaScript構文、専用Node test、Python構文、全Python test、PrivateData rootでのsite build、`git diff --check`を確認した。
+
+### 未解決
+
+- Role別に表示できる固有Statsは、公開データへ安全に追加可能なものを今後監査する。
+
+### 次回
+
+1. 実際の利用感を踏まえ、Role別概要と試合詳細の項目を必要最小限で追加検討する。
+2. 日次更新後もMatch Historyの公開データとコピー出力が整合することを確認する。
+
 ## 運用ルール
 
 ### 作業開始時

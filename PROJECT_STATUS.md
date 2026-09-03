@@ -1,6 +1,6 @@
 # LoL Analytics — Project Status
 
-最終更新: 2026-08-21
+最終更新: 2026-09-03
 
 ## プロジェクト概要
 
@@ -11,8 +11,8 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 ## 現在の構成
 
 - ブランチ: `build`
-- 作業開始時HEAD / `origin/build`: `ef9d3e8c44b2d34861a3c657ee390001cda35d2d`
-- working tree: Match History「試合詳細」v1の未コミット変更あり
+- 作業ブランチ: `build`（GitのHEAD / `origin/build`を作業開始時に確認する）
+- working tree: 実装単位ごとにcleanを確認する
 - データ取得・解析: Python
 - サイト生成: Pythonで静的HTMLを生成し、JavaScriptでフィルタ・チャート・Fight Detailを制御
 - 配信: GitHub Actions + GitHub Pages
@@ -67,6 +67,11 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - Fight Detailの表示文言・Champion名・Objective名を日本語化
 - 未知の内部値・Champion名は元の値へフォールバック
 - カード直下に独立した「試合詳細」「戦闘詳細」ボタンを表示し、各詳細を初回展開時だけlazy生成
+- 各カードの操作を「試合概要」「戦闘詳細（自分）」「戦闘詳細（全体）」「試合詳細」「コピー」の5つへ再編
+- 試合概要は既存の試合情報・パフォーマンスを維持し、Role別概要（SUP / ADC / MID / TOP / JG）を既存の安全な集計値で表示
+- Fightの5指標（My Fights / W-E-L / Fight勝率 / 生存率 / Teamfight）は「戦闘詳細（自分）」の先頭にFight Summaryとして表示
+- 新しい全Role共通「試合詳細」はCombat / Economy / Vision / Team Contributionと匿名10人比較を表示
+- カード内のコピー設定panelから、展開状態に依存せず試合概要・Fight Detail・試合詳細をプレーンテキストとしてコピー可能
 - 試合詳細に試合情報、自分の成績、Team K/D/A・KP・Damage Share・Death Share、視界、Fight Summaryを表示
 - 試合詳細に公式`teamId`で分類したALLY 5人 / ENEMY 5人の匿名10人比較を表示
 - 10人比較は正式positionを使用し、Champion、K/D/A、CS/m、VS/m、DPMを表示
@@ -144,7 +149,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 
 ## 現在のサイト構成
 
-現行は7ページです。
+現行は8ページです。
 
 1. `index.html` — Overview
 2. `support.html` — SUP詳細
@@ -153,6 +158,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 5. `adc.html` — ADC詳細
 6. `jungle.html` — JG詳細
 7. `history.html` — Match History
+8. `lp.html` — LP Progress
 
 Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparison、Patch Analysis、Records、Match Historyがあります。
 
@@ -179,9 +185,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 現在の未解決事項
 
-- Rank専用ページは未実装。
-- Rank履歴を保存する`data/csv/rank_history.csv`は未作成。
-- LP推移データがないため、現状は現在Rankのみ表示可能。
+- Role別のさらに固有なStatsは、取得済みの公開データを監査しながら段階的に追加する余地がある。
 - `main.py`など一部既存ソースの日本語コメント／ログに文字化けが残っている。機能は動作するが保守性の課題。
 - `fight_details.json`は約7.3MBあり、将来的に分割配信やオンデマンド取得を検討できる。
 - 公開`fight_details.json` 508試合とPrivateDataの主要raw 5種類は整合済み。
@@ -190,22 +194,16 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 直近で進行中の作業
 
-次期機能としてRank専用ページの仕様を整理中です。現時点ではコード・テンプレート・CSVは未実装です。
+Match Historyの詳細UIをRole別概要・共通詳細Stats・コピー機能へ再編した。今後はRole別に追加可能な安全なStatsを整理する。
 
 合意済み方針:
 
-- Rank専用ページを新設する。
-- LP推移をページ最上部へ置く。
-- Role Filterは`ALL / SUP / MID / JG / TOP / ADC`。
-- LP推移はRole Filterの対象外。
-- Summary / Monthly / Champion / Fight / Match HistoryはRole Filterに連動する。
-- `data/csv/rank_history.csv`を新設し、更新時点のRank・LPを履歴保存する。
+- LP Progressは実装済み。LP未確定区間は値を補完せず、usable point間を点線connectorで表示する。
 
 ## 次にやること
 
-1. Match History「試合詳細」v1の差分をreview後にcommit / pushする。
+1. Role別に追加できる公開Statsを監査し、必要なものだけ段階的に詳細UIへ加える。
 2. PrivateDataに新規MatchがMatch directory単位で保存されることを次回更新時に確認する。
-3. `rank_history.csv`の列設計とRank専用ページを実装する。
 
 ## 注意事項
 

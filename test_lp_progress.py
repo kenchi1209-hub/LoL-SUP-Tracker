@@ -92,6 +92,41 @@ class LPProgressPayloadTest(unittest.TestCase):
         point = next(item for item in self.payload["points"] if item["kind"] == "exact")
         self.assertEqual(point["match_url"], "history.html#match-JP1_EXACT")
 
+    def test_exact_zero_delta_remains_a_ranked_point_and_counts_as_a_loss(self):
+        history = json.loads(self.history_path.read_text(encoding="utf-8"))
+        match = history["matches"][0]
+        match.update({
+            "win": False,
+            "lp_after": 23,
+            "lp_delta": 0,
+            "observed_lp_delta": -19,
+            "lp_correction": 19,
+            "lp_status": "corrected",
+            "lp_delta_source": "next_rank_before",
+        })
+        self.history_path.write_text(json.dumps(history), encoding="utf-8")
+        snapshot = self.root / "raw" / "JP1_EXACT" / "rank_after.json"
+        snapshot.parent.mkdir(parents=True)
+        snapshot.write_text(json.dumps({
+            "after": {"tier": "SILVER", "division": "IV", "lp": 23, "wins": 40, "losses": 56},
+        }), encoding="utf-8")
+
+        payload = lp_progress.build_lp_payload(
+            [row("JP1_EXACT", "2026-08-30 22:36:56", "Braum", False)], "16.17.1"
+        )
+        exact = next(item for item in payload["matches"] if item["match_id"] == "JP1_EXACT")
+        point = next(item for item in payload["points"] if item.get("match_id") == "JP1_EXACT")
+        summary = payload["usable_summary"]
+
+        self.assertEqual(exact["lp_delta"], 0)
+        self.assertEqual(exact["observed_lp_delta"], -19)
+        self.assertEqual(point["score"], 823)
+        self.assertEqual(point["game_number"], 96)
+        self.assertEqual(summary["net_lp"], 0)
+        self.assertEqual(summary["lp_available"], 1)
+        self.assertEqual(summary["record"]["losses"], 56)
+        self.assertEqual(summary["games_tracked"], 1)
+
     def test_payload_excludes_private_identifiers(self):
         encoded = json.dumps(self.payload).lower()
         for forbidden in ("puuid", "summonerid", "participantid", "accountid", "credential", "token"):

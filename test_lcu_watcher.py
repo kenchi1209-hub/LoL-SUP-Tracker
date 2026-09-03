@@ -1,6 +1,9 @@
+import json
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from lcu_client import LCUUnavailable
 from lcu_publish import PublishError
@@ -17,12 +20,13 @@ from lcu_watcher import (
 
 
 class FakeClient:
-    def __init__(self, phases=None, sessions=None, ranks=None, unavailable=False):
+    def __init__(self, phases=None, sessions=None, ranks=None, unavailable=False, puuid="test-puuid"):
         self.connected = False
         self.phases = list(phases or [])
         self.sessions = list(sessions or [])
         self.ranks = list(ranks or [])
         self.unavailable = unavailable
+        self.puuid = puuid
         self.disconnects = 0
 
     def connect(self):
@@ -44,6 +48,9 @@ class FakeClient:
 
     def get_solo_rank(self):
         return self.ranks.pop(0) if self.ranks else {"tier": "SILVER", "division": "IV", "leaguePoints": 23, "wins": 41, "losses": 56}
+
+    def get_current_puuid(self):
+        return self.puuid
 
 
 def session(queue_id=None, game_id="test-game-1"):
@@ -95,8 +102,11 @@ class FakePublisher:
         if self.preflight_error:
             raise self.preflight_error
 
-    def publish(self, match_id):
-        self.calls.append(("publish", match_id))
+    def publish(self, match_id, correction_match_id=None):
+        self.calls.append(
+            ("publish", match_id)
+            if correction_match_id is None else ("publish", match_id, correction_match_id)
+        )
         if self.publish_error:
             raise self.publish_error
         return "commit-sha"
@@ -215,6 +225,57 @@ class LCUWatcherTest(unittest.TestCase):
             self.assertIn("[LP] session id unavailable/mismatch; continuing with phase-safe trigger", joined)
             self.assertNotIn("game-a", joined)
             self.assertNotIn("game-b", joined)
+
+    def test_live_pre_match_rank_is_used_only_when_lcu_account_matches_private_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+            )
+            matching = LCUWatcher(
+                client=FakeClient(puuid="matching-puuid"), live=True,
+                data_root=data_root, emit=lambda _message: None,
+            )
+            matching._start_pending("ChampSelect", 420, "game")
+            self.assertEqual(matching.pending["lcu_before_rank"]["leaguePoints"], 23)
+
+            logs = []
+            mismatch = LCUWatcher(
+                client=FakeClient(puuid="different-puuid"), live=True,
+                data_root=data_root, emit=logs.append,
+            )
+            mismatch._start_pending("ChampSelect", 420, "game")
+            self.assertIsNone(mismatch.pending["lcu_before_rank"])
+            self.assertIn("account verification unavailable", "\n".join(logs))
+
+    def test_puuid_mismatch_never_passes_a_recheck_snapshot_to_capture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "saved-puuid"}), encoding="utf-8",
+            )
+            runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+            watcher = LCUWatcher(
+                client=FakeClient(
+                    phases=["ChampSelect", "InProgress", "WaitingForStats"],
+                    sessions=[session(420)] * 3,
+                    puuid="other-puuid",
+                ),
+                emit=lambda _message: None,
+                sleeper=lambda _seconds: None,
+                live=True,
+                data_root=data_root,
+                process_runner=runner,
+                repo_root="C:/PublicRepo",
+            )
+            watcher._has_rank_after = lambda _match_id: True
+            watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+            for _ in range(3):
+                watcher.tick()
+            capture_command = runner.calls[1][0]
+            self.assertNotIn("--next-rank-before-json", capture_command)
 
     def test_live_no_session_id_still_triggers_with_phase_continuity(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])
@@ -336,6 +397,24 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertEqual(publisher.calls, ["preflight", ("publish", "JP1_TEST")])
         self.assertTrue(watcher.pending["published"])
         self.assertIn("[DONE] automatic publish complete", self.logs)
+
+    def test_auto_publish_allows_only_the_capture_declared_previous_correction(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        publisher = FakePublisher()
+        watcher = self.live_watcher(
+            FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
+            runner,
+            auto_publish=True,
+            publisher=publisher,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        watcher._correction_match_id = lambda _match_id: "JP1_PREVIOUS"
+        watcher.tick()
+        watcher.tick()
+        self.assertEqual(
+            publisher.calls,
+            ["preflight", ("publish", "JP1_TEST", "JP1_PREVIOUS")],
+        )
 
     def test_auto_publish_ambiguous_capture_never_publishes(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(2)])

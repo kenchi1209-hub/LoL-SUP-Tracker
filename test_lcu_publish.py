@@ -91,6 +91,24 @@ class PrivateDataPublisherTest(unittest.TestCase):
         ):
             self.assertFalse(is_allowed_match_path(path, self.match_id))
 
+    def test_only_a_declared_previous_rank_after_is_allowed_for_lp_correction(self):
+        previous = "JP1_PREVIOUS"
+        self.assertTrue(
+            is_allowed_match_path(
+                f"raw/{previous}/rank_after.json", self.match_id, previous,
+            )
+        )
+        self.assertFalse(
+            is_allowed_match_path(
+                f"raw/{previous}/timeline.json", self.match_id, previous,
+            )
+        )
+        self.assertFalse(
+            is_allowed_match_path(
+                "raw/JP1_OTHER/rank_after.json", self.match_id, previous,
+            )
+        )
+
     def test_normal_exact_transaction_commits_pushes_then_dispatches(self):
         runner = GitRunner(self.expected_paths)
         publisher = self.publisher(runner)

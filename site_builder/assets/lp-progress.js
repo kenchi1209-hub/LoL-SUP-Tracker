@@ -47,6 +47,14 @@
     return `${value >= 0 ? "+" : ""}${value}`;
   }
 
+  function lpDeltaLabel(point) {
+    const finalDelta = signed(point.lp_delta);
+    const observed = point.observed_lp_delta;
+    return Number.isFinite(observed) && observed !== point.lp_delta
+      ? `${finalDelta} (${signed(observed)})`
+      : finalDelta;
+  }
+
   function percentage(wins, games) {
     return games ? `${((wins / games) * 100).toFixed(1)}%` : "-";
   }
@@ -216,7 +224,10 @@
         : "";
       return `${game}${source}\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
     }
-    return `${game}${rankLabel(point.rank)}\nLP: ${signed(point.lp_delta)}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
+    const correction = Number.isFinite(point.observed_lp_delta) && point.observed_lp_delta !== point.lp_delta
+      ? "\n※ 括弧内は試合終了直後の観測値"
+      : "";
+    return `${game}${rankLabel(point.rank)}\nLP: ${lpDeltaLabel(point)}${correction}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch}\nQueue: Solo/Duo`;
   }
 
   function pointMatchUrl(point) {
@@ -541,7 +552,7 @@
     render();
   }
 
-  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl, gapConnections };
+  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl, gapConnections, lpDeltaLabel };
   try {
     const source = global.document.getElementById("lp-progress-data");
     if (!source) throw new Error("payload unavailable");

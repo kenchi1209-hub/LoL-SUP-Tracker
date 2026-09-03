@@ -202,6 +202,12 @@ class LCUClient:
     def get_ranked_stats(self):
         return self.get_json("/lol-ranked/v1/current-ranked-stats")
 
+    def get_current_puuid(self):
+        """Return the active LCU account PUUID for in-memory equality checks only."""
+        summoner = self.get_json("/lol-summoner/v1/current-summoner")
+        puuid = summoner.get("puuid") if isinstance(summoner, dict) else None
+        return puuid if isinstance(puuid, str) and puuid else None
+
     def get_solo_rank(self):
         stats = self.get_ranked_stats()
         queue_map = stats.get("queueMap") if isinstance(stats, dict) else None

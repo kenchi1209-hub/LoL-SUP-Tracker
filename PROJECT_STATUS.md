@@ -1,6 +1,6 @@
 # LoL Analytics — Project Status
 
-最終更新: 2026-09-03
+最終更新: 2026-09-04
 
 ## プロジェクト概要
 
@@ -199,11 +199,13 @@ Match Historyの詳細UIをRole別概要・共通詳細Stats・コピー機能�
 合意済み方針:
 
 - LP Progressは実装済み。LP未確定区間は値を補完せず、usable point間を点線connectorで表示する。
+- Queue 420の次試合開始前に同一アカウントのLCU Rankを取得できた場合だけ、直前の`rank_after`を再検証する。W/Lが同一でLPだけ異なる時は、終了直後の観測値を保持したまま最終LPへ補正する。照合不能・不一致の原因が確定できない場合は自動補正しない。
 
 ## 次にやること
 
 1. Role別に追加できる公開Statsを監査し、必要なものだけ段階的に詳細UIへ加える。
 2. PrivateDataに新規MatchがMatch directory単位で保存されることを次回更新時に確認する。
+3. 次のQueue 420開始前snapshotで条件が揃った場合だけ、`JP1_600584640`のLP後補正を再検証する。
 
 ## 注意事項
 

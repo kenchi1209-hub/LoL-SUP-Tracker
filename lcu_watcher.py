@@ -2,6 +2,7 @@
 
 import argparse
 import ctypes
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -121,7 +122,7 @@ class LCUWatcher:
         self.emit(message)
 
     def _start_pending(self, phase, queue_id, session_id):
-        before = self.client.get_solo_rank()
+        before = self._verified_lcu_before_rank(self.client.get_solo_rank())
         self.pending = {
             "detected_at_jst": now_jst().replace(microsecond=0).isoformat(),
             "start_phase": phase,
@@ -140,6 +141,34 @@ class LCUWatcher:
         }
         self._log("[LP] solo ranked detected")
         self._log("[LP] pending started")
+
+    def _verified_lcu_before_rank(self, rank):
+        """Return an in-memory pre-match rank only for the stored account.
+
+        The LCU account identifier is never logged or persisted here.  If the
+        local account cannot be checked against PrivateData, the next capture
+        simply proceeds without attempting a retrospective LP correction.
+        """
+        if not self.live or self.data_root is None or not isinstance(rank, dict):
+            return None
+        get_puuid = getattr(self.client, "get_current_puuid", None)
+        if not callable(get_puuid):
+            self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
+            return None
+        try:
+            active_puuid = get_puuid()
+            with (self.data_root / "csv" / "current_rank.json").open(
+                "r", encoding="utf-8",
+            ) as file:
+                saved_rank = json.load(file)
+        except (LCUError, OSError, json.JSONDecodeError):
+            self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
+            return None
+        saved_puuid = saved_rank.get("puuid") if isinstance(saved_rank, dict) else None
+        if not active_puuid or active_puuid != saved_puuid:
+            self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
+            return None
+        return rank
 
     def _log_rank_diagnostic(self):
         """Show only non-identifying LCU rank fields; never treat them as canonical."""
@@ -183,6 +212,17 @@ class LCUWatcher:
     def _has_rank_after(self, match_id):
         return (self.data_root / "raw" / match_id / "rank_after.json").is_file()
 
+    def _correction_match_id(self, match_id):
+        """Read an optional, capture-produced correction relation safely."""
+        path = self.data_root / "raw" / match_id / "rank_after.json"
+        try:
+            with path.open("r", encoding="utf-8") as file:
+                snapshot = json.load(file)
+        except (OSError, json.JSONDecodeError):
+            return None
+        previous = snapshot.get("reconciled_previous_match_id") if isinstance(snapshot, dict) else None
+        return previous if isinstance(previous, str) and previous else None
+
     def _live_process(self):
         """Delegate all writes to the existing update and exact-capture CLIs."""
         pending = self.pending
@@ -205,8 +245,16 @@ class LCUWatcher:
                     match_id = matches[0]["match_id"]
                     self._log("[DATA] match update complete")
                     pending["capture_attempted"] = True
+                    capture_command = self._command(
+                        "lp_snapshot.py", "capture", "--data-root", str(self.data_root),
+                    )
+                    if isinstance(pending.get("lcu_before_rank"), dict):
+                        capture_command.extend((
+                            "--next-rank-before-json",
+                            json.dumps(pending["lcu_before_rank"], separators=(",", ":")),
+                        ))
                     capture = self._run_process(
-                        self._command("lp_snapshot.py", "capture", "--data-root", str(self.data_root)),
+                        capture_command,
                         CAPTURE_TIMEOUT_SECONDS,
                     )
                     if capture.returncode == 0:
@@ -214,7 +262,13 @@ class LCUWatcher:
                             raise LiveProcessError("capture completed without rank_after confirmation")
                         self._log("[LP] exact capture completed")
                         if self.auto_publish:
-                            self._publisher().publish(match_id)
+                            correction_match_id = self._correction_match_id(match_id)
+                            if correction_match_id:
+                                self._publisher().publish(
+                                    match_id, correction_match_id=correction_match_id,
+                                )
+                            else:
+                                self._publisher().publish(match_id)
                             pending["published"] = True
                             self._log("[DONE] automatic publish complete")
                         pending["completed"] = True

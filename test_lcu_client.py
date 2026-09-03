@@ -87,6 +87,15 @@ class LCUClientTest(unittest.TestCase):
         payload["queueMap"]["RANKED_SOLO_5x5"].pop("wins")
         self.assertIsNone(client.get_solo_rank())
 
+    def test_current_puuid_is_returned_only_to_the_caller(self):
+        session = Mock()
+        session.get.return_value = Response(200, {"puuid": "runtime-only-puuid"})
+        client = LCUClient(process_provider=lambda: [{"ExecutablePath": str(self.client_path)}], session=session)
+        client.connect()
+        self.assertEqual(client.get_current_puuid(), "runtime-only-puuid")
+        session.get.return_value = Response(200, {})
+        self.assertIsNone(client.get_current_puuid())
+
     def test_session_diagnostic_excludes_pii(self):
         session = {"puuid": "hidden", "gameData": {"queue": {"id": 420}, "gameMode": "CLASSIC", "gameType": "MATCHED_GAME", "summonerId": "hidden"}}
         diagnostic = session_diagnostic(session, "ChampSelect")

@@ -10,12 +10,14 @@ from lp_snapshot import (
     AmbiguousHistoryError,
     CheckpointNotRequiredError,
     LeagueUpdateTimeout,
+    LPSnapshotError,
     build_rank_after,
     capture_one,
     create_checkpoint,
     create_baseline,
     history_path,
     rank_value,
+    reconcile_previous_rank_after,
     rebuild_lp_history,
     wait_for_league_update,
 )
@@ -166,6 +168,115 @@ class LPSnapshotTest(unittest.TestCase):
         snapshot = json.loads(output.read_text(encoding="utf-8"))
         self.assertFalse(snapshot["win"])
         self.assertEqual(snapshot["after"]["losses"], 56)
+
+    def test_loss_with_unchanged_lp_is_an_exact_zero_delta(self):
+        self.baseline()
+        output = self.capture(
+            {"JP1_ZERO": match_detail("JP1_ZERO", won=False)},
+            league_rank(lp=20, wins=40, losses=56),
+        )
+        snapshot = json.loads(output.read_text(encoding="utf-8"))
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(snapshot["lp_delta"], 0)
+        self.assertEqual(snapshot["confidence"], "exact")
+        self.assertEqual(snapshot["lp_status"], "provisional")
+        self.assertEqual(history["matches"][0]["lp_delta"], 0)
+
+    def _write_observed_loss(self):
+        self.current_rank.write_text(
+            json.dumps(league_rank(lp=69, wins=46, losses=59)), encoding="utf-8"
+        )
+        self.baseline()
+        previous = build_rank_after(
+            {
+                "match_id": "JP1_PREVIOUS", "game_datetime_jst": "2026-08-28T01:00:00+09:00",
+                "patch": "16.17", "champion": "Nami", "win": False,
+            },
+            {"tier": "SILVER", "division": "IV", "lp": 69, "wins": 46, "losses": 59},
+            {"tier": "SILVER", "division": "IV", "lp": 50, "wins": 46, "losses": 60},
+            captured_at=datetime(2026, 8, 28, 1, 30, tzinfo=JST),
+        )
+        path = paths_for_match("JP1_PREVIOUS", self.raw).rank_after
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(previous), encoding="utf-8")
+        rebuild_lp_history(self.raw, self.csv)
+        return path
+
+    def test_next_rank_before_corrects_previous_observed_loss_without_changing_record(self):
+        path = self._write_observed_loss()
+        result = reconcile_previous_rank_after(
+            self.raw,
+            self.csv,
+            {"tier": "SILVER", "division": "IV", "leaguePoints": 69, "wins": 46, "losses": 60},
+            "2026-08-28T02:00:00+09:00",
+            captured_at=datetime(2026, 8, 28, 2, 0, tzinfo=JST),
+        )
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(result["status"], "corrected")
+        self.assertEqual(snapshot["observed_lp_delta"], -19)
+        self.assertEqual(snapshot["lp_delta"], 0)
+        self.assertEqual(snapshot["lp_delta_final"], 0)
+        self.assertEqual(snapshot["lp_correction"], 19)
+        self.assertEqual(snapshot["lp_status"], "corrected")
+        self.assertEqual(snapshot["after"]["lp"], 69)
+        self.assertEqual(snapshot["after"]["losses"], 60)
+        self.assertEqual(history["matches"][0]["lp_delta"], 0)
+
+    def test_matching_next_rank_before_confirms_observed_delta_without_rewriting_it(self):
+        path = self._write_observed_loss()
+        result = reconcile_previous_rank_after(
+            self.raw,
+            self.csv,
+            {"tier": "SILVER", "division": "IV", "leaguePoints": 50, "wins": 46, "losses": 60},
+            "2026-08-28T02:00:00+09:00",
+        )
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(result["status"], "confirmed")
+        self.assertEqual(snapshot["lp_delta"], -19)
+        self.assertEqual(snapshot["lp_status"], "confirmed")
+        self.assertNotIn("observed_lp_delta", snapshot)
+
+    def test_mismatched_wins_losses_needs_review_without_writing_a_correction(self):
+        path = self._write_observed_loss()
+        original = path.read_bytes()
+        result = reconcile_previous_rank_after(
+            self.raw,
+            self.csv,
+            {"tier": "SILVER", "division": "IV", "leaguePoints": 71, "wins": 47, "losses": 60},
+            "2026-08-28T02:00:00+09:00",
+        )
+        self.assertEqual(result, {"status": "needs_review", "changed": False})
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_non_solo_pre_match_rank_cannot_reconcile_the_previous_snapshot(self):
+        path = self._write_observed_loss()
+        original = path.read_bytes()
+        non_solo = league_rank(lp=69, wins=46, losses=60)
+        non_solo["queueType"] = "RANKED_FLEX_SR"
+        with self.assertRaises(LPSnapshotError):
+            reconcile_previous_rank_after(
+                self.raw, self.csv, non_solo, "2026-08-28T02:00:00+09:00",
+            )
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_capture_uses_corrected_previous_rank_as_the_next_match_before(self):
+        previous_path = self._write_observed_loss()
+        output = self.capture(
+            {"JP1_NEXT": match_detail("JP1_NEXT", won=True, hour=2)},
+            league_rank(lp=90, wins=47, losses=60),
+            next_rank_before={
+                "tier": "SILVER", "division": "IV", "leaguePoints": 69,
+                "wins": 46, "losses": 60,
+            },
+        )
+        previous = json.loads(previous_path.read_text(encoding="utf-8"))
+        current = json.loads(output.read_text(encoding="utf-8"))
+        history = json.loads(history_path(self.csv).read_text(encoding="utf-8"))
+        self.assertEqual(previous["lp_delta"], 0)
+        self.assertEqual(current["before"]["lp"], 69)
+        self.assertEqual(current["reconciled_previous_match_id"], "JP1_PREVIOUS")
+        self.assertEqual([item["lp_delta"] for item in history["matches"]], [0, 21])
 
     def test_unexpected_record_is_ambiguous_and_writes_nothing(self):
         self.baseline()

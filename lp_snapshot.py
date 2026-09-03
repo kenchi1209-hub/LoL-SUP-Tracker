@@ -100,6 +100,29 @@ def compact_rank(entry):
     return result
 
 
+def compact_rank_before(entry):
+    """Normalize a non-identifying Queue 420 rank captured before a match.
+
+    The LCU uses ``division`` / ``leaguePoints`` while the persisted LP schema
+    uses ``division`` / ``lp``.  Keep the conversion here so a pre-match
+    observation can be compared to the previous exact snapshot without ever
+    using the match result to infer an LP value.
+    """
+    if not isinstance(entry, dict):
+        raise LPSnapshotError("Pre-match rank snapshot is unavailable")
+    normalized = {
+        "queueType": entry.get("queueType", SOLO_QUEUE_TYPE),
+        "tier": entry.get("tier"),
+        "rank": entry.get("rank", entry.get("division")),
+        "leaguePoints": entry.get("leaguePoints", entry.get("lp")),
+        "wins": entry.get("wins"),
+        "losses": entry.get("losses"),
+    }
+    if normalized["queueType"] != SOLO_QUEUE_TYPE:
+        raise LPSnapshotError("Pre-match rank snapshot is not Solo/Duo")
+    return compact_rank(normalized)
+
+
 def atomic_json_dump(path, data):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,6 +330,65 @@ def previous_state(raw_root):
     return rank, baseline["captured_at_jst"], events
 
 
+def reconcile_previous_rank_after(raw_root, csv_root, next_before, next_game_datetime_jst, captured_at=None):
+    """Confirm or correct only the immediately preceding exact LP snapshot.
+
+    ``next_before`` is an LCU rank observation from the start of the next
+    Queue 420 game.  A correction is safe only when its W/L counters are
+    unchanged from the preceding match's observed after state and the next
+    match is chronologically later.  Any other mismatch remains untouched and
+    is returned as ``needs_review``.
+    """
+    baseline = load_json(baseline_path(raw_root))
+    events = validated_events(raw_root, baseline)
+    if not events or events[-1]["event"].get("snapshot_type") != "rank_after":
+        return {"status": "not_applicable", "changed": False}
+
+    previous = events[-1]["event"]
+    observed_after = rank_state(previous.get("after") or {})
+    next_before = compact_rank_before(next_before)
+    try:
+        next_game_time = parse_timestamp(next_game_datetime_jst)
+        previous_game_time = parse_timestamp(previous["game_datetime_jst"])
+    except (KeyError, TypeError, ValueError):
+        return {"status": "needs_review", "changed": False}
+    if next_game_time <= previous_game_time:
+        return {"status": "needs_review", "changed": False}
+
+    observed_record = (observed_after.get("wins"), observed_after.get("losses"))
+    next_record = (next_before.get("wins"), next_before.get("losses"))
+    if observed_record != next_record:
+        return {"status": "needs_review", "changed": False}
+
+    snapshot_path = paths_for_match(previous["match_id"], raw_root).rank_after
+    if observed_after == next_before:
+        if previous.get("lp_status") == "confirmed":
+            return {"status": "confirmed", "changed": False, "match_id": previous["match_id"]}
+        previous["lp_status"] = "confirmed"
+        previous.setdefault("lp_delta_source", "post_match_snapshot")
+        atomic_json_dump(snapshot_path, previous)
+        rebuild_lp_history(raw_root, csv_root)
+        return {"status": "confirmed", "changed": True, "match_id": previous["match_id"]}
+
+    observed_delta = previous.get("observed_lp_delta", previous.get("lp_delta"))
+    if not isinstance(observed_delta, (int, float)):
+        return {"status": "needs_review", "changed": False}
+    final_delta = rank_value(next_before) - rank_value(rank_state(previous.get("before") or {}))
+    previous["after_observed"] = observed_after
+    previous["observed_lp_delta"] = observed_delta
+    previous["after"] = next_before
+    previous["lp_delta"] = final_delta
+    previous["lp_delta_final"] = final_delta
+    previous["lp_correction"] = final_delta - observed_delta
+    previous["lp_delta_source"] = "next_rank_before"
+    previous["lp_adjustment_type"] = "unknown_adjustment"
+    previous["lp_status"] = "corrected"
+    previous["corrected_at_jst"] = iso_jst(captured_at)
+    atomic_json_dump(snapshot_path, previous)
+    rebuild_lp_history(raw_root, csv_root)
+    return {"status": "corrected", "changed": True, "match_id": previous["match_id"]}
+
+
 def match_end_jst(detail):
     info = detail.get("info") or {}
     timestamp = info.get("gameEndTimestamp")
@@ -457,6 +539,8 @@ def build_rank_after(match, before, after, captured_at=None):
         "before": dict(before),
         "after": dict(after),
         "lp_delta": rank_value(after) - rank_value(before),
+        "lp_delta_source": "post_match_snapshot",
+        "lp_status": "provisional",
         "games_since_previous_snapshot": 1,
     }
 
@@ -478,6 +562,11 @@ def history_record(snapshot):
         "division_after": after.get("division"),
         "lp_after": after["lp"],
         "lp_delta": snapshot["lp_delta"],
+        "observed_lp_delta": snapshot.get("observed_lp_delta"),
+        "lp_correction": snapshot.get("lp_correction"),
+        "lp_delta_source": snapshot.get("lp_delta_source", "post_match_snapshot"),
+        "lp_status": snapshot.get("lp_status", "confirmed"),
+        "lp_adjustment_type": snapshot.get("lp_adjustment_type"),
         "confidence": snapshot["confidence"],
     }
 
@@ -524,6 +613,7 @@ def capture_one(
     puuid, raw_root, csv_root, fetch_match_ids, fetch_match_detail,
     fetch_current_rank, timeout_seconds=120, poll_interval_seconds=5,
     captured_at=None, monotonic=time.monotonic, sleep=time.sleep,
+    next_rank_before=None,
 ):
     before, cutoff_jst, _snapshots = previous_state(raw_root)
     candidates = discover_uncaptured_solo_matches(
@@ -537,11 +627,28 @@ def capture_one(
             f"{len(candidates)} uncaptured Solo/Duo matches found; no LP was assigned"
         )
     match = candidates[0]
+    reconciliation = None
+    if next_rank_before is not None:
+        reconciliation = reconcile_previous_rank_after(
+            raw_root,
+            csv_root,
+            next_rank_before,
+            match["game_datetime_jst"],
+            captured_at=captured_at,
+        )
+        if reconciliation["status"] == "needs_review":
+            raise AmbiguousHistoryError(
+                "Previous LP snapshot differs from next pre-match rank; manual review required"
+            )
+        if reconciliation["status"] == "corrected":
+            before, cutoff_jst, _snapshots = previous_state(raw_root)
     after = wait_for_league_update(
         before, match["win"], fetch_current_rank, timeout_seconds,
         poll_interval_seconds, monotonic, sleep,
     )
     snapshot = build_rank_after(match, before, after, captured_at)
+    if reconciliation and reconciliation["status"] == "corrected":
+        snapshot["reconciled_previous_match_id"] = reconciliation["match_id"]
     output = paths_for_match(match["match_id"], raw_root).rank_after
     if output.exists():
         raise LPSnapshotError(f"rank_after already exists: {output}")
@@ -612,6 +719,10 @@ def parse_args(argv=None):
     parser.add_argument("--data-root")
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--poll-interval", type=float, default=5)
+    parser.add_argument(
+        "--next-rank-before-json",
+        help="Non-identifying Queue 420 LCU rank captured before the match being captured",
+    )
     return parser.parse_args(argv)
 
 
@@ -648,6 +759,12 @@ def main(argv=None):
         from riot_api import get_current_solo_rank, get_match_detail, get_match_ids, get_puuid
 
         puuid = get_puuid(GAME_NAME, TAG_LINE)
+        next_rank_before = None
+        if args.next_rank_before_json:
+            try:
+                next_rank_before = json.loads(args.next_rank_before_json)
+            except json.JSONDecodeError as error:
+                raise LPSnapshotError("Invalid next pre-match rank JSON") from error
         output = capture_one(
             puuid,
             paths.raw,
@@ -657,6 +774,7 @@ def main(argv=None):
             lambda: get_current_solo_rank(puuid),
             timeout_seconds=args.timeout,
             poll_interval_seconds=args.poll_interval,
+            next_rank_before=next_rank_before,
         )
         if output:
             print(f"Exact LP snapshot saved: {output}")

@@ -42,14 +42,14 @@ RAW_MATCH_FILENAMES = frozenset({
 })
 
 
-def is_allowed_match_path(path, match_id):
-    """Allow only known exports and known raw files for this match ID."""
+def is_allowed_match_path(path, match_id, correction_match_id=None):
+    """Allow generated exports plus raw for this match and one corrected predecessor."""
     if path in GENERATED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
         return True
     raw_prefix = f"raw/{match_id}/"
-    if not path.startswith(raw_prefix):
-        return False
-    return path[len(raw_prefix):] in RAW_MATCH_FILENAMES
+    if path.startswith(raw_prefix):
+        return path[len(raw_prefix):] in RAW_MATCH_FILENAMES
+    return bool(correction_match_id) and path == f"raw/{correction_match_id}/rank_after.json"
 
 
 class PrivateDataPublisher:
@@ -143,20 +143,23 @@ class PrivateDataPublisher:
         self.base_sha = head
         self.emit("[GIT] PrivateData preflight verified")
 
-    def _validate_changed_paths(self, match_id):
+    def _validate_changed_paths(self, match_id, correction_match_id=None):
         paths = self._status_paths()
         if not paths:
             raise PublishError("no PrivateData changes found after exact capture")
-        unexpected = [path for path in paths if not is_allowed_match_path(path, match_id)]
+        unexpected = [
+            path for path in paths
+            if not is_allowed_match_path(path, match_id, correction_match_id)
+        ]
         if unexpected:
             raise PublishError("unexpected PrivateData path changed; publish stopped")
         return paths
 
-    def publish(self, match_id):
+    def publish(self, match_id, correction_match_id=None):
         """Commit one validated match update and dispatch a Pages-only public build."""
         if not self.base_sha:
             raise PublishError("publish preflight was not completed")
-        paths = self._validate_changed_paths(match_id)
+        paths = self._validate_changed_paths(match_id, correction_match_id)
 
         head, remote, counts = self._remote_state()
         if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
@@ -167,7 +170,7 @@ class PrivateDataPublisher:
             self._git("--no-pager", "diff", "--cached", "--name-status").stdout
         )
         if sorted(staged) != sorted(paths) or any(
-            not is_allowed_match_path(path, match_id) for path in staged
+            not is_allowed_match_path(path, match_id, correction_match_id) for path in staged
         ):
             raise PublishError("staged paths failed validation; publish stopped")
         # Accept CRLF line endings from Windows CSV exporters, but retain all

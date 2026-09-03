@@ -355,6 +355,41 @@
 1. 実際の利用感を踏まえ、Role別概要と試合詳細の項目を必要最小限で追加検討する。
 2. 日次更新後もMatch Historyの公開データとコピー出力が整合することを確認する。
 
+## 2026-09-04
+
+### 今日やったこと
+
+- LCU Watcherの次Queue 420開始前Rankを利用し、直前の`rank_after`を再検証するLP後補正基盤を追加した。
+- 観測直後のLP差分と最終LP差分、補正量、状態を区別して公開payloadへ渡すようにした。
+
+### 決定事項
+
+- 同一PUUID、時系列、Queue 420、W/L一致を満たす場合だけ補正する。不一致の理由を確定できない場合は`needs_review`としてデータを変更しない。
+- 補正済みのTrendとNet LPには最終差分だけを使用し、終了直後の観測差分は補足表示に限定する。
+
+### 実装・変更ファイル
+
+- `lp_snapshot.py`
+- `lcu_client.py`
+- `lcu_watcher.py`
+- `lcu_publish.py`
+- `site_builder/lp_progress.py`
+- `site_builder/assets/lp-progress.js`
+- 関連unit test
+
+### 動作確認
+
+- 0LP、通常差分、W/L不一致停止、PUUID不一致停止、補正後のTrend / Net LPをunit testで確認した。
+- 実PrivateDataのLP履歴および`JP1_600584640`は変更していない。
+
+### 未解決
+
+- 実際の後補正は、次のQueue 420開始前snapshotが取得され安全条件を満たした場合だけ実施する。
+
+### 次回
+
+1. 次のQueue 420でLCU pre-match snapshotの取得と安全な再検証フローを確認する。
+
 ## 運用ルール
 
 ### 作業開始時

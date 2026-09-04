@@ -395,6 +395,36 @@
 
 1. 次のQueue 420でLCU pre-match snapshotの取得と安全な再検証フローを確認する。
 
+## 2026-09-05
+
+### 今日やったこと
+
+- LP Trendの勝敗を持つ試合pointを、official exact・external historical・補正済みを含めて青丸（WIN）／赤丸（LOSS）に統一した。
+
+### 決定事項
+
+- sourceの区別は形ではなく、official exactの塗りありとexternal historicalの同色半透明塗り＋色枠で表す。
+- baseline、Patch marker、LP未確定gap connectorは既存表現を維持する。
+
+### 実装・変更ファイル
+
+- `site_builder/assets/lp-progress.js`
+- `test_lp_progress.js`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+
+### 動作確認
+
+- Node unit testでofficial / historicalのWIN・LOSSと、補正LOSSの赤丸表示を確認した。
+
+### 未解決
+
+- なし。
+
+### 次回
+
+1. 実データ更新後もLP Trendの勝敗色と補正表示が一致することを確認する。
+
 ## 運用ルール
 
 ### 作業開始時

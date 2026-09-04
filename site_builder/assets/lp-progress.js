@@ -289,12 +289,30 @@
     return `LP未確定区間\n${range}\nこの点線はLP値の補間・推測ではありません`;
   }
 
+  function resultMarkerStyle(point) {
+    const color = point.win ? "#4f9dff" : "#ff6b81";
+    const historical = point.kind === "historical";
+    return {
+      shape: "circle",
+      color,
+      fill: color,
+      fillOpacity: historical ? 0.42 : 1,
+      stroke: historical ? color : "#e7ecf4",
+      strokeWidth: historical ? 2 : 1,
+      strokeOpacity: historical ? 0.95 : 1,
+      radius: historical ? 4.5 : 5,
+    };
+  }
+
   function pointShape(point, x, y) {
     if (point.kind === "checkpoint") return el("circle", { cx: x, cy: y, r: 6, fill: "#171d2b", stroke: "#f0b429", "stroke-width": 3 });
     if (point.kind === "baseline") return el("path", { d: `M ${x} ${y - 7} L ${x + 7} ${y} L ${x} ${y + 7} L ${x - 7} ${y} Z`, fill: "#e7ecf4", stroke: "#5b8cff", "stroke-width": 2 });
-    if (point.kind === "historical") return el("circle", { cx: x, cy: y, r: 4, fill: "#171d2b", stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .65 });
-    if (point.win) return el("path", { d: `M ${x} ${y - 7} L ${x + 7} ${y + 6} L ${x - 7} ${y + 6} Z`, fill: "#38d39f", stroke: "#e7ecf4", "stroke-width": 1 });
-    return el("rect", { x: x - 5, y: y - 5, width: 10, height: 10, rx: 1, fill: "#ff6b81", stroke: "#e7ecf4", "stroke-width": 1 });
+    const style = resultMarkerStyle(point);
+    return el(style.shape, {
+      cx: x, cy: y, r: style.radius, fill: style.fill,
+      "fill-opacity": style.fillOpacity, stroke: style.stroke,
+      "stroke-width": style.strokeWidth, "stroke-opacity": style.strokeOpacity,
+    });
   }
 
   function renderChart(officialPoints, historicalPoints, historicalGaps) {
@@ -552,14 +570,18 @@
     render();
   }
 
-  global.LPProgress = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl, gapConnections, lpDeltaLabel };
-  try {
-    const source = global.document.getElementById("lp-progress-data");
-    if (!source) throw new Error("payload unavailable");
-    init(JSON.parse(source.textContent));
-  } catch (_error) {
-    const empty = global.document.getElementById("lp-empty");
-    empty.textContent = "LP Progressデータを読み込めませんでした";
-    empty.hidden = false;
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape };
+  global.LPProgress = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (global.document) {
+    try {
+      const source = global.document.getElementById("lp-progress-data");
+      if (!source) throw new Error("payload unavailable");
+      init(JSON.parse(source.textContent));
+    } catch (_error) {
+      const empty = global.document.getElementById("lp-empty");
+      empty.textContent = "LP Progressデータを読み込めませんでした";
+      empty.hidden = false;
+    }
   }
-})(window);
+})(typeof window !== "undefined" ? window : globalThis);

@@ -89,7 +89,11 @@ const participant = {
   solo_kills: 0, gold_earned: 8000, cs: 100, minion_cs: 80, jungle_cs: 20,
   vision_score: 0, wards_placed: 0, wards_killed: 2, control_wards_bought: 1, control_wards_placed: 0,
   total_heal: 0, heal_on_teammates: 0, shield_on_teammates: 0,
-  timeline: { at_10: { gold: 5000, xp: 8000, level: 6, minions: 55, jungle_minions: 10 }, at_15: null, level_timestamps: { 6: 600000 } },
+  timeline: {
+    at_10: { gold: 5000, xp: 8000, level: 6, minions: 55, jungle_minions: 10 },
+    at_15: { gold: 7940, xp: 10510, level: 10, minions: 96, jungle_minions: 51 },
+    level_timestamps: { 6: 600000 },
+  },
   lane_opponent: { at_10: { gold: 500, xp: 300, minions: 4, jungle_minions: 0 } },
 };
 const detailed = sampleMatch({ detail: { game_duration_seconds: 1800, side: "BLUE", participants: [participant] } });
@@ -99,6 +103,24 @@ assert(groups.some(([title]) => title === "Lane Difference"));
 assert(groups.flatMap(([, entries]) => entries).some(([label]) => label === "Fight W-E-L"));
 assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Vision Score / VS/min" && value.startsWith("0 /")));
 assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Solo Kills" && value === "0"));
+const progression = new Map(groups.find(([title]) => title === "Progression")[1]);
+assert.strictEqual(progression.get("Gold @10"), "5,000");
+assert.strictEqual(progression.get("XP @15"), "10,510");
+assert.strictEqual(progression.get("Level @10"), "6");
+assert.strictEqual(progression.get("CS @15"), "147");
+assert.strictEqual(progression.get("Jungle CS @15"), "51");
+assert.strictEqual(progression.get("Gold 10→15"), "+2,940");
+assert.strictEqual(progression.get("XP 10→15"), "+2,510");
+assert.strictEqual(progression.get("CS 10→15"), "+41");
+assert.strictEqual(progression.get("Jungle CS 10→15"), "+41");
+const shortGame = sampleMatch({ game_duration_seconds: 899, detail: { game_duration_seconds: 899, participants: [participant] } });
+const shortProgression = new Map(history.participantStatGroups(shortGame, participant).find(([title]) => title === "Progression")[1]);
+assert.strictEqual(shortProgression.get("Gold @15"), "-");
+assert.strictEqual(shortProgression.get("Gold 10→15"), "-");
+assert.strictEqual(history.matrixValue(shortProgression.get("Gold @15")), "—");
+const zeroGrowthParticipant = { ...participant, timeline: { ...participant.timeline, at_15: { ...participant.timeline.at_10 } } };
+const zeroProgression = new Map(history.participantStatGroups(detailed, zeroGrowthParticipant).find(([title]) => title === "Progression")[1]);
+assert.strictEqual(zeroProgression.get("Gold 10→15"), "0");
 assert.strictEqual(history.matrixValue(0), "0");
 assert.strictEqual(history.matrixValue(null), "—");
 const matrixOrder = history.matrixParticipants(sampleMatch({ detail: { participants: [

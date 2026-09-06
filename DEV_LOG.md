@@ -432,12 +432,14 @@
 - 試合詳細を味方5人→敵5人、Role順の10人カードへ拡張し、Basic / Combat / Economy / Vision / Support & Sustain / Fight & Objective / Progressionを追加した。
 - 詳細・Fight payloadを試合単位の遅延取得JSONに分離し、`history.html`の初期サイズを約27MBから約312KBへ抑えた。
 - 試合詳細の10人カードを廃止し、Champion icon・Role・Rankを列header、Statsを行に置く横比較マトリクスへ変更した。
+- ProgressionへTimeline participantFrames由来の10分・15分Gold / XP / Level / CS / Jungle CS、および10→15分差分を追加した。15分未満は推測せず`—`表示とした。
 
 ### 決定事項
 
 - 公開する値はMatch-V5、Timeline、combat timelineに実在し、PIIを含まないものだけに限定する。
 - 個人のObjective関与、アイテム名・購入タイミングなど、現在の公開データだけで安全に確定できない値は表示しない。
 - マトリクス表はDesktopで比較性を優先し、Mobileでは表内だけを横スクロールさせる。headerとStats列はstickyとする。
+- Progressionの成長量は同一participantの15分値から10分値を引き、0と欠損を区別する。既存の他カテゴリは移動・削除しない。
 
 ### 実装・変更ファイル
 

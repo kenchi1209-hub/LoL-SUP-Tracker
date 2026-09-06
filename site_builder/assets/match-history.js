@@ -439,6 +439,12 @@
     return integerOrDash(Number(frame.minions) + Number(frame.jungle_minions));
   }
 
+  function progressionDelta(before, after, field) {
+    if (!before || !after || !hasValue(before[field]) || !hasValue(after[field])) return "-";
+    const value = Number(after[field]) - Number(before[field]);
+    return `${value > 0 ? "+" : ""}${integerOrDash(value)}`;
+  }
+
   function laneDelta(participant, point, field, label) {
     const value = participant.lane_opponent?.[point]?.[field];
     if (!hasValue(value)) return null;
@@ -482,6 +488,11 @@
     const timeline = participant.timeline || {};
     const at10 = timeline.at_10;
     const at15 = timeline.at_15;
+    // Older compact details may have retained the last available frame for short
+    // games.  It is not a 15-minute observation, so never present it as one in
+    // the Progression category added below.
+    const detailDuration = number(match.detail?.game_duration_seconds) || number(match.game_duration_seconds);
+    const progressionAt15 = detailDuration >= 900 ? at15 : null;
     const levels = timeline.level_timestamps || {};
     const fight = participantFightStats(match, participant);
     const economy = [
@@ -542,7 +553,20 @@
       ], "participant-fight"],
       ["Progression", [
         ["Level 6 / 11 / 16", `${hasValue(levels["6"]) ? clock(levels["6"]) : "-"} / ${hasValue(levels["11"]) ? clock(levels["11"]) : "-"} / ${hasValue(levels["16"]) ? clock(levels["16"]) : "-"}`],
-        ["Level@10 / @15", `${integerOrDash(at10?.level)} / ${integerOrDash(at15?.level)}`],
+        ["Gold @10", integerOrDash(at10?.gold)],
+        ["XP @10", integerOrDash(at10?.xp)],
+        ["Level @10", integerOrDash(at10?.level)],
+        ["CS @10", participantCs(at10)],
+        ["Jungle CS @10", integerOrDash(at10?.jungle_minions)],
+        ["Gold @15", integerOrDash(progressionAt15?.gold)],
+        ["XP @15", integerOrDash(progressionAt15?.xp)],
+        ["Level @15", integerOrDash(progressionAt15?.level)],
+        ["CS @15", participantCs(progressionAt15)],
+        ["Jungle CS @15", integerOrDash(progressionAt15?.jungle_minions)],
+        ["Gold 10→15", progressionDelta(at10, progressionAt15, "gold")],
+        ["XP 10→15", progressionDelta(at10, progressionAt15, "xp")],
+        ["CS 10→15", progressionDelta(at10, progressionAt15, "minions")],
+        ["Jungle CS 10→15", progressionDelta(at10, progressionAt15, "jungle_minions")],
       ], "participant-progression"],
     ];
   }

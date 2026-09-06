@@ -74,7 +74,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - 10人比較は正式positionを使用し、Champion、K/D/A、CS/m、VS/m、DPMを表示
 - 試合詳細の公開データにはRiot ID、Summoner Name、PUUID等の個人識別情報を含めない
 - 試合概要の末尾に匿名10人比較を配置し、試合詳細は味方5人→敵5人をRole順（TOP / JG / MID / ADC / SUP）で横比較するマトリクス表として表示
-- 試合詳細はBasic / Combat / Economy / Lane Difference / Vision / Support & Sustain / Fight & Objective / Progressionを、Match-V5・Timeline・combat timelineで確認できる値だけで表示（Fight W-E-L / 勝率を含む）
+- 試合詳細はBasic / Combat / Economy / Lane Difference / Vision / Support & Sustain / Fight & Objective / Progressionを、Match-V5・Timeline・combat timelineで確認できる値だけで表示（Fight W-E-L / 勝率、Progressionの10分・15分値と10→15分差分を含む）
 - 詳細・Fightデータは試合カードを開いた時だけ`public/match-details/{match_id}.json`から取得し、初期HTMLへ全試合分を埋め込まない
 
 ### 集計・出力
@@ -194,7 +194,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 直近で進行中の作業
 
-Match Historyの詳細UIを、試合概要の簡易10人比較と、味方／敵10人の詳細Statsマトリクス・コピー機能へ再編した。Timeline由来の公開可能なStatsは、実データcoverageを確認した上でのみ追加する。
+Match Historyの詳細UIを、試合概要の簡易10人比較と、味方／敵10人の詳細Statsマトリクス・コピー機能へ再編した。ProgressionにはTimeline participantFrames由来の10分・15分Gold / XP / Level / CS / Jungle CSと10→15分差分を表示し、15分未満は推測せず欠損表示とする。Timeline由来の公開可能なStatsは、実データcoverageを確認した上でのみ追加する。
 
 合意済み方針:
 

@@ -73,8 +73,8 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - 試合詳細に公式`teamId`で分類したALLY 5人 / ENEMY 5人の匿名10人比較を表示
 - 10人比較は正式positionを使用し、Champion、K/D/A、CS/m、VS/m、DPMを表示
 - 試合詳細の公開データにはRiot ID、Summoner Name、PUUID等の個人識別情報を含めない
-- 試合概要の末尾に匿名10人比較を配置し、試合詳細は味方5人→敵5人をRole順（TOP / JG / MID / ADC / SUP）で表示
-- 試合詳細はBasic / Combat / Economy / Vision / Support & Sustain / Fight & Objective / Progressionを、Match-V5・Timeline・combat timelineで確認できる値だけで表示
+- 試合概要の末尾に匿名10人比較を配置し、試合詳細は味方5人→敵5人をRole順（TOP / JG / MID / ADC / SUP）で横比較するマトリクス表として表示
+- 試合詳細はBasic / Combat / Economy / Lane Difference / Vision / Support & Sustain / Fight & Objective / Progressionを、Match-V5・Timeline・combat timelineで確認できる値だけで表示
 - 詳細・Fightデータは試合カードを開いた時だけ`public/match-details/{match_id}.json`から取得し、初期HTMLへ全試合分を埋め込まない
 
 ### 集計・出力
@@ -171,7 +171,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - Fight IDは抽出後に振り直さず、元JSONのIDを表示する。
 - Timeline Summaryは`my_matches.csv`へJOINするが、raw JSON自体はCSVへ埋め込まない。
 - GitHub Pagesは`data/raw/`へ依存しない。公開用Fight Detailは`data/csv/fight_details.json`へ軽量化する。
-- 試合詳細・10人比較はPIIを除外した`data/csv/match_details.json`を使用し、Pages buildからrawを参照しない。静的build時に試合単位の遅延取得JSONを生成する。
+- 試合詳細・10人比較はPIIを除外した`data/csv/match_details.json`を使用し、Pages buildからrawを参照しない。静的build時に試合単位の遅延取得JSONを生成する。試合詳細のマトリクス表はChampion icon、Role、Rankを列headerに置き、Stats名を左端に固定する。
 - 10人比較のALLY / ENEMYは公式`teamId`、RoleはMatch-V5の`teamPosition`（空の場合のみ`individualPosition`）を使い、Champion等から推測しない。
 - Fight Detailは初期表示性能のためlazy DOM生成とする。
 - UI日本語化は表示時マッピングで行い、EARLY / WIN等の内部値は変更しない。
@@ -194,7 +194,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 直近で進行中の作業
 
-Match Historyの詳細UIを、試合概要の10人比較と、味方／敵10人の詳細Stats・コピー機能へ再編した。Timeline由来の公開可能なStatsは、実データcoverageを確認した上でのみ追加する。
+Match Historyの詳細UIを、試合概要の簡易10人比較と、味方／敵10人の詳細Statsマトリクス・コピー機能へ再編した。Timeline由来の公開可能なStatsは、実データcoverageを確認した上でのみ追加する。
 
 合意済み方針:
 

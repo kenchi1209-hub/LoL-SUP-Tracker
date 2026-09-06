@@ -99,6 +99,7 @@ def load_match_detail(match_id):
         compact = dict(participant)
         champion = compact.get("champion", "")
         compact["champion_name"] = champion_name_ja(champion)
+        compact["champion_icon_id"] = champion_icon_id(champion)
         participants.append(compact)
     return {
         "game_duration_seconds": detail.get("game_duration_seconds", 0),

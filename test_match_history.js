@@ -94,9 +94,20 @@ const participant = {
 };
 const detailed = sampleMatch({ detail: { game_duration_seconds: 1800, side: "BLUE", participants: [participant] } });
 const groups = history.participantStatGroups(detailed, participant);
-assert.strictEqual(groups.length, 7);
+assert.strictEqual(groups.length, 8);
+assert(groups.some(([title]) => title === "Lane Difference"));
 assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Vision Score / VS/min" && value.startsWith("0 /")));
 assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Solo Kills" && value === "0"));
+assert.strictEqual(history.matrixValue(0), "0");
+assert.strictEqual(history.matrixValue(null), "—");
+const matrixOrder = history.matrixParticipants(sampleMatch({ detail: { participants: [
+  { relation: "ENEMY", role: "UTILITY", champion: "EnemySupport" },
+  { relation: "ALLY", role: "BOTTOM", champion: "AllyAdc" },
+  { relation: "ENEMY", role: "TOP", champion: "EnemyTop" },
+  { relation: "ALLY", role: "TOP", champion: "AllyTop" },
+  { relation: "ALLY", role: "JUNGLE", champion: "AllyJungle" },
+] } }));
+assert.deepStrictEqual(matrixOrder.map((item) => item.champion), ["AllyTop", "AllyJungle", "AllyAdc", "EnemyTop", "EnemySupport"]);
 const detailedCopy = history.copyTextForSelection(detailed, { overview: true, selfFights: false, allFights: false, details: true });
 assert(detailedCopy.includes("【味方・敵10人比較】"));
 assert(detailedCopy.includes("【ALLY TOP エイトロックス / YOU】"));

@@ -3,6 +3,7 @@
 
   const PAGE_SIZE = 20;
   const ROLE_NAMES = { UTILITY: "SUP", MIDDLE: "MID", TOP: "TOP", BOTTOM: "ADC", JUNGLE: "JG" };
+  const ROLE_ORDER = { TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4 };
   const matchAnchorId = (matchId) => `match-${encodeURIComponent(String(matchId || ""))}`;
   const text = (tag, value, className) => {
     const element = global.document.createElement(tag);
@@ -442,7 +443,14 @@
     const value = participant.lane_opponent?.[point]?.[field];
     if (!hasValue(value)) return null;
     const sign = Number(value) > 0 ? "+" : "";
-    return [`${label}差`, `${sign}${integerOrDash(value)}`];
+    return [label, `${sign}${integerOrDash(value)}`];
+  }
+
+  function laneCsDelta(participant, point, label) {
+    const lane = participant.lane_opponent?.[point];
+    if (!lane || !hasValue(lane.minions) || !hasValue(lane.jungle_minions)) return null;
+    const value = Number(lane.minions) + Number(lane.jungle_minions);
+    return [label, `${value > 0 ? "+" : ""}${integerOrDash(value)}`];
   }
 
   function participantFightStats(match, participant) {
@@ -484,12 +492,14 @@
       ["CS@10 / @15", `${participantCs(at10)} / ${participantCs(at15)}`],
       ["XP@10 / @15", `${integerOrDash(at10?.xp)} / ${integerOrDash(at15?.xp)}`],
     ];
+    const lane = [];
     [
-      laneDelta(participant, "at_10", "gold", "Gold@10"), laneDelta(participant, "at_15", "gold", "Gold@15"),
-      laneDelta(participant, "at_10", "minions", "Minion@10"), laneDelta(participant, "at_15", "minions", "Minion@15"),
-      laneDelta(participant, "at_10", "jungle_minions", "Jungle CS@10"), laneDelta(participant, "at_15", "jungle_minions", "Jungle CS@15"),
-      laneDelta(participant, "at_10", "xp", "XP@10"), laneDelta(participant, "at_15", "xp", "XP@15"),
-    ].filter(Boolean).forEach((item) => economy.push(item));
+      laneDelta(participant, "at_10", "gold", "Gold差@10"), laneDelta(participant, "at_15", "gold", "Gold差@15"),
+      laneCsDelta(participant, "at_10", "CS差@10"), laneCsDelta(participant, "at_15", "CS差@15"),
+      laneDelta(participant, "at_10", "minions", "Minion CS差@10"), laneDelta(participant, "at_15", "minions", "Minion CS差@15"),
+      laneDelta(participant, "at_10", "jungle_minions", "Jungle CS差@10"), laneDelta(participant, "at_15", "jungle_minions", "Jungle CS差@15"),
+      laneDelta(participant, "at_10", "xp", "XP差@10"), laneDelta(participant, "at_15", "xp", "XP差@15"),
+    ].filter(Boolean).forEach((item) => lane.push(item));
     return [
       ["Basic", [
         ["Side / Team", `${participant.relation || "-"} / ${participant.win ? "WIN" : "LOSS"}`],
@@ -509,6 +519,7 @@
         ["Solo Kills", integerOrDash(participant.solo_kills)],
       ], "participant-combat"],
       ["Economy", economy, "participant-economy"],
+      ["Lane Difference", lane, "participant-lane"],
       ["Vision", [
         ["Vision Score / VS/min", `${integerOrDash(participant.vision_score)} / ${participantRate(participant.vision_score, match, 2)}`],
         ["Wards Placed / Killed", `${integerOrDash(participant.wards_placed)} / ${integerOrDash(participant.wards_killed)}`],
@@ -546,31 +557,110 @@
     return root;
   }
 
-  function detailedStatsContent(match) {
+  function matrixParticipants(match) {
+    const participants = Array.isArray(match.detail?.participants) ? match.detail.participants.slice() : [];
+    const relationOrder = { ALLY: 0, ENEMY: 1 };
+    return participants.sort((left, right) => (
+      (relationOrder[left.relation] ?? 9) - (relationOrder[right.relation] ?? 9)
+      || (ROLE_ORDER[left.role] ?? 9) - (ROLE_ORDER[right.role] ?? 9)
+      || String(left.champion || "").localeCompare(String(right.champion || ""))
+    ));
+  }
+
+  function matrixValue(value) {
+    if (!hasValue(value) || value === "-") return "—";
+    return String(value).replace(/\s\/\s-/g, " / —");
+  }
+
+  function matrixHeader(participant, version, separator = false) {
+    const header = global.document.createElement("th");
+    header.scope = "col";
+    header.className = `match-matrix-champion${separator ? " match-matrix-team-separator" : ""}${participant.is_self ? " match-matrix-self" : ""}`;
+    const championName = participant.champion_name || participant.champion || "Unknown";
+    header.title = championName;
+    const image = global.document.createElement("img");
+    image.loading = "lazy";
+    image.src = global.SiteUtils.championImageUrl(version, participant.champion_icon_id || participant.champion);
+    image.alt = championName;
+    image.addEventListener("error", () => { image.hidden = true; });
+    header.append(
+      image,
+      text("span", championName, "match-matrix-champion-name"),
+      text("span", ROLE_NAMES[participant.role] || participant.role || "—", "match-matrix-role"),
+      text("span", participant.rank || "—", "match-matrix-rank")
+    );
+    if (participant.is_self) header.append(text("span", "YOU", "match-matrix-you"));
+    return header;
+  }
+
+  function detailedStatsContent(match, version) {
     const root = text("div", "", "match-detail-content match-detail-stats-content");
-    const participants = Array.isArray(match.detail?.participants) ? match.detail.participants : [];
-    ["ALLY", "ENEMY"].forEach((relation) => {
-      const team = participants.filter((participant) => participant.relation === relation);
-      if (!team.length) return;
-      const section = text("section", "", `participant-team participant-team-${relation.toLowerCase()}`);
-      section.append(text("h4", relation === "ALLY" ? "ALLY（味方）" : "ENEMY（敵）", "participant-team-title"));
-      const cards = text("div", "", "participant-detail-cards");
-      team.forEach((participant) => {
-        const card = text("article", "", `participant-detail-card${participant.is_self ? " participant-detail-self" : ""}`);
-        const header = text("header", "", "participant-detail-header");
-        header.append(
-          text("strong", `${ROLE_NAMES[participant.role] || participant.role || "-"} ${participant.champion_name || participant.champion || "-"}`),
-          text("span", participant.is_self ? "YOU" : participant.relation, participant.is_self ? "participant-you" : "participant-relation")
-        );
-        const grid = text("div", "", "participant-detail-grid");
-        participantStatGroups(match, participant).forEach(([title, entries, className]) => grid.append(metricGroup(title, entries, className)));
-        card.append(header, grid);
-        cards.append(card);
+    const participants = matrixParticipants(match);
+    if (!participants.length) {
+      root.append(text("p", "10人詳細データなし", "match-detail-empty"));
+      return root;
+    }
+
+    const scroll = text("div", "", "match-matrix-scroll");
+    scroll.tabIndex = 0;
+    scroll.setAttribute("aria-label", "10人の試合詳細比較表。横スクロールできます");
+    const table = global.document.createElement("table");
+    table.className = "match-matrix";
+    table.setAttribute("aria-label", "味方・敵10人の試合詳細比較");
+    const head = global.document.createElement("thead");
+    const teams = global.document.createElement("tr");
+    const statsHeader = text("th", "Stats", "match-matrix-stats-header");
+    statsHeader.scope = "col";
+    statsHeader.rowSpan = 2;
+    const allyHeader = text("th", "ALLY（味方）", "match-matrix-team-label match-matrix-team-ally");
+    allyHeader.scope = "colgroup";
+    allyHeader.colSpan = participants.filter((participant) => participant.relation === "ALLY").length || 5;
+    const enemyHeader = text("th", "ENEMY（敵）", "match-matrix-team-label match-matrix-team-enemy match-matrix-team-separator");
+    enemyHeader.scope = "colgroup";
+    enemyHeader.colSpan = participants.filter((participant) => participant.relation === "ENEMY").length || 5;
+    teams.append(statsHeader, allyHeader, enemyHeader);
+    const champions = global.document.createElement("tr");
+    participants.forEach((participant, index) => champions.append(matrixHeader(participant, version, index > 0 && participant.relation === "ENEMY" && participants[index - 1].relation === "ALLY")));
+    head.append(teams, champions);
+
+    const body = global.document.createElement("tbody");
+    const groups = participants.map((participant) => participantStatGroups(match, participant));
+    const groupTitles = [];
+    groups.forEach((participantGroups) => participantGroups.forEach(([title]) => {
+      if (!groupTitles.includes(title)) groupTitles.push(title);
+    }));
+    groupTitles.forEach((title) => {
+      const entriesByParticipant = groups.map((participantGroups) => (
+        participantGroups.find(([groupTitle]) => groupTitle === title)?.[1] || []
+      ));
+      const labels = [];
+      entriesByParticipant.forEach((entries) => entries.forEach(([label]) => {
+        if (!labels.includes(label)) labels.push(label);
+      }));
+      if (!labels.length) return;
+      const category = global.document.createElement("tr");
+      const categoryCell = text("th", title, "match-matrix-category");
+      categoryCell.scope = "colgroup";
+      categoryCell.colSpan = participants.length + 1;
+      category.append(categoryCell);
+      body.append(category);
+      labels.forEach((label) => {
+        const row = global.document.createElement("tr");
+        const metric = text("th", label, "match-matrix-metric");
+        metric.scope = "row";
+        row.append(metric);
+        participants.forEach((participant, index) => {
+          const value = entriesByParticipant[index].find(([entryLabel]) => entryLabel === label)?.[1];
+          const cell = text("td", matrixValue(value), `match-matrix-value${index > 0 && participant.relation === "ENEMY" && participants[index - 1].relation === "ALLY" ? " match-matrix-team-separator" : ""}${participant.is_self ? " match-matrix-self" : ""}`);
+          cell.dataset.label = label;
+          row.append(cell);
+        });
+        body.append(row);
       });
-      section.append(cards);
-      root.append(section);
     });
-    if (!participants.length) root.append(text("p", "10人詳細データなし", "match-detail-empty"));
+    table.append(head, body);
+    scroll.append(table);
+    root.append(scroll);
     return root;
   }
 
@@ -756,7 +846,7 @@
     element.append(panel);
   }
 
-  function addDetailedStats(element, actions, match, registerDetail) {
+  function addDetailedStats(element, actions, match, registerDetail, version) {
     const detailId = `match-stats-${String(match.match_id || "match").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     const button = text("button", "", "m-detail-toggle");
     button.type = "button";
@@ -772,7 +862,7 @@
       panel,
       label: "試合詳細",
       shortLabel: "詳細",
-      render: () => panel.append(detailedStatsContent(match)),
+      render: () => panel.append(detailedStatsContent(match, version)),
     });
     actions.append(button);
     element.append(panel);
@@ -945,7 +1035,7 @@
     addOverviewDetail(element, actions, match, registerDetail);
     addFightDetail(element, actions, match, registerDetail, "self");
     addFightDetail(element, actions, match, registerDetail, "all");
-    addDetailedStats(element, actions, match, registerDetail);
+    addDetailedStats(element, actions, match, registerDetail, version);
     addCopyPanel(element, actions, match, registerDetail);
     return element;
   }
@@ -1067,7 +1157,7 @@
   if (global.document) init();
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
-    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, playerComparisonText, copyTextForSelection,
+    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

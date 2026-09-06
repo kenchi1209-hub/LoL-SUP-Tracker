@@ -333,7 +333,6 @@
 
 ### 実装・変更ファイル
 
-- `site_builder/render.py`
 - `site_builder/assets/match-history.js`
 - `site_builder/static/match-history.css`
 - `test_match_history.js`
@@ -432,11 +431,13 @@
 - Match Historyの匿名10人比較を試合概要の末尾へ移動した。
 - 試合詳細を味方5人→敵5人、Role順の10人カードへ拡張し、Basic / Combat / Economy / Vision / Support & Sustain / Fight & Objective / Progressionを追加した。
 - 詳細・Fight payloadを試合単位の遅延取得JSONに分離し、`history.html`の初期サイズを約27MBから約312KBへ抑えた。
+- 試合詳細の10人カードを廃止し、Champion icon・Role・Rankを列header、Statsを行に置く横比較マトリクスへ変更した。
 
 ### 決定事項
 
 - 公開する値はMatch-V5、Timeline、combat timelineに実在し、PIIを含まないものだけに限定する。
 - 個人のObjective関与、アイテム名・購入タイミングなど、現在の公開データだけで安全に確定できない値は表示しない。
+- マトリクス表はDesktopで比較性を優先し、Mobileでは表内だけを横スクロールさせる。headerとStats列はstickyとする。
 
 ### 実装・変更ファイル
 
@@ -449,6 +450,7 @@
 - `test_match_detail_exporter.py`
 - `test_match_history_payload.py`
 - `test_match_history.js`
+- `site_builder/render.py`（Champion icon IDの公開payload追加）
 - `PROJECT_STATUS.md`
 - `DEV_LOG.md`
 
@@ -457,6 +459,7 @@
 - 550試合・5,500 participantで主要Match-V5値と10分／15分Timeline値のcoverageを確認した。
 - 434件の試合詳細JSONにPIIキーが含まれないことを確認した。
 - Desktop 1280 / 1440 / 1920px、Mobile 375 / 390 / 430pxで詳細表示・横overflowなし、browser console error / warning 0件を確認した。
+- Desktopでは10Champion列を内部スクロールなしで表示し、Mobileではページ横overflowなし・表内横スクロールを確認した。
 
 ### 未解決
 

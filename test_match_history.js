@@ -96,6 +96,7 @@ const detailed = sampleMatch({ detail: { game_duration_seconds: 1800, side: "BLU
 const groups = history.participantStatGroups(detailed, participant);
 assert.strictEqual(groups.length, 8);
 assert(groups.some(([title]) => title === "Lane Difference"));
+assert(groups.flatMap(([, entries]) => entries).some(([label]) => label === "Fight W-E-L"));
 assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Vision Score / VS/min" && value.startsWith("0 /")));
 assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Solo Kills" && value === "0"));
 assert.strictEqual(history.matrixValue(0), "0");

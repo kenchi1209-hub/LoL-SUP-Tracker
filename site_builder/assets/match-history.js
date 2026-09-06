@@ -463,6 +463,8 @@
       if (fight.result === "EVEN") return false;
       return relation === "FRIENDLY" ? fight.result === "WIN" : fight.result === "LOSS";
     }).length;
+    const evens = fights.filter((fight) => fight.result === "EVEN").length;
+    const losses = fights.length - wins - evens;
     const involvement = fights.reduce((count, fight) => count + (fight.events || []).filter((event) => (
       event.type === "CHAMPION_KILL" && (
         event.killer?.champion === participant.champion
@@ -473,7 +475,7 @@
     const objectiveFights = fights.filter((fight) => (
       (fight.objectives_before || []).length || (fight.objectives_during || []).length || (fight.objectives_after || []).length
     )).length;
-    return { fights: fights.length, wins, teamfights, involvement, objectiveFights };
+    return { fights: fights.length, wins, evens, losses, teamfights, involvement, objectiveFights };
   }
 
   function participantStatGroups(match, participant) {
@@ -532,7 +534,8 @@
       ], "participant-support"],
       ["Fight / Objective", [
         ["Fight Participation", String(fight.fights)],
-        ["Fight Wins / Rate", `${fight.wins} / ${fight.fights ? percent(fight.wins, fight.fights) : "-"}`],
+        ["Fight W-E-L", `${fight.wins}W-${fight.evens}E-${fight.losses}L`],
+        ["Fight Win Rate", fight.fights ? percent(fight.wins, fight.fights) : "-"],
         ["Teamfight", String(fight.teamfights)],
         ["Kill / Assist Events", String(fight.involvement)],
         ["Objective-context Fights", String(fight.objectiveFights)],

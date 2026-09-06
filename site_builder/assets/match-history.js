@@ -415,24 +415,162 @@
     return table;
   }
 
+  function hasValue(value) {
+    return value !== null && value !== undefined && value !== "";
+  }
+
+  function integerOrDash(value) {
+    return hasValue(value) ? Math.round(Number(value)).toLocaleString("ja-JP") : "-";
+  }
+
+  function percentOrDash(value) {
+    return Number.isFinite(Number(value)) ? `${decimal(value, 1)}%` : "-";
+  }
+
+  function participantRate(value, match, digits = 1) {
+    if (!hasValue(value)) return "-";
+    const seconds = number(match.detail?.game_duration_seconds) || number(match.game_duration_seconds);
+    return seconds ? decimal(Number(value) / (seconds / 60), digits) : "-";
+  }
+
+  function participantCs(frame) {
+    if (!frame || !hasValue(frame.minions) || !hasValue(frame.jungle_minions)) return "-";
+    return integerOrDash(Number(frame.minions) + Number(frame.jungle_minions));
+  }
+
+  function laneDelta(participant, point, field, label) {
+    const value = participant.lane_opponent?.[point]?.[field];
+    if (!hasValue(value)) return null;
+    const sign = Number(value) > 0 ? "+" : "";
+    return [`${label}差`, `${sign}${integerOrDash(value)}`];
+  }
+
+  function participantFightStats(match, participant) {
+    const relation = participant.relation === "ALLY" ? "FRIENDLY" : "ENEMY";
+    const fights = (match.all_fights || []).filter((fight) => (
+      (fight.participants || []).some((person) => person.champion === participant.champion && person.relation === relation)
+    ));
+    const teamfights = fights.filter((fight) => fight.scale === "TEAMFIGHT").length;
+    const wins = fights.filter((fight) => {
+      if (fight.result === "EVEN") return false;
+      return relation === "FRIENDLY" ? fight.result === "WIN" : fight.result === "LOSS";
+    }).length;
+    const involvement = fights.reduce((count, fight) => count + (fight.events || []).filter((event) => (
+      event.type === "CHAMPION_KILL" && (
+        event.killer?.champion === participant.champion
+        || event.victim?.champion === participant.champion
+        || (event.assists || []).some((assist) => assist?.champion === participant.champion)
+      )
+    )).length, 0);
+    const objectiveFights = fights.filter((fight) => (
+      (fight.objectives_before || []).length || (fight.objectives_during || []).length || (fight.objectives_after || []).length
+    )).length;
+    return { fights: fights.length, wins, teamfights, involvement, objectiveFights };
+  }
+
+  function participantStatGroups(match, participant) {
+    const timeline = participant.timeline || {};
+    const at10 = timeline.at_10;
+    const at15 = timeline.at_15;
+    const levels = timeline.level_timestamps || {};
+    const fight = participantFightStats(match, participant);
+    const economy = [
+      ["Gold Earned", integerOrDash(participant.gold_earned)],
+      ["Gold/min", participantRate(participant.gold_earned, match, 0)],
+      ["CS", integerOrDash(participant.cs)],
+      ["CS/min", participantRate(participant.cs, match, 2)],
+      ["Minions / Jungle", `${integerOrDash(participant.minion_cs)} / ${integerOrDash(participant.jungle_cs)}`],
+      ["Gold@10 / @15", `${integerOrDash(at10?.gold)} / ${integerOrDash(at15?.gold)}`],
+      ["CS@10 / @15", `${participantCs(at10)} / ${participantCs(at15)}`],
+      ["XP@10 / @15", `${integerOrDash(at10?.xp)} / ${integerOrDash(at15?.xp)}`],
+    ];
+    [
+      laneDelta(participant, "at_10", "gold", "Gold@10"), laneDelta(participant, "at_15", "gold", "Gold@15"),
+      laneDelta(participant, "at_10", "minions", "Minion@10"), laneDelta(participant, "at_15", "minions", "Minion@15"),
+      laneDelta(participant, "at_10", "jungle_minions", "Jungle CS@10"), laneDelta(participant, "at_15", "jungle_minions", "Jungle CS@15"),
+      laneDelta(participant, "at_10", "xp", "XP@10"), laneDelta(participant, "at_15", "xp", "XP@15"),
+    ].filter(Boolean).forEach((item) => economy.push(item));
+    return [
+      ["Basic", [
+        ["Side / Team", `${participant.relation || "-"} / ${participant.win ? "WIN" : "LOSS"}`],
+        ["Role", ROLE_NAMES[participant.role] || participant.role || "-"],
+        ["Rank snapshot", participant.rank || "-"],
+        ["K / D / A", `${number(participant.kills)} / ${number(participant.deaths)} / ${number(participant.assists)}`],
+        ["KDA", decimal((number(participant.kills) + number(participant.assists)) / Math.max(number(participant.deaths), 1), 2)],
+        ["KP", percentOrDash(participant.kp_pct)],
+      ], "participant-basic"],
+      ["Combat", [
+        ["Damage to Champions", integerOrDash(participant.damage_to_champions)],
+        ["DPM / Damage Share", `${participantRate(participant.damage_to_champions, match, 0)} / ${percentOrDash(participant.dmg_pct)}`],
+        ["Damage Taken", integerOrDash(participant.damage_taken)],
+        ["Self Mitigated", integerOrDash(participant.damage_self_mitigated)],
+        ["Largest Spree / Multi", `${integerOrDash(participant.largest_killing_spree)} / ${integerOrDash(participant.largest_multi_kill)}`],
+        ["CC Others / Total CC", `${integerOrDash(participant.time_ccing_others)}s / ${integerOrDash(participant.total_time_cc_dealt)}`],
+        ["Solo Kills", integerOrDash(participant.solo_kills)],
+      ], "participant-combat"],
+      ["Economy", economy, "participant-economy"],
+      ["Vision", [
+        ["Vision Score / VS/min", `${integerOrDash(participant.vision_score)} / ${participantRate(participant.vision_score, match, 2)}`],
+        ["Wards Placed / Killed", `${integerOrDash(participant.wards_placed)} / ${integerOrDash(participant.wards_killed)}`],
+        ["Control Wards Bought / Placed", `${integerOrDash(participant.control_wards_bought)} / ${integerOrDash(participant.control_wards_placed)}`],
+      ], "participant-vision"],
+      ["Support / Sustain", [
+        ["Total Heal", integerOrDash(participant.total_heal)],
+        ["Heal on Teammates", integerOrDash(participant.heal_on_teammates)],
+        ["Shield on Teammates", integerOrDash(participant.shield_on_teammates)],
+      ], "participant-support"],
+      ["Fight / Objective", [
+        ["Fight Participation", String(fight.fights)],
+        ["Fight Wins / Rate", `${fight.wins} / ${fight.fights ? percent(fight.wins, fight.fights) : "-"}`],
+        ["Teamfight", String(fight.teamfights)],
+        ["Kill / Assist Events", String(fight.involvement)],
+        ["Objective-context Fights", String(fight.objectiveFights)],
+      ], "participant-fight"],
+      ["Progression", [
+        ["Level 6 / 11 / 16", `${hasValue(levels["6"]) ? clock(levels["6"]) : "-"} / ${hasValue(levels["11"]) ? clock(levels["11"]) : "-"} / ${hasValue(levels["16"]) ? clock(levels["16"]) : "-"}`],
+        ["Level@10 / @15", `${integerOrDash(at10?.level)} / ${integerOrDash(at15?.level)}`],
+      ], "participant-progression"],
+    ];
+  }
+
   function overviewContent(match) {
     const detail = match.detail || {};
     const participants = Array.isArray(detail.participants) ? detail.participants : [];
     const root = text("div", "", "match-detail-content");
     const overview = text("div", "", "match-detail-overview");
     overviewGroups(match).forEach(([title, entries, className]) => overview.append(metricGroup(title, entries, className)));
-    root.append(overview);
+    const comparisonTitle = text("h4", "味方・敵10人比較", "match-player-title");
+    const rankNote = text("p", "※ Rankはデータ取得時点のSolo/Duo Rank", "match-player-rank-note");
+    root.append(overview, comparisonTitle, rankNote, playerComparison(match));
     if (!selfParticipant(match) && participants.length) root.prepend(text("p", "自分の参加者データを確認できません", "match-detail-empty"));
     return root;
   }
 
   function detailedStatsContent(match) {
     const root = text("div", "", "match-detail-content match-detail-stats-content");
-    const groups = text("div", "", "match-detail-overview match-detail-stats-grid");
-    detailStatGroups(match).forEach(([title, entries, className]) => groups.append(metricGroup(title, entries, className)));
-    const comparisonTitle = text("h4", "味方・敵10人比較", "match-player-title");
-    const rankNote = text("p", "※ Rankはデータ取得時点のSolo/Duo Rank", "match-player-rank-note");
-    root.append(groups, comparisonTitle, rankNote, playerComparison(match));
+    const participants = Array.isArray(match.detail?.participants) ? match.detail.participants : [];
+    ["ALLY", "ENEMY"].forEach((relation) => {
+      const team = participants.filter((participant) => participant.relation === relation);
+      if (!team.length) return;
+      const section = text("section", "", `participant-team participant-team-${relation.toLowerCase()}`);
+      section.append(text("h4", relation === "ALLY" ? "ALLY（味方）" : "ENEMY（敵）", "participant-team-title"));
+      const cards = text("div", "", "participant-detail-cards");
+      team.forEach((participant) => {
+        const card = text("article", "", `participant-detail-card${participant.is_self ? " participant-detail-self" : ""}`);
+        const header = text("header", "", "participant-detail-header");
+        header.append(
+          text("strong", `${ROLE_NAMES[participant.role] || participant.role || "-"} ${participant.champion_name || participant.champion || "-"}`),
+          text("span", participant.is_self ? "YOU" : participant.relation, participant.is_self ? "participant-you" : "participant-relation")
+        );
+        const grid = text("div", "", "participant-detail-grid");
+        participantStatGroups(match, participant).forEach(([title, entries, className]) => grid.append(metricGroup(title, entries, className)));
+        card.append(header, grid);
+        cards.append(card);
+      });
+      section.append(cards);
+      root.append(section);
+    });
+    if (!participants.length) root.append(text("p", "10人詳細データなし", "match-detail-empty"));
     return root;
   }
 
@@ -498,16 +636,22 @@
     })].join("\n");
   }
 
+  function participantDetailText(match, participant) {
+    const heading = `【${participant.relation || "-"} ${ROLE_NAMES[participant.role] || participant.role || "-"} ${participant.champion_name || participant.champion || "-"}${participant.is_self ? " / YOU" : ""}】`;
+    return [heading, ...participantStatGroups(match, participant).map(([title, entries]) => metricText(title, entries))].join("\n\n");
+  }
+
   function copyTextForSelection(match, selected) {
     const sections = [];
     if (selected.overview) sections.push([
       "【試合概要】",
       `Match ID: ${match.match_id || "-"}`,
       ...overviewGroups(match).map(([title, entries]) => metricText(title, entries)),
+      playerComparisonText(match),
     ].join("\n\n"));
     if (selected.selfFights) sections.push(fightSectionText("戦闘詳細（自分）", Array.isArray(match.fights) ? match.fights : []));
     if (selected.allFights) sections.push(fightSectionText("戦闘詳細（全体）", Array.isArray(match.all_fights) ? match.all_fights : []));
-    if (selected.details) sections.push(["【試合詳細】", ...detailStatGroups(match).map(([title, entries]) => metricText(title, entries)), playerComparisonText(match)].join("\n\n"));
+    if (selected.details) sections.push(["【試合詳細】", ...(match.detail?.participants || []).map((participant) => participantDetailText(match, participant))].join("\n\n"));
     return sections.join("\n\n");
   }
 
@@ -539,7 +683,7 @@
     const entries = [];
     return (entry) => {
       entries.push(entry);
-      entry.button.addEventListener("click", () => {
+      entry.button.addEventListener("click", async () => {
         const opening = entry.panel.hidden;
         entries.forEach((other) => {
           if (other === entry || other.panel.hidden) return;
@@ -549,8 +693,17 @@
           setDetailButtonLabel(other.button, other.label, other.shortLabel, false);
         });
         if (opening && entry.panel.dataset.rendered !== "true") {
-          entry.render();
-          entry.panel.dataset.rendered = "true";
+          entry.button.disabled = true;
+          try {
+            await ensureMatchDetail(entry.match);
+            entry.render();
+            entry.panel.dataset.rendered = "true";
+          } catch (_error) {
+            entry.panel.replaceChildren(text("p", "試合詳細データを読み込めません", "match-detail-empty"));
+            entry.panel.dataset.rendered = "true";
+          } finally {
+            entry.button.disabled = false;
+          }
         }
         entry.panel.hidden = !opening;
         entry.button.setAttribute("aria-expanded", String(opening));
@@ -558,6 +711,27 @@
         setDetailButtonLabel(entry.button, entry.label, entry.shortLabel, opening);
       });
     };
+  }
+
+  async function ensureMatchDetail(match) {
+    if (match.detail_loaded) return;
+    if (match.detail_loading) return match.detail_loading;
+    const matchId = String(match.match_id || "");
+    if (!matchId) throw new Error("match id is missing");
+    match.detail_loading = global.fetch(`match-details/${encodeURIComponent(matchId)}.json`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`detail request failed: ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        if (!payload || typeof payload !== "object") throw new Error("invalid detail payload");
+        match.detail = payload.detail || {};
+        match.fights = Array.isArray(payload.fights) ? payload.fights : [];
+        match.all_fights = Array.isArray(payload.all_fights) ? payload.all_fights : [];
+        match.detail_loaded = true;
+      })
+      .finally(() => { delete match.detail_loading; });
+    return match.detail_loading;
   }
 
   function addOverviewDetail(element, actions, match, registerDetail) {
@@ -572,7 +746,7 @@
     panel.hidden = true;
     setDetailButtonLabel(button, "試合概要", "概要", false);
     registerDetail({
-      button,
+      button, match,
       panel,
       label: "試合概要",
       shortLabel: "概要",
@@ -594,7 +768,7 @@
     panel.hidden = true;
     setDetailButtonLabel(button, "試合詳細", "詳細", false);
     registerDetail({
-      button,
+      button, match,
       panel,
       label: "試合詳細",
       shortLabel: "詳細",
@@ -606,9 +780,6 @@
 
   function addFightDetail(element, actions, match, registerDetail, mode) {
     const isAll = mode === "all";
-    const fights = Array.isArray(isAll ? match.all_fights : match.fights)
-      ? (isAll ? match.all_fights : match.fights)
-      : [];
     const suffix = isAll ? "all" : "self";
     const label = isAll ? "戦闘詳細（全体）" : "戦闘詳細（自分）";
     const shortLabel = isAll ? "戦闘（全体）" : "戦闘（自分）";
@@ -617,20 +788,24 @@
     button.type = "button";
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", detailId);
-    button.setAttribute("aria-label", `${label}を開く（${fights.length}件）`);
-    if (!fights.length) button.disabled = true;
+    button.setAttribute("aria-label", `${label}を開く`);
     const detail = text("div", "", "fight-detail");
     detail.id = detailId;
     detail.hidden = true;
     setDetailButtonLabel(button, label, shortLabel, false);
     registerDetail({
-      button,
+      button, match,
       panel: detail,
       label,
       shortLabel,
-      render: () => detail.replaceChildren(...(
-        isAll ? fights.map(fightCard) : [fightSummaryContent(match), ...fights.map(fightCard)]
-      )),
+      render: () => {
+        const fights = Array.isArray(isAll ? match.all_fights : match.fights)
+          ? (isAll ? match.all_fights : match.fights)
+          : [];
+        detail.replaceChildren(...(
+          isAll ? fights.map(fightCard) : [fightSummaryContent(match), ...fights.map(fightCard)]
+        ));
+      },
     });
     actions.append(button);
     element.append(detail);
@@ -648,7 +823,7 @@
     panel.hidden = true;
     setDetailButtonLabel(button, "コピー", "コピー", false);
     registerDetail({
-      button,
+      button, match,
       panel,
       label: "コピー",
       shortLabel: "コピー",
@@ -892,7 +1067,7 @@
   if (global.document) init();
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
-    fightSummaryEntries, overviewGroups, detailStatGroups, copyTextForSelection,
+    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, playerComparisonText, copyTextForSelection,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

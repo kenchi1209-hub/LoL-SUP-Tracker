@@ -425,6 +425,48 @@
 
 1. 実データ更新後もLP Trendの勝敗色と補正表示が一致することを確認する。
 
+## 2026-09-06
+
+### 今日やったこと
+
+- Match Historyの匿名10人比較を試合概要の末尾へ移動した。
+- 試合詳細を味方5人→敵5人、Role順の10人カードへ拡張し、Basic / Combat / Economy / Vision / Support & Sustain / Fight & Objective / Progressionを追加した。
+- 詳細・Fight payloadを試合単位の遅延取得JSONに分離し、`history.html`の初期サイズを約27MBから約312KBへ抑えた。
+
+### 決定事項
+
+- 公開する値はMatch-V5、Timeline、combat timelineに実在し、PIIを含まないものだけに限定する。
+- 個人のObjective関与、アイテム名・購入タイミングなど、現在の公開データだけで安全に確定できない値は表示しない。
+
+### 実装・変更ファイル
+
+- `match_detail_exporter.py`
+- `build_site.py`
+- `site_builder/render.py`
+- `site_builder/assets/match-history.js`
+- `site_builder/static/match-history.css`
+- `test_data_paths.py`
+- `test_match_detail_exporter.py`
+- `test_match_history_payload.py`
+- `test_match_history.js`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+
+### 動作確認
+
+- 550試合・5,500 participantで主要Match-V5値と10分／15分Timeline値のcoverageを確認した。
+- 434件の試合詳細JSONにPIIキーが含まれないことを確認した。
+- Desktop 1280 / 1440 / 1920px、Mobile 375 / 390 / 430pxで詳細表示・横overflowなし、browser console error / warning 0件を確認した。
+
+### 未解決
+
+- アイテム名／購入履歴と個人のObjective関与は、公開用の安全なデータ定義が未整備のため未表示。
+
+### 次回
+
+1. 次回データ更新後、試合単位の詳細JSONとMatch History表示の整合を確認する。
+2. 必要な追加Statsだけをデータ定義・PII・coverageの確認後に検討する。
+
 ## 運用ルール
 
 ### 作業開始時

@@ -10,6 +10,7 @@ from data_paths import CSV_ROOT
 OUTPUT_PATH = CSV_ROOT / "match_details.json"
 ROLE_ORDER = {"TOP": 0, "JUNGLE": 1, "MIDDLE": 2, "BOTTOM": 3, "UTILITY": 4}
 SIDE_BY_TEAM_ID = {100: "BLUE", 200: "RED"}
+TIMELINE_TARGETS = {"at_10": 600000, "at_15": 900000}
 
 
 class MatchDetailExportError(RuntimeError):
@@ -40,7 +41,63 @@ def participant_team_metrics(participants):
     return totals
 
 
-def compact_participant(participant, player_team_id, my_puuid, snapshot, team_totals):
+def value_or_none(value):
+    return value if value is not None else None
+
+
+def timeline_frame_metrics(timeline, participant_id, timestamp):
+    """Return only the participant-frame values used by the public detail view."""
+    frames = ((timeline or {}).get("info") or {}).get("frames") or []
+    eligible = sorted(
+        (
+            frame for frame in frames
+            if isinstance(frame, dict) and isinstance(frame.get("timestamp"), int)
+            and frame["timestamp"] <= timestamp
+        ),
+        key=lambda frame: frame["timestamp"],
+        reverse=True,
+    )
+    for timeline_frame in eligible:
+        participant_frames = timeline_frame.get("participantFrames") or {}
+        frame = participant_frames.get(str(participant_id)) or participant_frames.get(participant_id)
+        if isinstance(frame, dict):
+            return {
+                "gold": value_or_none(frame.get("totalGold")),
+                "xp": value_or_none(frame.get("xp")),
+                "level": value_or_none(frame.get("level")),
+                "minions": value_or_none(frame.get("minionsKilled")),
+                "jungle_minions": value_or_none(frame.get("jungleMinionsKilled")),
+            }
+    return None
+
+
+def level_timestamps(timeline, participant_id):
+    result = {}
+    for frame in ((timeline or {}).get("info") or {}).get("frames") or []:
+        for event in frame.get("events") or []:
+            if event.get("type") != "LEVEL_UP" or event.get("participantId") != participant_id:
+                continue
+            level = event.get("level")
+            if level in (6, 11, 16) and level not in result:
+                result[str(level)] = event.get("timestamp")
+    return result
+
+
+def timeline_details(timeline, participant_id):
+    values = {
+        key: timeline_frame_metrics(timeline, participant_id, timestamp)
+        for key, timestamp in TIMELINE_TARGETS.items()
+    }
+    values["level_timestamps"] = level_timestamps(timeline, participant_id)
+    return values
+
+
+def challenge_value(participant, key):
+    challenges = participant.get("challenges") or {}
+    return challenges.get(key) if key in challenges else None
+
+
+def compact_participant(participant, player_team_id, my_puuid, snapshot, team_totals, timeline):
     team_id = participant.get("teamId")
     if team_id is None:
         raise ValueError("participant teamId is missing")
@@ -49,6 +106,9 @@ def compact_participant(participant, player_team_id, my_puuid, snapshot, team_to
     assists = participant.get("assists", 0) or 0
     damage = participant.get("totalDamageDealtToChampions", 0) or 0
     totals = team_totals.get(team_id, {})
+    participant_id = participant.get("participantId")
+    minion_cs = participant.get("totalMinionsKilled", 0) or 0
+    jungle_cs = participant.get("neutralMinionsKilled", 0) or 0
     return {
         "relation": "ALLY" if team_id == player_team_id else "ENEMY",
         "role": role,
@@ -56,18 +116,64 @@ def compact_participant(participant, player_team_id, my_puuid, snapshot, team_to
         "kills": kills,
         "deaths": participant.get("deaths", 0),
         "assists": assists,
-        "cs": participant.get("totalMinionsKilled", 0)
-        + participant.get("neutralMinionsKilled", 0),
+        "win": bool(participant.get("win")),
+        "cs": minion_cs + jungle_cs,
+        "minion_cs": minion_cs,
+        "jungle_cs": jungle_cs,
         "vision_score": participant.get("visionScore", 0),
         "damage_to_champions": damage,
         "is_self": is_player(participant, my_puuid),
         "rank": rank_short(snapshot, participant.get("participantId")),
         "kp_pct": percentage(kills + assists, totals.get("kills", 0)),
         "dmg_pct": percentage(damage, totals.get("damage", 0)),
+        "gold_earned": participant.get("goldEarned", 0) or 0,
+        "damage_taken": participant.get("totalDamageTaken", 0) or 0,
+        "damage_self_mitigated": participant.get("damageSelfMitigated", 0) or 0,
+        "largest_killing_spree": participant.get("largestKillingSpree", 0) or 0,
+        "largest_multi_kill": participant.get("largestMultiKill", 0) or 0,
+        "time_ccing_others": participant.get("timeCCingOthers", 0) or 0,
+        "total_time_cc_dealt": participant.get("totalTimeCCDealt", 0) or 0,
+        "total_heal": participant.get("totalHeal", 0) or 0,
+        "heal_on_teammates": participant.get("totalHealsOnTeammates", 0) or 0,
+        "shield_on_teammates": participant.get("totalDamageShieldedOnTeammates", 0) or 0,
+        "wards_placed": participant.get("wardsPlaced", 0) or 0,
+        "wards_killed": participant.get("wardsKilled", 0) or 0,
+        "control_wards_bought": participant.get("visionWardsBoughtInGame", 0) or 0,
+        "control_wards_placed": challenge_value(participant, "controlWardsPlaced"),
+        "solo_kills": challenge_value(participant, "soloKills"),
+        "timeline": timeline_details(timeline, participant_id),
     }
 
 
-def compact_match(data, my_puuid, snapshot=None):
+def add_lane_opponent_deltas(participants):
+    """Add lane comparisons only when each side has exactly one explicit role."""
+    for participant in participants:
+        role = participant.get("role")
+        opposite_relation = "ENEMY" if participant.get("relation") == "ALLY" else "ALLY"
+        candidates = [
+            other for other in participants
+            if other.get("relation") == opposite_relation and other.get("role") == role
+        ]
+        if not role or len(candidates) != 1:
+            continue
+        opponent = candidates[0]
+        comparison = {"champion": opponent.get("champion"), "role": role}
+        for key in TIMELINE_TARGETS:
+            own = (participant.get("timeline") or {}).get(key)
+            other = (opponent.get("timeline") or {}).get(key)
+            if not isinstance(own, dict) or not isinstance(other, dict):
+                continue
+            values = {}
+            for field in ("gold", "xp", "minions", "jungle_minions"):
+                if own.get(field) is not None and other.get(field) is not None:
+                    values[field] = own[field] - other[field]
+            if values:
+                comparison[key] = values
+        if any(key in comparison for key in TIMELINE_TARGETS):
+            participant["lane_opponent"] = comparison
+
+
+def compact_match(data, my_puuid, snapshot=None, timeline=None):
     info = data.get("info") or {}
     participants = info.get("participants") or []
     player = next((p for p in participants if is_player(p, my_puuid)), None)
@@ -80,7 +186,7 @@ def compact_match(data, my_puuid, snapshot=None):
 
     team_totals = participant_team_metrics(participants)
     compact = [
-        compact_participant(participant, player_team_id, my_puuid, snapshot, team_totals)
+        compact_participant(participant, player_team_id, my_puuid, snapshot, team_totals, timeline)
         for participant in participants
         if isinstance(participant, dict)
     ]
@@ -91,6 +197,7 @@ def compact_match(data, my_puuid, snapshot=None):
             participant["champion"],
         )
     )
+    add_lane_opponent_deltas(compact)
     return {
         "game_duration_seconds": info.get("gameDuration", 0),
         "side": side,
@@ -111,9 +218,14 @@ def build_match_details(my_puuid, raw_root=DEFAULT_RAW_ROOT):
             if snapshot_path.is_file():
                 with snapshot_path.open("r", encoding="utf-8") as file:
                     snapshot = json.load(file)
+            timeline_path = paths_for_match(match_id, raw_root).timeline
+            timeline = None
+            if timeline_path.is_file():
+                with timeline_path.open("r", encoding="utf-8") as file:
+                    timeline = json.load(file)
             if match_id in details:
                 raise ValueError(f"duplicate match_id: {match_id}")
-            details[match_id] = compact_match(data, my_puuid, snapshot)
+            details[match_id] = compact_match(data, my_puuid, snapshot, timeline)
         except Exception as error:
             failures.append((path, error))
             print(f"Match Detail公開データ読み込み失敗: {path} | {error}")

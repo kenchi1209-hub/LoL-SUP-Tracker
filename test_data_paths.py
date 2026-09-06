@@ -163,7 +163,14 @@ class DataPathsTest(unittest.TestCase):
             self.assertIn(marker, (output / "index.html").read_text(encoding="utf-8"))
             self.assertEqual(registry_version(), public_registry_version)
             self.assertFalse(any(path.name == "raw" for path in output.rglob("raw")))
-            self.assertFalse(any(path.suffix in {".csv", ".json"} for path in output.rglob("*")))
+            generated_data = [
+                path for path in output.rglob("*") if path.suffix in {".csv", ".json"}
+            ]
+            self.assertTrue(generated_data)
+            self.assertTrue(all(
+                path.suffix == ".json" and path.parent == output / "match-details"
+                for path in generated_data
+            ))
 
     def test_site_build_uses_environment_data_root(self):
         with tempfile.TemporaryDirectory() as directory:

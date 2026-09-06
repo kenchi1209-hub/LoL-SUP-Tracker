@@ -201,15 +201,21 @@ def match_history_data(rows):
             "objective_before_gain": row.get("objective_before_gain", 0),
             "objective_during_gain": row.get("objective_during_gain", 0),
             "objective_after_gain": row.get("objective_after_gain", 0),
-            "detail": load_match_detail(row.get("match_id", "")),
-            "fights": load_review_fights(row.get("match_id", "")),
-            "all_fights": load_all_fights(row.get("match_id", "")),
         }
         for row in rows
     ]
     return json.dumps(matches, ensure_ascii=False, separators=(",", ":")).replace(
         "<", "\\u003c"
     )
+
+
+def match_history_detail_payload(match_id):
+    """Return one anonymous, lazily requested Match History detail payload."""
+    return {
+        "detail": load_match_detail(match_id),
+        "fights": load_review_fights(match_id),
+        "all_fights": load_all_fights(match_id),
+    }
 
 
 def match_history_champion_options(rows):

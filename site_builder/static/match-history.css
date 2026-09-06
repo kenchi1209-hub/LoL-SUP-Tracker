@@ -129,6 +129,25 @@
 .match-player-side-red.match-player-self { background: rgba(211, 83, 61, .06); }
 .match-player-champion { font-weight: 600; }
 .match-player-self .match-player-champion { color: #f6c85f; }
+.participant-team { display: grid; gap: 7px; min-width: 0; }
+.participant-team + .participant-team { margin-top: 5px; }
+.participant-team-title { margin: 0; font-size: .78rem; }
+.participant-team-ally .participant-team-title { color: #63a9ff; }
+.participant-team-enemy .participant-team-title { color: #e36b4f; }
+.participant-detail-cards { display: grid; gap: 8px; min-width: 0; }
+.participant-detail-card {
+  min-width: 0; padding: 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+}
+.participant-detail-self { border-color: #f6c85f; background: rgba(246, 200, 95, .055); }
+.participant-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.participant-detail-header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .76rem; }
+.participant-relation, .participant-you {
+  flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: .6rem; font-weight: 700;
+}
+.participant-you { color: #f6c85f; border-color: rgba(246, 200, 95, .55); }
+.participant-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px 13px; }
+.participant-detail-grid .match-detail-group h4 { color: var(--muted); }
+.participant-detail-grid .match-detail-metric { grid-template-columns: minmax(0, 1fr) max-content; column-gap: 5px; }
 .fight-item {
   padding: 6px 7px; background: var(--panel2); border: 1px solid var(--border);
   border-left: 3px solid var(--border); border-radius: 8px; font-size: .67rem;
@@ -224,6 +243,7 @@
   .fight-objective-context { margin-bottom: 1px; }
   .match-detail-overview { grid-template-columns: minmax(0, 1fr); }
   .match-detail-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .participant-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-detail-info .match-detail-metrics {
     grid-template-columns: 215px 156px;
     grid-template-rows: repeat(4, auto);
@@ -289,6 +309,7 @@
     margin-top: 0; padding-top: 0; border-top: 0;
   }
   .match-detail-stats-grid { grid-template-columns: minmax(0, 1fr); }
+  .participant-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .fight-summary-metrics .match-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fight-summary-metrics .match-detail-metric { grid-template-columns: max-content minmax(0, 1fr); }
   .match-copy-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }

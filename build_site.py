@@ -6,12 +6,16 @@ data/csv/my_matches.csv を読み、Pythonで集計してから
 Data Dragon CDN を参照）。
 """
 import argparse
+import json
 import os
 import shutil
 
 from champion_registry import registry_version
 from site_builder.data import configure_data_root as configure_site_data, load_matches
-from site_builder.render import configure_data_root as configure_render_data
+from site_builder.render import (
+    configure_data_root as configure_render_data,
+    match_history_detail_payload,
+)
 from site_builder.history import build_history_html
 from site_builder.lp_progress import (
     build_lp_page,
@@ -44,6 +48,14 @@ def main(data_root=None):
         f.write(html_out)
     with open(os.path.join(OUT_DIR, "history.html"), "w", encoding="utf-8") as f:
         f.write(build_history_html(rows, version))
+    detail_dir = os.path.join(OUT_DIR, "match-details")
+    os.makedirs(detail_dir, exist_ok=True)
+    for row in rows:
+        match_id = str(row.get("match_id", ""))
+        if not match_id:
+            continue
+        with open(os.path.join(detail_dir, f"{match_id}.json"), "w", encoding="utf-8") as f:
+            json.dump(match_history_detail_payload(match_id), f, ensure_ascii=False, separators=(",", ":"))
     lp_payload = build_lp_payload(rows, version)
     with open(os.path.join(OUT_DIR, "lp.html"), "w", encoding="utf-8") as f:
         f.write(build_lp_page(rows, lp_payload))

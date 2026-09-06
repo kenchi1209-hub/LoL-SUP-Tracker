@@ -1,6 +1,6 @@
 # LoL Analytics — Project Status
 
-最終更新: 2026-09-05
+最終更新: 2026-09-06
 
 ## プロジェクト概要
 
@@ -19,13 +19,10 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - タイムゾーン: 共通utilityによるJST固定
 - raw端末間同期: PrivateDataをraw正本として初回投入・Mac復元まで完了
 - 現在のデータ:
-  - `my_matches.csv`: 406戦（サイト対象はリメイク除外後394戦）
-  - `timeline_summary.csv`: 508試合分
-  - `fight_details.json`: 508試合分、約8.6MB
-  - `match_details.json`: 508試合分、10人比較用の匿名化済み公開データ
-  - PrivateData: 508 Match directory、必須raw 2,540ファイル
-  - combat timeline: 508試合分（公開Fight Detailと完全一致）
-  - 現在Rank: Silver IV / 56 LP / 36勝49敗
+  - `my_matches.csv`: 446戦（サイト対象はリメイク除外後434戦）
+  - `timeline_summary.csv` / `fight_details.json` / `match_details.json`: 550試合分
+  - PrivateData: 550試合分のMatch Detail・Timeline・combat timelineを保持
+  - 現在Rank: Silver IV / 38 LP / 49勝65敗
 
 ## 実装済み機能
 
@@ -76,6 +73,9 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - 試合詳細に公式`teamId`で分類したALLY 5人 / ENEMY 5人の匿名10人比較を表示
 - 10人比較は正式positionを使用し、Champion、K/D/A、CS/m、VS/m、DPMを表示
 - 試合詳細の公開データにはRiot ID、Summoner Name、PUUID等の個人識別情報を含めない
+- 試合概要の末尾に匿名10人比較を配置し、試合詳細は味方5人→敵5人をRole順（TOP / JG / MID / ADC / SUP）で表示
+- 試合詳細はBasic / Combat / Economy / Vision / Support & Sustain / Fight & Objective / Progressionを、Match-V5・Timeline・combat timelineで確認できる値だけで表示
+- 詳細・Fightデータは試合カードを開いた時だけ`public/match-details/{match_id}.json`から取得し、初期HTMLへ全試合分を埋め込まない
 
 ### 集計・出力
 
@@ -113,7 +113,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `data/csv/my_matches.csv` | Git管理 | Match DetailとTimeline SummaryをJOINしたサイト・集計の主データ |
 | `data/csv/timeline_summary.csv` | Git管理 | Match ID単位のFight集計 |
 | `data/csv/fight_details.json` | Git管理 | GitHub Pages用に軽量化した`review_fights`。Fight Detailの正規公開データ |
-| `data/csv/match_details.json` | Git管理 | Match-V5から必要な戦績だけを匿名化した試合詳細・10人比較データ |
+| `data/csv/match_details.json` | Git管理 | Match-V5 / Timelineから必要な戦績だけを匿名化した試合詳細・10人比較データ |
 | `data/csv/current_rank.json` | Git管理 | 現在のSolo Rank |
 | `data/csv/last_updated.txt` | Git管理 | データ更新日時 |
 | `data/csv/monthly/` | Git管理（一部除外） | 月別match・summary |
@@ -136,7 +136,7 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 | `analyze_timeline.py` | TimelineからFight・死亡・Objective等を解析 |
 | `timeline_summary_exporter.py` | combat timelineから試合単位集計CSVを生成 |
 | `fight_detail_exporter.py` | `review_fights`を公開用`fight_details.json`へ軽量化。既存Match減少・解析失敗時は書き込みを拒否し、成功時はatomic replace |
-| `match_detail_exporter.py` | Match-V5から匿名10人比較を`match_details.json`へ抽出。既存Match減少・解析失敗を拒否しatomic replace |
+| `match_detail_exporter.py` | Match-V5 / Timelineから匿名10人詳細を`match_details.json`へ抽出。既存Match減少・解析失敗を拒否しatomic replace |
 | `restore_missing_fight_raw.py` | 公開Fight Detailとcombat timelineの差集合を算出し、不足rawを既存Riot API・Timeline解析で復元する専用CLI（dry-run既定） |
 | `sync_private_data.py` | PublicとPrivateDataのrawを非破壊でローカル同期 |
 | `raw_paths.py` | Match単位の正式raw pathを一元管理 |
@@ -171,7 +171,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - Fight IDは抽出後に振り直さず、元JSONのIDを表示する。
 - Timeline Summaryは`my_matches.csv`へJOINするが、raw JSON自体はCSVへ埋め込まない。
 - GitHub Pagesは`data/raw/`へ依存しない。公開用Fight Detailは`data/csv/fight_details.json`へ軽量化する。
-- 試合詳細・10人比較はPIIを除外した`data/csv/match_details.json`を使用し、Pages buildからrawを参照しない。
+- 試合詳細・10人比較はPIIを除外した`data/csv/match_details.json`を使用し、Pages buildからrawを参照しない。静的build時に試合単位の遅延取得JSONを生成する。
 - 10人比較のALLY / ENEMYは公式`teamId`、RoleはMatch-V5の`teamPosition`（空の場合のみ`individualPosition`）を使い、Champion等から推測しない。
 - Fight Detailは初期表示性能のためlazy DOM生成とする。
 - UI日本語化は表示時マッピングで行い、EARLY / WIN等の内部値は変更しない。
@@ -194,7 +194,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 
 ## 直近で進行中の作業
 
-Match Historyの詳細UIをRole別概要・共通詳細Stats・コピー機能へ再編した。今後はRole別に追加可能な安全なStatsを整理する。
+Match Historyの詳細UIを、試合概要の10人比較と、味方／敵10人の詳細Stats・コピー機能へ再編した。Timeline由来の公開可能なStatsは、実データcoverageを確認した上でのみ追加する。
 
 合意済み方針:
 
@@ -204,7 +204,7 @@ Match Historyの詳細UIをRole別概要・共通詳細Stats・コピー機能�
 
 ## 次にやること
 
-1. Role別に追加できる公開Statsを監査し、必要なものだけ段階的に詳細UIへ加える。
+1. 取得不能な外部指標（アイテム名／購入履歴、個人のObjective関与等）を必要に応じて別途設計する。
 2. PrivateDataに新規MatchがMatch directory単位で保存されることを次回更新時に確認する。
 3. 次のQueue 420開始前snapshotで条件が揃った場合だけ、`JP1_600584640`のLP後補正を再検証する。
 

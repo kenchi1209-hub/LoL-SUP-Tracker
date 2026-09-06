@@ -81,4 +81,25 @@ const other = history.copyTextForSelection(sampleMatch({ match_id: "JP1_COPY_TWO
 assert(other.includes("ナミ"));
 assert(!other.includes("JP1_COPY_ONE"));
 
+const participant = {
+  relation: "ALLY", role: "TOP", champion: "Aatrox", champion_name: "エイトロックス", is_self: true,
+  win: true, rank: "SILVER IV 90 LP", kills: 2, deaths: 3, assists: 4, kp_pct: 50,
+  damage_to_champions: 10000, damage_taken: 7000, damage_self_mitigated: 6000,
+  largest_killing_spree: 2, largest_multi_kill: 2, time_ccing_others: 30, total_time_cc_dealt: 4000,
+  solo_kills: 0, gold_earned: 8000, cs: 100, minion_cs: 80, jungle_cs: 20,
+  vision_score: 0, wards_placed: 0, wards_killed: 2, control_wards_bought: 1, control_wards_placed: 0,
+  total_heal: 0, heal_on_teammates: 0, shield_on_teammates: 0,
+  timeline: { at_10: { gold: 5000, xp: 8000, level: 6, minions: 55, jungle_minions: 10 }, at_15: null, level_timestamps: { 6: 600000 } },
+  lane_opponent: { at_10: { gold: 500, xp: 300, minions: 4, jungle_minions: 0 } },
+};
+const detailed = sampleMatch({ detail: { game_duration_seconds: 1800, side: "BLUE", participants: [participant] } });
+const groups = history.participantStatGroups(detailed, participant);
+assert.strictEqual(groups.length, 7);
+assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Vision Score / VS/min" && value.startsWith("0 /")));
+assert(groups.flatMap(([, entries]) => entries).some(([label, value]) => label === "Solo Kills" && value === "0"));
+const detailedCopy = history.copyTextForSelection(detailed, { overview: true, selfFights: false, allFights: false, details: true });
+assert(detailedCopy.includes("【味方・敵10人比較】"));
+assert(detailedCopy.includes("【ALLY TOP エイトロックス / YOU】"));
+assert(detailedCopy.includes("Gold@10 / @15"));
+
 console.log("match history detail/copy tests: OK");

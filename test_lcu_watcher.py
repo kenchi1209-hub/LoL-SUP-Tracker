@@ -345,7 +345,7 @@ class LCUWatcherTest(unittest.TestCase):
             client = FakeClient(
                 phases=["Matchmaking"],
                 sessions=[session(420)],
-                puuids=["matching-puuid", LCUUnavailable("transient")],
+                puuids=["matching-puuid", None],
             )
             watcher = LCUWatcher(
                 client=client,

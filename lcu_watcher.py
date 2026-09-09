@@ -258,6 +258,8 @@ class LCUWatcher:
                 active_puuid = self.client.get_current_puuid()
             except LCUError:
                 return rank
+            if not isinstance(active_puuid, str) or not active_puuid:
+                return rank
             if active_puuid == self._verified_account_puuid:
                 return rank
             self._verified_account_puuid = None

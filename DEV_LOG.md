@@ -537,6 +537,12 @@
 
 1. Windows実機でQueue INからrecheck rank採用、Ranked終了からexact captureまでのログを確認する。
 
+#### 追記 — 起動直後のidentity再試行
+
+- 起動時のcurrent-summoner不調でidentity cacheが未確立のままになった実機ログを受け、Lobby／Matchmaking／ReadyCheck／ChampSelectと未確認時の5秒pollで照合を再試行するようにした。
+- Rank fetched、identity未確認によるnot adopted、照合後のadoptedを分離してログ出力する。照合成功直後はrecheckを即時実行し、ChampSelect前のbefore候補へ反映する。
+- LCU Client停止中のため実機endpointのHTTP status／schemaは今回取得できなかった。`/lol-summoner/v1/current-summoner`の`puuid`を引き続き唯一の本人確認sourceとし、未検証の代替endpointは採用していない。
+
 ## 運用ルール
 
 ### 作業開始時

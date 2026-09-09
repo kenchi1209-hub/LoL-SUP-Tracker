@@ -357,8 +357,68 @@ class LCUWatcherTest(unittest.TestCase):
             watcher.tick()
             self.assertEqual(watcher.recheck["latest_rank"]["leaguePoints"], 23)
             joined = "\n".join(logs)
-            self.assertIn("recheck rank: SILVER IV 23LP 41W/56L", joined)
+            self.assertIn("recheck rank adopted: SILVER IV 23LP 41W/56L", joined)
             self.assertNotIn("recheck rank not adopted", joined)
+
+    def test_identity_retries_on_each_safe_pre_game_phase(self):
+        for phase in ("Lobby", "Matchmaking", "ReadyCheck", "ChampSelect"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
+                data_root = Path(temporary)
+                (data_root / "csv").mkdir()
+                (data_root / "csv" / "current_rank.json").write_text(
+                    json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+                )
+                logs = []
+                client = FakeClient(
+                    phases=[phase], sessions=[session(420)], puuid="matching-puuid",
+                )
+                client.connected = True
+                watcher = LCUWatcher(
+                    client=client,
+                    emit=logs.append,
+                    sleeper=lambda _seconds: None,
+                    live=True,
+                    data_root=data_root,
+                )
+                watcher.tick()
+                self.assertEqual(watcher._verified_account_puuid, "matching-puuid")
+                self.assertIn("[LP] identity verified", logs)
+
+    def test_identity_can_recover_during_queue_poll_and_adopts_latest_rank_before_game_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+            )
+            clock = [0]
+            logs = []
+            client = FakeClient(
+                phases=["Lobby", "Matchmaking", "ReadyCheck", "ChampSelect", "InProgress"],
+                sessions=[session(420)] * 5,
+                ranks=[
+                    {"tier": "SILVER", "division": "IV", "leaguePoints": 19, "wins": 58, "losses": 75},
+                    {"tier": "SILVER", "division": "IV", "leaguePoints": 19, "wins": 58, "losses": 75},
+                    {"tier": "SILVER", "division": "IV", "leaguePoints": 19, "wins": 58, "losses": 75},
+                ],
+                puuid="matching-puuid",
+                puuids=[LCUUnavailable("startup"), LCUUnavailable("lobby"), LCUUnavailable("matchmaking"), LCUUnavailable("poll"), "matching-puuid"],
+            )
+            watcher = LCUWatcher(
+                client=client,
+                emit=logs.append,
+                sleeper=lambda _seconds: None,
+                live=True,
+                data_root=data_root,
+                monotonic=lambda: clock[0],
+            )
+            with patch("lcu_watcher.reconcile_previous_rank_after", return_value={"status": "confirmed"}):
+                for _ in range(5):
+                    watcher.tick()
+            self.assertEqual(watcher.pending["lcu_before_rank"]["leaguePoints"], 19)
+            joined = "\n".join(logs)
+            self.assertIn("[LP] identity verified", joined)
+            self.assertIn("[LP] recheck rank adopted: SILVER IV 19LP 58W/75L", joined)
 
     def test_recheck_rejects_rank_when_current_account_does_not_match_private_data(self):
         with tempfile.TemporaryDirectory() as temporary:

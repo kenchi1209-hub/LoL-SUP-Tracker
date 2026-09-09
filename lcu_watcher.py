@@ -35,6 +35,8 @@ MATCH_UPDATE_MAX_ATTEMPTS = 13
 MATCH_UPDATE_MAX_WAIT_SECONDS = 120
 RANK_RECHECK_INTERVAL_SECONDS = 30
 RANK_RECHECK_MAX_SECONDS = 300
+IDENTITY_RETRY_INTERVAL_SECONDS = 5
+IDENTITY_RETRY_PHASES = {"Lobby", "Matchmaking", "ReadyCheck", "ChampSelect"}
 
 
 class LiveProcessError(RuntimeError):
@@ -128,6 +130,7 @@ class LCUWatcher:
         # Kept only for the current LCU connection.  It is never logged or
         # written to disk, and is cleared on reconnect/disconnect.
         self._verified_account_puuid = None
+        self._next_identity_retry_at = 0
         self.checkpoint_pending = None
 
     def _log(self, message):
@@ -221,12 +224,13 @@ class LCUWatcher:
         if not isinstance(observed_rank, dict):
             self._log("[LP] recheck rank unavailable")
             return
+        self._log(f"[LP] recheck rank fetched: {self._format_rank(observed_rank)}")
         rank = self._verified_lcu_before_rank(observed_rank)
         if rank is None:
             self._log("[LP] recheck rank not adopted: account verification unavailable")
             return
         self.recheck["latest_rank"] = rank
-        self._log(f"[LP] recheck rank: {self._format_rank(rank)}")
+        self._log(f"[LP] recheck rank adopted: {self._format_rank(rank)}")
         try:
             paths = get_data_paths(self.data_root)
             result = reconcile_previous_rank_after(
@@ -293,6 +297,25 @@ class LCUWatcher:
         if not active_puuid or active_puuid != saved_puuid:
             return False
         self._verified_account_puuid = active_puuid
+        return True
+
+    def _retry_identity_verification(self, phase, force=False):
+        """Retry the canonical LCU identity endpoint without adopting Rank yet."""
+        if (
+            not self.live
+            or self.data_root is None
+            or self._verified_account_puuid is not None
+            or phase not in IDENTITY_RETRY_PHASES
+        ):
+            return False
+        if not force:
+            now = self.monotonic()
+            if now < self._next_identity_retry_at:
+                return False
+            self._next_identity_retry_at = now + IDENTITY_RETRY_INTERVAL_SECONDS
+        if not self._verify_active_account():
+            return False
+        self._log("[LP] identity verified")
         return True
 
     def _log_rank_diagnostic(self):
@@ -491,6 +514,11 @@ class LCUWatcher:
         session_id = session_id_from_session(session)
         if queue_id is not None and phase != previous:
             self._log(f"[LCU] queue: {queue_id}")
+        identity_just_verified = self._retry_identity_verification(phase, force=phase != previous)
+        if identity_just_verified and self.recheck is not None:
+            # Adopt a newly verified pre-game rank immediately instead of
+            # waiting for the normal 30-second recheck cadence.
+            self._poll_recheck(force=True)
         if queue_id == SOLO_QUEUE_ID and phase in START_PHASES:
             if self.pending is None:
                 self._start_pending(phase, queue_id, session_id)
@@ -531,11 +559,12 @@ class LCUWatcher:
             if not self.client.connected:
                 self.client.connect()
                 self._verified_account_puuid = None
+                self._next_identity_retry_at = 0
                 self._waiting_logged = False
                 self._log("[LCU] client detected")
                 self._log("[LCU] connected")
                 self._log_rank_diagnostic()
-                self._verify_active_account()
+                self._retry_identity_verification("Lobby", force=True)
             phase = self.client.get_gameflow_phase()
             session = self.client.get_gameflow_session()
             self._handle_phase(phase, session)
@@ -544,6 +573,7 @@ class LCUWatcher:
         except LCUUnavailable:
             self.client.disconnect()
             self._verified_account_puuid = None
+            self._next_identity_retry_at = 0
             if not self._waiting_logged:
                 self._log("[LCU] waiting for client")
                 self._waiting_logged = True

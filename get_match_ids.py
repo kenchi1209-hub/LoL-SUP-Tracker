@@ -1,19 +1,27 @@
-import os
-import requests
-from dotenv import load_dotenv
+"""Print the latest Match IDs for the configured Riot ID.
 
-load_dotenv()
+This is a manual utility only; the normal update flow uses ``main.py``.
+"""
 
-API_KEY = os.getenv("RIOT_API_KEY")
-PUUID = "vzAqIeueWsbi6QrYsnjBe4CZ9Cs3nJNLACpgTA4jlu_8sQERtnn_3BdIkmhbChKv5fi14SZHruBs4Q"
+from config import GAME_NAME, TAG_LINE
+from riot_api import get_match_ids, get_puuid
 
-url = f"https://asia.api.riotgames.com/lol/match/v5/matches/by-puuid/{PUUID}/ids?start=0&count=10"
 
-headers = {
-    "X-Riot-Token": API_KEY
-}
+def configured_puuid():
+    """Resolve the configured Riot ID without logging or falling back to a PUUID."""
+    if not isinstance(GAME_NAME, str) or not GAME_NAME.strip():
+        raise RuntimeError("RIOT_GAME_NAME is required")
+    if not isinstance(TAG_LINE, str) or not TAG_LINE.strip():
+        raise RuntimeError("RIOT_TAG_LINE is required")
+    return get_puuid(GAME_NAME.strip(), TAG_LINE.strip())
 
-response = requests.get(url, headers=headers)
 
-print("Status Code:", response.status_code)
-print(response.json())
+def main():
+    match_ids = get_match_ids(configured_puuid(), count=10)
+    print(f"Match IDs: {len(match_ids)}")
+    for match_id in match_ids:
+        print(match_id)
+
+
+if __name__ == "__main__":
+    main()

@@ -555,6 +555,11 @@
 - Riot Account APIの設定済みRiot ID解決値、PrivateData `current_rank.json`、直近Match-V5の自分participant PUUIDは一致した。PrivateDataのPUUIDは古くなく、文字列の空白・NUL・型異常もなかった。
 - Queue IN recheckの本人確認は、LCU local PUUIDとの不可能な比較を廃止し、LCU `gameName`／`tagLine`と設定済みRiot IDをtrim後に厳密比較する方式へ変更した。Riot PUUIDのSource of Truthは引き続きRiot Account APIであり、比較不一致時のRank不採用・retry・capture・publishの安全条件は維持する。
 
+#### 追記 — 手動Match ID utilityの固定PUUID除去
+
+- 未使用の`get_match_ids.py`に残っていた別アカウントの固定PUUIDを削除した。
+- 手動実行時も設定済みRiot IDを既存`riot_api.get_puuid`で解決し、通常更新と同じ対象PUUIDを使う。Riot ID設定が空ならfallbackせず安全停止する。
+
 ## 運用ルール
 
 ### 作業開始時

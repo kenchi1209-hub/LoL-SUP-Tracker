@@ -182,6 +182,7 @@ Role詳細にはOverview、Form & Streak、Performance Trend、Win/Loss Comparis
 - 公開`fight_details.json`の再生成は、既存Match IDが欠落する場合にデフォルトで拒否する。意図的な減少だけ`--allow-removals`で許可する。
 - `.gitignore`の`data/raw/`と`public/`除外は維持する。
 - Champion Registry更新は取得・parse・validation完了後にatomic replaceし、取得失敗や既存より小さい応答では既存Registryを維持する。通常Championの手動一覧は持たず、Match-V5表示名とData Dragon IDの差異など特殊aliasだけをコード管理する。
+- 手動用`get_match_ids.py`も、固定PUUIDを持たず設定済みRiot IDをRiot Account APIで解決する。対象Riot IDが未設定または解決不能なら、別アカウントへfallbackせず停止する。
 
 ## 現在の未解決事項
 

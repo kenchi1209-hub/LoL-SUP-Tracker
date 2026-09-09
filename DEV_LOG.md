@@ -503,6 +503,40 @@
 
 1. PrivateDataとPublicを順に反映後、build-only Pages deploymentで最新PrivateDataを用いたサイト生成を確認する。
 
+### 追記 — LCU Watcher
+
+#### 今日やったこと
+
+- Windows LCU WatcherのQueue IN LP再検証と、`CHECKPOINT_REQUIRED`後の次試合終了トリガーを修正した。
+- 同一LCU接続で起動時にPrivateDataと照合済みのaccount identityをメモリ保持し、gameflow中のcurrent-summoner一時失敗時もRankを安全に採用できるようにした。
+- captureのcheckpoint停止時にpendingをterminal化し、次のQueue 420で新しいpendingを開始できるようにした。
+- finish phaseで条件不足の場合に、非PIIのskip診断を一度だけ出すようにした。
+
+#### 決定事項
+
+- cached identityはLCU再接続で破棄する。current-summoner endpointが復帰した場合は再照合し、不一致ならRankを採用しない。
+- `CHECKPOINT_REQUIRED`は前試合の処理停止だけを表す。checkpoint pendingと次試合pendingを同一参照にせず、前者をメモリ内の診断用記録として残す。
+
+#### 実装・変更ファイル
+
+- `lcu_watcher.py`
+- `test_lcu_watcher.py`
+- `PROJECT_STATUS.md`
+- `DEV_LOG.md`
+
+#### 動作確認
+
+- 起動時verified identityの再利用、一致しないaccountの拒否、checkpoint後のWaitingForStats／EndOfGame fallbackの各状態遷移をmockで確認した。
+- Python全158テスト、Python／JavaScript構文、PrivateData入力のサイト生成、`git diff --check`を確認した。
+
+#### 未解決
+
+- 実機の次回Queue 420で、recheck rankログとcheckpoint後の次試合finishログを確認する。
+
+#### 次回
+
+1. Windows実機でQueue INからrecheck rank採用、Ranked終了からexact captureまでのログを確認する。
+
 ## 運用ルール
 
 ### 作業開始時

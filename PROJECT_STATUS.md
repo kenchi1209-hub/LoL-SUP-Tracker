@@ -201,6 +201,8 @@ Match Historyの詳細UIを、試合概要の簡易10人比較と、味方／敵
 - LP Progressは実装済み。LP未確定区間は値を補完せず、usable point間を点線connectorで表示する。勝敗を持つ試合pointは青丸（WIN）／赤丸（LOSS）に統一し、official exactは塗りあり、external historicalは同色の半透明塗りと色枠で区別する。
 - Queue 420の次試合開始前に同一アカウントのLCU Rankを取得できた場合だけ、直前の`rank_after`を再検証する。W/Lが同一でLPだけ異なる時は、終了直後の観測値を保持したまま最終LPへ補正する。照合不能・不一致の原因が確定できない場合は自動補正しない。
 - Queue 420の`Matchmaking`検知時には、LCU Rankの再検証セッションを開始する。30秒間隔・最大5分で読み取り、queueキャンセル後も継続し、最新の安全なRankを次試合beforeへ渡す。ポーリング中はPrivateDataを書き換えない。
+- Queue INの再検証は、Watcher接続時にPrivateDataのPUUIDと照合済みのLCU account identityだけを同一接続内でメモリ保持する。gameflow遷移でcurrent-summoner endpointが一時的に失敗しても、その確認済みidentityを使えるが、endpoint復帰時の不一致またはLCU再接続時は採用を停止・再照合する。
+- `CHECKPOINT_REQUIRED`は対象試合だけをterminalとして停止する。次のQueue 420では前試合のcheckpoint pendingをメモリ上で保持したまま、新しいpendingを作り直して終了トリガーを処理する。
 - 連続した試合のLPを後から復元する場合は、ユーザー確認済みの各試合差分、LCUで観測した境界Rank、Current Rank、W/L連続性がすべて一致する時だけ許可する。復元snapshotは`manual_recovery` / `user_confirmed_with_lcu_anchor`として保存し、official exactとは混同しない。
 
 ## 次にやること

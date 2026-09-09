@@ -21,13 +21,17 @@ from lcu_watcher import (
 
 
 class FakeClient:
-    def __init__(self, phases=None, sessions=None, ranks=None, unavailable=False, puuid="test-puuid"):
+    def __init__(
+        self, phases=None, sessions=None, ranks=None, unavailable=False,
+        puuid="test-puuid", puuids=None,
+    ):
         self.connected = False
         self.phases = list(phases or [])
         self.sessions = list(sessions or [])
         self.ranks = list(ranks or [])
         self.unavailable = unavailable
         self.puuid = puuid
+        self.puuids = list(puuids or [])
         self.disconnects = 0
 
     def connect(self):
@@ -51,6 +55,11 @@ class FakeClient:
         return self.ranks.pop(0) if self.ranks else {"tier": "SILVER", "division": "IV", "leaguePoints": 23, "wins": 41, "losses": 56}
 
     def get_current_puuid(self):
+        if self.puuids:
+            value = self.puuids.pop(0)
+            if isinstance(value, BaseException):
+                raise value
+            return value
         return self.puuid
 
 
@@ -325,6 +334,57 @@ class LCUWatcherTest(unittest.TestCase):
             self.assertIn("post-match correction candidate detected", joined)
             self.assertIn("recheck session ended: game_start", joined)
 
+    def test_recheck_reuses_startup_verified_account_when_summoner_is_transiently_unavailable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+            )
+            logs = []
+            client = FakeClient(
+                phases=["Matchmaking"],
+                sessions=[session(420)],
+                puuids=["matching-puuid", LCUUnavailable("transient")],
+            )
+            watcher = LCUWatcher(
+                client=client,
+                emit=logs.append,
+                sleeper=lambda _seconds: None,
+                live=True,
+                data_root=data_root,
+            )
+            watcher.tick()
+            self.assertEqual(watcher.recheck["latest_rank"]["leaguePoints"], 23)
+            joined = "\n".join(logs)
+            self.assertIn("recheck rank: SILVER IV 23LP 41W/56L", joined)
+            self.assertNotIn("recheck rank not adopted", joined)
+
+    def test_recheck_rejects_rank_when_current_account_does_not_match_private_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "saved-puuid"}), encoding="utf-8",
+            )
+            logs = []
+            client = FakeClient(
+                phases=["Matchmaking"], sessions=[session(420)], puuid="other-puuid",
+            )
+            client.connected = True
+            watcher = LCUWatcher(
+                client=client,
+                emit=logs.append,
+                sleeper=lambda _seconds: None,
+                live=True,
+                data_root=data_root,
+            )
+            watcher.tick()
+            self.assertIsNone(watcher.recheck["latest_rank"])
+            self.assertIn(
+                "[LP] recheck rank not adopted: account verification unavailable", logs,
+            )
+
     def test_recheck_ignores_other_queues_does_not_duplicate_and_expires(self):
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary)
@@ -591,6 +651,47 @@ class LCUWatcherTest(unittest.TestCase):
             self.assertIn(expected, joined)
             self.assertTrue(all("checkpoint" not in " ".join(call[0]).lower() for call in runner.calls))
 
+    def test_checkpoint_required_terminalizes_old_pending_and_next_ranked_finishes_once(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(2), FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=[
+                    "ChampSelect", "InProgress", "WaitingForStats",
+                    "ChampSelect", "InProgress", "WaitingForStats", "EndOfGame", "Lobby",
+                ],
+                sessions=[session(420)] * 8,
+            ),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        for _ in range(8):
+            watcher.tick()
+        self.assertEqual(self.logs.count("[LP] ranked finished"), 2)
+        self.assertEqual(self.logs.count("[LP] CHECKPOINT_REQUIRED"), 1)
+        self.assertTrue(watcher.checkpoint_pending["terminal"])
+        self.assertTrue(watcher.checkpoint_pending["checkpoint_required"])
+        self.assertIsNot(watcher.pending, watcher.checkpoint_pending)
+        self.assertTrue(watcher.pending["completed"])
+        self.assertEqual(len(runner.calls), 4)
+
+    def test_checkpoint_required_next_ranked_uses_end_of_game_fallback_once(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(2), FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=[
+                    "ChampSelect", "InProgress", "WaitingForStats",
+                    "ChampSelect", "InProgress", "PreEndOfGame", "EndOfGame", "Lobby",
+                ],
+                sessions=[session(420)] * 8,
+            ),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        for _ in range(8):
+            watcher.tick()
+        self.assertEqual(self.logs.count("[LP] ranked finished"), 2)
+        self.assertEqual(len(runner.calls), 4)
+
     def test_live_capture_zero_requires_rank_after_confirmation(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])
         watcher = self.live_watcher(
@@ -645,6 +746,7 @@ class LCUWatcherTest(unittest.TestCase):
             for _ in range(4):
                 watcher.tick()
             self.assertEqual(runner.calls, [])
+            self.assertIn("[LP] finish trigger skipped:", "\n".join(self.logs))
 
     def test_terminal_pending_accepts_next_champ_select_without_session_id_dependency(self):
         watcher = self.watcher(

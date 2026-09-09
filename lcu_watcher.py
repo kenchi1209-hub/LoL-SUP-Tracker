@@ -125,6 +125,10 @@ class LCUWatcher:
         self.auto_publish = auto_publish
         self.publisher = publisher
         self.recheck = None
+        # Kept only for the current LCU connection.  It is never logged or
+        # written to disk, and is cleared on reconnect/disconnect.
+        self._verified_account_puuid = None
+        self.checkpoint_pending = None
 
     def _log(self, message):
         self.emit(message)
@@ -151,6 +155,16 @@ class LCUWatcher:
         }
         self._log("[LP] solo ranked detected")
         self._log("[LP] pending started")
+
+    def _require_checkpoint(self):
+        """Terminally stop one game without blocking the next ranked game."""
+        pending = self.pending
+        pending["checkpoint_required"] = True
+        pending["terminal"] = True
+        # Preserve the stopped game's in-memory state for diagnostics while a
+        # following Queue 420 game receives a fresh pending record.
+        self.checkpoint_pending = pending
+        self._log("[LP] CHECKPOINT_REQUIRED")
 
     def _latest_recheck_rank(self):
         if not isinstance(self.recheck, dict):
@@ -200,11 +214,16 @@ class LCUWatcher:
             return
         self.recheck["next_poll_at"] = now + RANK_RECHECK_INTERVAL_SECONDS
         try:
-            rank = self._verified_lcu_before_rank(self.client.get_solo_rank())
+            observed_rank = self.client.get_solo_rank()
         except LCUError:
-            rank = None
-        if rank is None:
             self._log("[LP] recheck rank unavailable")
+            return
+        if not isinstance(observed_rank, dict):
+            self._log("[LP] recheck rank unavailable")
+            return
+        rank = self._verified_lcu_before_rank(observed_rank)
+        if rank is None:
+            self._log("[LP] recheck rank not adopted: account verification unavailable")
             return
         self.recheck["latest_rank"] = rank
         self._log(f"[LP] recheck rank: {self._format_rank(rank)}")
@@ -232,10 +251,34 @@ class LCUWatcher:
         """
         if not self.live or self.data_root is None or not isinstance(rank, dict):
             return None
-        get_puuid = getattr(self.client, "get_current_puuid", None)
-        if not callable(get_puuid):
+        if self._verified_account_puuid is not None:
+            # Revalidate when the endpoint is available; retain only the
+            # already verified identity during a transient gameflow failure.
+            try:
+                active_puuid = self.client.get_current_puuid()
+            except LCUError:
+                return rank
+            if active_puuid == self._verified_account_puuid:
+                return rank
+            self._verified_account_puuid = None
+        if not self._verify_active_account():
             self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
             return None
+        return rank
+
+    def _verify_active_account(self):
+        """Cache a verified LCU account for this connection only.
+
+        The current-summoner endpoint can be transiently unavailable during
+        gameflow transitions.  A PUUID already verified after this same LCU
+        connection was established remains safe to reuse in memory; reconnect
+        clears it before another rank can be adopted.
+        """
+        if not self.live or self.data_root is None:
+            return False
+        get_puuid = getattr(self.client, "get_current_puuid", None)
+        if not callable(get_puuid):
+            return False
         try:
             active_puuid = get_puuid()
             with (self.data_root / "csv" / "current_rank.json").open(
@@ -243,13 +286,12 @@ class LCUWatcher:
             ) as file:
                 saved_rank = json.load(file)
         except (LCUError, OSError, json.JSONDecodeError):
-            self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
-            return None
+            return False
         saved_puuid = saved_rank.get("puuid") if isinstance(saved_rank, dict) else None
         if not active_puuid or active_puuid != saved_puuid:
-            self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
-            return None
-        return rank
+            return False
+        self._verified_account_puuid = active_puuid
+        return True
 
     def _log_rank_diagnostic(self):
         """Show only non-identifying LCU rank fields; never treat them as canonical."""
@@ -356,13 +398,12 @@ class LCUWatcher:
                         pending["terminal"] = True
                         return
                     if capture.returncode == 2:
-                        pending["terminal"] = True
-                        self._log("[LP] CHECKPOINT_REQUIRED")
+                        self._require_checkpoint()
                         return
                     raise LiveProcessError(f"lp_snapshot.py exited with code {capture.returncode}")
 
                 if len(matches) > 1:
-                    self._log("[LP] CHECKPOINT_REQUIRED")
+                    self._require_checkpoint()
                     return
                 remaining = retry_deadline - self.monotonic()
                 if remaining <= 0:
@@ -419,6 +460,19 @@ class LCUWatcher:
         if not id_match:
             self._log("[LP] session id unavailable/mismatch; continuing with phase-safe trigger")
 
+    def _log_finish_skip(self, phase, queue_id):
+        """Emit one non-PII explanation when a finish phase cannot trigger."""
+        pending = self.pending
+        if pending is None or pending.get("finish_skip_diagnostics_logged"):
+            return
+        pending["finish_skip_diagnostics_logged"] = True
+        self._log(
+            "[LP] finish trigger skipped: "
+            f"phase={phase} queue={queue_id} in_progress={pending['has_reached_in_progress']} "
+            f"processing={pending['processing_started']} completed={pending['completed']} "
+            f"terminal={pending['terminal']}"
+        )
+
     def _handle_phase(self, phase, session):
         previous = self.last_phase
         if phase != previous:
@@ -447,6 +501,17 @@ class LCUWatcher:
             self._end_recheck("game_start")
         if self.pending and phase == "WaitingForStats":
             self._log_waiting_diagnostics(queue_id, session_id)
+        if self.pending and phase in FINISH_PHASES:
+            can_finish = (
+                self.pending["queue_id"] == SOLO_QUEUE_ID
+                and self.pending["has_reached_in_progress"]
+                and not self.pending["processing_started"]
+                and not self.pending["completed"]
+                and not self.pending["terminal"]
+                and queue_id == SOLO_QUEUE_ID
+            )
+            if not can_finish:
+                self._log_finish_skip(phase, queue_id)
         if (
             self.pending
             and self.pending["queue_id"] == SOLO_QUEUE_ID
@@ -463,10 +528,12 @@ class LCUWatcher:
         try:
             if not self.client.connected:
                 self.client.connect()
+                self._verified_account_puuid = None
                 self._waiting_logged = False
                 self._log("[LCU] client detected")
                 self._log("[LCU] connected")
                 self._log_rank_diagnostic()
+                self._verify_active_account()
             phase = self.client.get_gameflow_phase()
             session = self.client.get_gameflow_session()
             self._handle_phase(phase, session)
@@ -474,6 +541,7 @@ class LCUWatcher:
             return phase not in {None, "None"}
         except LCUUnavailable:
             self.client.disconnect()
+            self._verified_account_puuid = None
             if not self._waiting_logged:
                 self._log("[LCU] waiting for client")
                 self._waiting_logged = True

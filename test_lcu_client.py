@@ -106,6 +106,17 @@ class LCUClientTest(unittest.TestCase):
         with self.assertRaises(LCUError):
             client.get_current_puuid()
 
+    def test_current_riot_id_is_trimmed_and_requires_both_fields(self):
+        session = Mock()
+        session.get.return_value = Response(200, {"gameName": " Name ", "tagLine": " TAG "})
+        client = LCUClient(process_provider=lambda: [{"ExecutablePath": str(self.client_path)}], session=session)
+        client.connect()
+        self.assertEqual(client.get_current_riot_id(), ("Name", "TAG"))
+        for payload in ({}, {"gameName": None, "tagLine": "TAG"}, {"gameName": "Name", "tagLine": ""}):
+            with self.subTest(payload=payload):
+                session.get.return_value = Response(200, payload)
+                self.assertIsNone(client.get_current_riot_id())
+
     def test_session_diagnostic_excludes_pii(self):
         session = {"puuid": "hidden", "gameData": {"queue": {"id": 420}, "gameMode": "CLASSIC", "gameType": "MATCHED_GAME", "summonerId": "hidden"}}
         diagnostic = session_diagnostic(session, "ChampSelect")

@@ -10,6 +10,7 @@ import sys
 import time
 
 from data_paths import get_data_paths
+from config import GAME_NAME, TAG_LINE
 from lcu_client import LCUError, LCUUnavailable, LCUClient, session_diagnostic
 from lcu_publish import PrivateDataPublisher, PublishError
 from lp_snapshot import (
@@ -102,6 +103,18 @@ def session_id_from_session(session):
     return None
 
 
+def normalized_riot_id(identity):
+    """Return a trimmed Riot ID pair, or None without equating different IDs."""
+    if not isinstance(identity, (tuple, list)) or len(identity) != 2:
+        return None
+    game_name, tag_line = identity
+    if not isinstance(game_name, str) or not isinstance(tag_line, str):
+        return None
+    game_name = game_name.strip()
+    tag_line = tag_line.strip()
+    return (game_name, tag_line) if game_name and tag_line else None
+
+
 class LCUWatcher:
     def __init__(
         self, client=None, emit=print, sleeper=time.sleep, idle_interval=3,
@@ -129,7 +142,7 @@ class LCUWatcher:
         self.recheck = None
         # Kept only for the current LCU connection.  It is never logged or
         # written to disk, and is cleared on reconnect/disconnect.
-        self._verified_account_puuid = None
+        self._verified_account_riot_id = None
         self._identity_verification_reason = None
         self._next_identity_retry_at = 0
         self.checkpoint_pending = None
@@ -257,18 +270,19 @@ class LCUWatcher:
         """
         if not self.live or self.data_root is None or not isinstance(rank, dict):
             return None
-        if self._verified_account_puuid is not None:
+        if self._verified_account_riot_id is not None:
             # Revalidate when the endpoint is available; retain only the
             # already verified identity during a transient gameflow failure.
             try:
-                active_puuid = self.client.get_current_puuid()
+                active_riot_id = self.client.get_current_riot_id()
             except LCUError:
                 return rank
-            if not isinstance(active_puuid, str) or not active_puuid:
+            active_riot_id = normalized_riot_id(active_riot_id)
+            if active_riot_id is None:
                 return rank
-            if active_puuid == self._verified_account_puuid:
+            if active_riot_id == self._verified_account_riot_id:
                 return rank
-            self._verified_account_puuid = None
+            self._verified_account_riot_id = None
         if not self._verify_active_account():
             reason = self._identity_verification_reason or "LCU endpoint"
             self._log(f"[LP] identity verification unavailable: {reason}")
@@ -279,38 +293,30 @@ class LCUWatcher:
         """Cache a verified LCU account for this connection only.
 
         The current-summoner endpoint can be transiently unavailable during
-        gameflow transitions.  A PUUID already verified after this same LCU
+        gameflow transitions.  A Riot ID already verified after this same LCU
         connection was established remains safe to reuse in memory; reconnect
         clears it before another rank can be adopted.
         """
         if not self.live or self.data_root is None:
             self._identity_verification_reason = "LCU endpoint"
             return False
-        get_puuid = getattr(self.client, "get_current_puuid", None)
-        if not callable(get_puuid):
+        get_riot_id = getattr(self.client, "get_current_riot_id", None)
+        if not callable(get_riot_id):
             self._identity_verification_reason = "LCU endpoint"
             return False
         try:
-            active_puuid = get_puuid()
+            active_riot_id = normalized_riot_id(get_riot_id())
         except LCUError:
             self._identity_verification_reason = "LCU endpoint"
             return False
-        if not isinstance(active_puuid, str) or not active_puuid:
+        expected_riot_id = normalized_riot_id((GAME_NAME, TAG_LINE))
+        if active_riot_id is None or expected_riot_id is None:
             self._identity_verification_reason = "empty identity"
             return False
-        try:
-            with (self.data_root / "csv" / "current_rank.json").open(
-                "r", encoding="utf-8",
-            ) as file:
-                saved_rank = json.load(file)
-        except (OSError, json.JSONDecodeError):
-            self._identity_verification_reason = "LCU endpoint"
-            return False
-        saved_puuid = saved_rank.get("puuid") if isinstance(saved_rank, dict) else None
-        if active_puuid != saved_puuid:
+        if active_riot_id != expected_riot_id:
             self._identity_verification_reason = "account mismatch"
             return False
-        self._verified_account_puuid = active_puuid
+        self._verified_account_riot_id = active_riot_id
         self._identity_verification_reason = None
         return True
 
@@ -319,7 +325,7 @@ class LCUWatcher:
         if (
             not self.live
             or self.data_root is None
-            or self._verified_account_puuid is not None
+            or self._verified_account_riot_id is not None
             or phase not in IDENTITY_RETRY_PHASES
         ):
             return False
@@ -573,7 +579,7 @@ class LCUWatcher:
         try:
             if not self.client.connected:
                 self.client.connect()
-                self._verified_account_puuid = None
+                self._verified_account_riot_id = None
                 self._identity_verification_reason = None
                 self._next_identity_retry_at = 0
                 self._waiting_logged = False
@@ -588,7 +594,7 @@ class LCUWatcher:
             return phase not in {None, "None"}
         except LCUUnavailable:
             self.client.disconnect()
-            self._verified_account_puuid = None
+            self._verified_account_riot_id = None
             self._identity_verification_reason = None
             self._next_identity_retry_at = 0
             if not self._waiting_logged:

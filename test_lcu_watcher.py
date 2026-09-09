@@ -9,6 +9,8 @@ from unittest.mock import patch
 from lcu_client import LCUUnavailable
 from lcu_publish import PublishError
 from lcu_watcher import (
+    GAME_NAME,
+    TAG_LINE,
     LCUWatcher,
     MATCH_UPDATE_MAX_ATTEMPTS,
     SingleInstanceLock,
@@ -23,7 +25,7 @@ from lcu_watcher import (
 class FakeClient:
     def __init__(
         self, phases=None, sessions=None, ranks=None, unavailable=False,
-        puuid="test-puuid", puuids=None,
+        puuid="test-puuid", puuids=None, riot_id=None, riot_ids=None,
     ):
         self.connected = False
         self.phases = list(phases or [])
@@ -32,6 +34,8 @@ class FakeClient:
         self.unavailable = unavailable
         self.puuid = puuid
         self.puuids = list(puuids or [])
+        self.riot_id = riot_id if riot_id is not None else (GAME_NAME, TAG_LINE)
+        self.riot_ids = list(riot_ids or [])
         self.disconnects = 0
 
     def connect(self):
@@ -61,6 +65,14 @@ class FakeClient:
                 raise value
             return value
         return self.puuid
+
+    def get_current_riot_id(self):
+        if self.riot_ids:
+            value = self.riot_ids.pop(0)
+            if isinstance(value, BaseException):
+                raise value
+            return value
+        return self.riot_id
 
 
 def session(queue_id=None, game_id="test-game-1"):
@@ -236,12 +248,12 @@ class LCUWatcherTest(unittest.TestCase):
             self.assertNotIn("game-a", joined)
             self.assertNotIn("game-b", joined)
 
-    def test_live_pre_match_rank_is_used_only_when_lcu_account_matches_private_data(self):
+    def test_live_pre_match_rank_is_used_only_when_lcu_riot_id_matches_config(self):
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary)
             (data_root / "csv").mkdir()
             (data_root / "csv" / "current_rank.json").write_text(
-                json.dumps({"puuid": "matching-puuid"}), encoding="utf-8",
+                json.dumps({"puuid": "stale-riot-puuid"}), encoding="utf-8",
             )
             matching = LCUWatcher(
                 client=FakeClient(puuid="matching-puuid"), live=True,
@@ -252,14 +264,30 @@ class LCUWatcherTest(unittest.TestCase):
 
             logs = []
             mismatch = LCUWatcher(
-                client=FakeClient(puuid="different-puuid"), live=True,
+                client=FakeClient(riot_id=("different-name", "different-tag")), live=True,
                 data_root=data_root, emit=logs.append,
             )
             mismatch._start_pending("ChampSelect", 420, "game")
             self.assertIsNone(mismatch.pending["lcu_before_rank"])
             self.assertIn("identity verification unavailable: account mismatch", "\n".join(logs))
 
-    def test_puuid_mismatch_never_passes_a_recheck_snapshot_to_capture(self):
+    def test_trimmed_lcu_riot_id_is_verified_without_using_current_rank_puuid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data_root = Path(temporary)
+            (data_root / "csv").mkdir()
+            (data_root / "csv" / "current_rank.json").write_text(
+                json.dumps({"puuid": "stale-riot-puuid"}), encoding="utf-8",
+            )
+            watcher = LCUWatcher(
+                client=FakeClient(riot_id=(f" {GAME_NAME} ", f"\t{TAG_LINE}\n")),
+                live=True,
+                data_root=data_root,
+                emit=lambda _message: None,
+            )
+            watcher._start_pending("ChampSelect", 420, "game")
+            self.assertEqual(watcher.pending["lcu_before_rank"]["leaguePoints"], 23)
+
+    def test_riot_id_mismatch_never_passes_a_recheck_snapshot_to_capture(self):
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary)
             (data_root / "csv").mkdir()
@@ -271,7 +299,7 @@ class LCUWatcherTest(unittest.TestCase):
                 client=FakeClient(
                     phases=["ChampSelect", "InProgress", "WaitingForStats"],
                     sessions=[session(420)] * 3,
-                    puuid="other-puuid",
+                    riot_id=("other-name", "other-tag"),
                 ),
                 emit=lambda _message: None,
                 sleeper=lambda _seconds: None,
@@ -302,7 +330,6 @@ class LCUWatcherTest(unittest.TestCase):
                     {"tier": "SILVER", "division": "IV", "leaguePoints": 50, "wins": 46, "losses": 60},
                     {"tier": "SILVER", "division": "IV", "leaguePoints": 69, "wins": 46, "losses": 60},
                 ],
-                puuid="matching-puuid",
             )
             client.connected = True
             logs = []
@@ -345,7 +372,7 @@ class LCUWatcherTest(unittest.TestCase):
             client = FakeClient(
                 phases=["Matchmaking"],
                 sessions=[session(420)],
-                puuids=["matching-puuid", None],
+                riot_ids=[(GAME_NAME, TAG_LINE), None],
             )
             watcher = LCUWatcher(
                 client=client,
@@ -370,7 +397,7 @@ class LCUWatcherTest(unittest.TestCase):
                 )
                 logs = []
                 client = FakeClient(
-                    phases=[phase], sessions=[session(420)], puuid="matching-puuid",
+                    phases=[phase], sessions=[session(420)],
                 )
                 client.connected = True
                 watcher = LCUWatcher(
@@ -381,7 +408,7 @@ class LCUWatcherTest(unittest.TestCase):
                     data_root=data_root,
                 )
                 watcher.tick()
-                self.assertEqual(watcher._verified_account_puuid, "matching-puuid")
+                self.assertEqual(watcher._verified_account_riot_id, (GAME_NAME, TAG_LINE))
                 self.assertIn("[LP] identity verified", logs)
 
     def test_identity_can_recover_during_queue_poll_and_adopts_latest_rank_before_game_start(self):
@@ -401,8 +428,7 @@ class LCUWatcherTest(unittest.TestCase):
                     {"tier": "SILVER", "division": "IV", "leaguePoints": 19, "wins": 58, "losses": 75},
                     {"tier": "SILVER", "division": "IV", "leaguePoints": 19, "wins": 58, "losses": 75},
                 ],
-                puuid="matching-puuid",
-                puuids=[LCUUnavailable("startup"), LCUUnavailable("lobby"), LCUUnavailable("matchmaking"), LCUUnavailable("poll"), "matching-puuid"],
+                riot_ids=[LCUUnavailable("startup"), LCUUnavailable("lobby"), LCUUnavailable("matchmaking"), LCUUnavailable("poll"), (GAME_NAME, TAG_LINE)],
             )
             watcher = LCUWatcher(
                 client=client,
@@ -420,7 +446,7 @@ class LCUWatcherTest(unittest.TestCase):
             self.assertIn("[LP] identity verified", joined)
             self.assertIn("[LP] recheck rank adopted: SILVER IV 19LP 58W/75L", joined)
 
-    def test_recheck_rejects_rank_when_current_account_does_not_match_private_data(self):
+    def test_recheck_rejects_rank_when_current_account_does_not_match_config(self):
         with tempfile.TemporaryDirectory() as temporary:
             data_root = Path(temporary)
             (data_root / "csv").mkdir()
@@ -429,7 +455,7 @@ class LCUWatcherTest(unittest.TestCase):
             )
             logs = []
             client = FakeClient(
-                phases=["Matchmaking"], sessions=[session(420)], puuid="other-puuid",
+                phases=["Matchmaking"], sessions=[session(420)], riot_id=("other-name", "other-tag"),
             )
             client.connected = True
             watcher = LCUWatcher(
@@ -449,10 +475,10 @@ class LCUWatcherTest(unittest.TestCase):
         cases = (
             (LCUUnavailable("endpoint"), "LCU endpoint"),
             (None, "empty identity"),
-            ("", "empty identity"),
-            ("different-puuid", "account mismatch"),
+            (("", "tag"), "empty identity"),
+            (("different-name", "different-tag"), "account mismatch"),
         )
-        for active_puuid, reason in cases:
+        for active_riot_id, reason in cases:
             with self.subTest(reason=reason), tempfile.TemporaryDirectory() as temporary:
                 data_root = Path(temporary)
                 (data_root / "csv").mkdir()
@@ -462,7 +488,7 @@ class LCUWatcherTest(unittest.TestCase):
                 logs = []
                 client = FakeClient(
                     phases=["Matchmaking"], sessions=[session(420)],
-                    puuids=[active_puuid, active_puuid],
+                    riot_ids=[active_riot_id, active_riot_id],
                 )
                 client.connected = True
                 watcher = LCUWatcher(
@@ -477,7 +503,7 @@ class LCUWatcherTest(unittest.TestCase):
                 self.assertIn(f"identity verification unavailable: {reason}", joined)
                 self.assertIn(f"recheck rank not adopted: {reason}", joined)
                 self.assertNotIn("saved-puuid", joined)
-                self.assertNotIn("different-puuid", joined)
+                self.assertNotIn("different-name", joined)
 
     def test_recheck_ignores_other_queues_does_not_duplicate_and_expires(self):
         with tempfile.TemporaryDirectory() as temporary:

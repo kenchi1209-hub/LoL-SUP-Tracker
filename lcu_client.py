@@ -210,6 +210,19 @@ class LCUClient:
         puuid = summoner.get("puuid")
         return puuid if isinstance(puuid, str) and puuid else None
 
+    def get_current_riot_id(self):
+        """Return the active Riot ID pair for in-memory equality checks only."""
+        summoner = self.get_json("/lol-summoner/v1/current-summoner")
+        if not isinstance(summoner, dict):
+            raise LCUError("LCU current-summoner returned a non-object response")
+        game_name = summoner.get("gameName")
+        tag_line = summoner.get("tagLine")
+        if not isinstance(game_name, str) or not isinstance(tag_line, str):
+            return None
+        game_name = game_name.strip()
+        tag_line = tag_line.strip()
+        return (game_name, tag_line) if game_name and tag_line else None
+
     def get_solo_rank(self):
         stats = self.get_ranked_stats()
         queue_map = stats.get("queueMap") if isinstance(stats, dict) else None

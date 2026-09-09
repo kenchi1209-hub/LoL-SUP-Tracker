@@ -549,6 +549,12 @@
 - Rank取得の`fetched`ログとRank不採用のreasonログを分け、LCU current-summoner endpoint・identity値・PrivateData照合のどの段階かを次回実機ログだけで判別できるようにした。
 - 診断追加のみであり、PUUID比較、Rank採用、retry、exact capture、auto-publishの動作は変更していない。
 
+#### 追記 — LCU local PUUID namespace監査
+
+- 実機のLCU `current-summoner.puuid`（36文字）と、PrivateData／Match-V5／Riot Account APIのRiot PUUID（78文字）が別namespaceであることを、実値を出さないSHA-256 fingerprint比較で確認した。
+- Riot Account APIの設定済みRiot ID解決値、PrivateData `current_rank.json`、直近Match-V5の自分participant PUUIDは一致した。PrivateDataのPUUIDは古くなく、文字列の空白・NUL・型異常もなかった。
+- Queue IN recheckの本人確認は、LCU local PUUIDとの不可能な比較を廃止し、LCU `gameName`／`tagLine`と設定済みRiot IDをtrim後に厳密比較する方式へ変更した。Riot PUUIDのSource of Truthは引き続きRiot Account APIであり、比較不一致時のRank不採用・retry・capture・publishの安全条件は維持する。
+
 ## 運用ルール
 
 ### 作業開始時

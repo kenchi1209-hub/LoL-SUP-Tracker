@@ -93,8 +93,18 @@ class LCUClientTest(unittest.TestCase):
         client = LCUClient(process_provider=lambda: [{"ExecutablePath": str(self.client_path)}], session=session)
         client.connect()
         self.assertEqual(client.get_current_puuid(), "runtime-only-puuid")
-        session.get.return_value = Response(200, {})
-        self.assertIsNone(client.get_current_puuid())
+        for payload in ({}, {"puuid": None}, {"puuid": ""}):
+            with self.subTest(payload=payload):
+                session.get.return_value = Response(200, payload)
+                self.assertIsNone(client.get_current_puuid())
+
+    def test_current_puuid_rejects_non_object_response(self):
+        session = Mock()
+        session.get.return_value = Response(200, [])
+        client = LCUClient(process_provider=lambda: [{"ExecutablePath": str(self.client_path)}], session=session)
+        client.connect()
+        with self.assertRaises(LCUError):
+            client.get_current_puuid()
 
     def test_session_diagnostic_excludes_pii(self):
         session = {"puuid": "hidden", "gameData": {"queue": {"id": 420}, "gameMode": "CLASSIC", "gameType": "MATCHED_GAME", "summonerId": "hidden"}}

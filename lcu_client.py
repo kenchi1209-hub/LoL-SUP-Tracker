@@ -205,7 +205,9 @@ class LCUClient:
     def get_current_puuid(self):
         """Return the active LCU account PUUID for in-memory equality checks only."""
         summoner = self.get_json("/lol-summoner/v1/current-summoner")
-        puuid = summoner.get("puuid") if isinstance(summoner, dict) else None
+        if not isinstance(summoner, dict):
+            raise LCUError("LCU current-summoner returned a non-object response")
+        puuid = summoner.get("puuid")
         return puuid if isinstance(puuid, str) and puuid else None
 
     def get_solo_rank(self):

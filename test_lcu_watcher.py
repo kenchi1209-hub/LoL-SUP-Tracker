@@ -257,7 +257,7 @@ class LCUWatcherTest(unittest.TestCase):
             )
             mismatch._start_pending("ChampSelect", 420, "game")
             self.assertIsNone(mismatch.pending["lcu_before_rank"])
-            self.assertIn("account verification unavailable", "\n".join(logs))
+            self.assertIn("identity verification unavailable: account mismatch", "\n".join(logs))
 
     def test_puuid_mismatch_never_passes_a_recheck_snapshot_to_capture(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -442,8 +442,42 @@ class LCUWatcherTest(unittest.TestCase):
             watcher.tick()
             self.assertIsNone(watcher.recheck["latest_rank"])
             self.assertIn(
-                "[LP] recheck rank not adopted: account verification unavailable", logs,
+                "[LP] recheck rank not adopted: account mismatch", logs,
             )
+
+    def test_recheck_identity_failure_reasons_are_non_pii(self):
+        cases = (
+            (LCUUnavailable("endpoint"), "LCU endpoint"),
+            (None, "empty identity"),
+            ("", "empty identity"),
+            ("different-puuid", "account mismatch"),
+        )
+        for active_puuid, reason in cases:
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as temporary:
+                data_root = Path(temporary)
+                (data_root / "csv").mkdir()
+                (data_root / "csv" / "current_rank.json").write_text(
+                    json.dumps({"puuid": "saved-puuid"}), encoding="utf-8",
+                )
+                logs = []
+                client = FakeClient(
+                    phases=["Matchmaking"], sessions=[session(420)],
+                    puuids=[active_puuid, active_puuid],
+                )
+                client.connected = True
+                watcher = LCUWatcher(
+                    client=client,
+                    emit=logs.append,
+                    sleeper=lambda _seconds: None,
+                    live=True,
+                    data_root=data_root,
+                )
+                watcher.tick()
+                joined = "\n".join(logs)
+                self.assertIn(f"identity verification unavailable: {reason}", joined)
+                self.assertIn(f"recheck rank not adopted: {reason}", joined)
+                self.assertNotIn("saved-puuid", joined)
+                self.assertNotIn("different-puuid", joined)
 
     def test_recheck_ignores_other_queues_does_not_duplicate_and_expires(self):
         with tempfile.TemporaryDirectory() as temporary:

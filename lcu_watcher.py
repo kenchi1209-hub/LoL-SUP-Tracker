@@ -130,6 +130,7 @@ class LCUWatcher:
         # Kept only for the current LCU connection.  It is never logged or
         # written to disk, and is cleared on reconnect/disconnect.
         self._verified_account_puuid = None
+        self._identity_verification_reason = None
         self._next_identity_retry_at = 0
         self.checkpoint_pending = None
 
@@ -227,7 +228,8 @@ class LCUWatcher:
         self._log(f"[LP] recheck rank fetched: {self._format_rank(observed_rank)}")
         rank = self._verified_lcu_before_rank(observed_rank)
         if rank is None:
-            self._log("[LP] recheck rank not adopted: account verification unavailable")
+            reason = self._identity_verification_reason or "LCU endpoint"
+            self._log(f"[LP] recheck rank not adopted: {reason}")
             return
         self.recheck["latest_rank"] = rank
         self._log(f"[LP] recheck rank adopted: {self._format_rank(rank)}")
@@ -268,7 +270,8 @@ class LCUWatcher:
                 return rank
             self._verified_account_puuid = None
         if not self._verify_active_account():
-            self._log("[LP] pre-match LP recheck skipped: account verification unavailable")
+            reason = self._identity_verification_reason or "LCU endpoint"
+            self._log(f"[LP] identity verification unavailable: {reason}")
             return None
         return rank
 
@@ -281,22 +284,34 @@ class LCUWatcher:
         clears it before another rank can be adopted.
         """
         if not self.live or self.data_root is None:
+            self._identity_verification_reason = "LCU endpoint"
             return False
         get_puuid = getattr(self.client, "get_current_puuid", None)
         if not callable(get_puuid):
+            self._identity_verification_reason = "LCU endpoint"
             return False
         try:
             active_puuid = get_puuid()
+        except LCUError:
+            self._identity_verification_reason = "LCU endpoint"
+            return False
+        if not isinstance(active_puuid, str) or not active_puuid:
+            self._identity_verification_reason = "empty identity"
+            return False
+        try:
             with (self.data_root / "csv" / "current_rank.json").open(
                 "r", encoding="utf-8",
             ) as file:
                 saved_rank = json.load(file)
-        except (LCUError, OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):
+            self._identity_verification_reason = "LCU endpoint"
             return False
         saved_puuid = saved_rank.get("puuid") if isinstance(saved_rank, dict) else None
-        if not active_puuid or active_puuid != saved_puuid:
+        if active_puuid != saved_puuid:
+            self._identity_verification_reason = "account mismatch"
             return False
         self._verified_account_puuid = active_puuid
+        self._identity_verification_reason = None
         return True
 
     def _retry_identity_verification(self, phase, force=False):
@@ -559,6 +574,7 @@ class LCUWatcher:
             if not self.client.connected:
                 self.client.connect()
                 self._verified_account_puuid = None
+                self._identity_verification_reason = None
                 self._next_identity_retry_at = 0
                 self._waiting_logged = False
                 self._log("[LCU] client detected")
@@ -573,6 +589,7 @@ class LCUWatcher:
         except LCUUnavailable:
             self.client.disconnect()
             self._verified_account_puuid = None
+            self._identity_verification_reason = None
             self._next_identity_retry_at = 0
             if not self._waiting_logged:
                 self._log("[LCU] waiting for client")

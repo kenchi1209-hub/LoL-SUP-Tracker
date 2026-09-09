@@ -543,6 +543,12 @@
 - Rank fetched、identity未確認によるnot adopted、照合後のadoptedを分離してログ出力する。照合成功直後はrecheckを即時実行し、ChampSelect前のbefore候補へ反映する。
 - LCU Client停止中のため実機endpointのHTTP status／schemaは今回取得できなかった。`/lol-summoner/v1/current-summoner`の`puuid`を引き続き唯一の本人確認sourceとし、未検証の代替endpointは採用していない。
 
+#### 追記 — Queue IN本人確認の理由別診断
+
+- Queue IN recheckの本人確認失敗を、`LCU endpoint`、`empty identity`、`account mismatch`に非PIIで分類するログを追加した。
+- Rank取得の`fetched`ログとRank不採用のreasonログを分け、LCU current-summoner endpoint・identity値・PrivateData照合のどの段階かを次回実機ログだけで判別できるようにした。
+- 診断追加のみであり、PUUID比較、Rank採用、retry、exact capture、auto-publishの動作は変更していない。
+
 ## 運用ルール
 
 ### 作業開始時

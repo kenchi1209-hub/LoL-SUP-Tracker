@@ -149,6 +149,21 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(usable["vision_score"], 70.0)
         self.assertEqual(usable["vision_score_per_min"], 2.33)
 
+    def test_manual_recovery_is_usable_but_keeps_its_distinct_source(self):
+        history = json.loads(self.history_path.read_text(encoding="utf-8"))
+        history["matches"][0].update({
+            "confidence": "user_confirmed_with_lcu_anchor",
+            "capture_mode": "manual_recovery",
+            "lp_delta_source": "manual_recovery",
+        })
+        self.history_path.write_text(json.dumps(history), encoding="utf-8")
+        payload = lp_progress.build_lp_payload(self.rows, "16.17.1")
+        match = next(item for item in payload["matches"] if item["match_id"] == "JP1_EXACT")
+        point = next(item for item in payload["points"] if item.get("match_id") == "JP1_EXACT")
+        self.assertEqual(match["source"], "manual_recovery")
+        self.assertEqual(point["source"], "manual_recovery")
+        self.assertEqual(point["confidence"], "user_confirmed_with_lcu_anchor")
+
     def test_latest_exact_rank_after_record_overrides_stale_history_record(self):
         snapshot = self.root / "raw" / "JP1_EXACT" / "rank_after.json"
         snapshot.parent.mkdir(parents=True)

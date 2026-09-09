@@ -412,6 +412,29 @@ class LPSnapshotTest(unittest.TestCase):
         self.assertNotIn("puuid", serialized)
         self.assertNotIn("summonerId", serialized)
 
+    def test_user_confirmed_lcu_anchor_recovery_is_included_but_distinct_from_exact(self):
+        self.baseline()
+        recovered = build_rank_after(
+            {
+                "match_id": "JP1_RECOVERED", "game_datetime_jst": "2026-08-28T01:00:00+09:00",
+                "patch": "16.17", "champion": "Nami", "win": True,
+            },
+            {"tier": "SILVER", "division": "IV", "lp": 20, "wins": 40, "losses": 55},
+            {"tier": "SILVER", "division": "IV", "lp": 40, "wins": 41, "losses": 55},
+            confidence="user_confirmed_with_lcu_anchor",
+            capture_mode="manual_recovery",
+            lp_delta_source="manual_recovery",
+            lp_status="confirmed",
+        )
+        path = paths_for_match("JP1_RECOVERED", self.raw).rank_after
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(recovered), encoding="utf-8")
+        history = rebuild_lp_history(self.raw, self.csv)
+        record = history["matches"][0]
+        self.assertEqual(record["confidence"], "user_confirmed_with_lcu_anchor")
+        self.assertEqual(record["capture_mode"], "manual_recovery")
+        self.assertEqual(record["lp_delta_source"], "manual_recovery")
+
     def test_rank_after_is_optional_for_raw_completeness(self):
         paths = paths_for_match("JP1_OPTIONAL", self.raw)
         paths.directory.mkdir(parents=True)

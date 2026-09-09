@@ -1,6 +1,6 @@
 # LoL Analytics — Project Status
 
-最終更新: 2026-09-06
+最終更新: 2026-09-10
 
 ## プロジェクト概要
 
@@ -19,10 +19,10 @@ Match Detailを「試合終了時の結果」、Match Timelineを「結果に至
 - タイムゾーン: 共通utilityによるJST固定
 - raw端末間同期: PrivateDataをraw正本として初回投入・Mac復元まで完了
 - 現在のデータ:
-  - `my_matches.csv`: 446戦（サイト対象はリメイク除外後434戦）
-  - `timeline_summary.csv` / `fight_details.json` / `match_details.json`: 550試合分
-  - PrivateData: 550試合分のMatch Detail・Timeline・combat timelineを保持
-  - 現在Rank: Silver IV / 38 LP / 49勝65敗
+  - `my_matches.csv`: 464戦
+  - `timeline_summary.csv` / `fight_details.json` / `match_details.json`: 568試合分
+  - PrivateData: 568試合分のMatch Detail・Timeline・combat timelineを保持
+  - 現在Rank: Silver IV / 39 LP / 58勝74敗
 
 ## 実装済み機能
 
@@ -201,12 +201,13 @@ Match Historyの詳細UIを、試合概要の簡易10人比較と、味方／敵
 - LP Progressは実装済み。LP未確定区間は値を補完せず、usable point間を点線connectorで表示する。勝敗を持つ試合pointは青丸（WIN）／赤丸（LOSS）に統一し、official exactは塗りあり、external historicalは同色の半透明塗りと色枠で区別する。
 - Queue 420の次試合開始前に同一アカウントのLCU Rankを取得できた場合だけ、直前の`rank_after`を再検証する。W/Lが同一でLPだけ異なる時は、終了直後の観測値を保持したまま最終LPへ補正する。照合不能・不一致の原因が確定できない場合は自動補正しない。
 - Queue 420の`Matchmaking`検知時には、LCU Rankの再検証セッションを開始する。30秒間隔・最大5分で読み取り、queueキャンセル後も継続し、最新の安全なRankを次試合beforeへ渡す。ポーリング中はPrivateDataを書き換えない。
+- 連続した試合のLPを後から復元する場合は、ユーザー確認済みの各試合差分、LCUで観測した境界Rank、Current Rank、W/L連続性がすべて一致する時だけ許可する。復元snapshotは`manual_recovery` / `user_confirmed_with_lcu_anchor`として保存し、official exactとは混同しない。
 
 ## 次にやること
 
 1. 取得不能な外部指標（アイテム名／購入履歴、個人のObjective関与等）を必要に応じて別途設計する。
 2. PrivateDataに新規MatchがMatch directory単位で保存されることを次回更新時に確認する。
-3. 次のQueue 420開始前snapshotで条件が揃った場合だけ、`JP1_600584640`のLP後補正を再検証する。
+3. 次のQueue 420開始前snapshotで条件が揃った場合だけ、LP後補正を再検証する。
 
 ## 注意事項
 

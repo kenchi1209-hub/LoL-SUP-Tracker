@@ -27,6 +27,7 @@ SEASONS_PATH = REPOSITORY_ROOT / "lp_seasons.json"
 _paths = get_data_paths()
 LP_HISTORY_PATH = _paths.csv / "lp_history.json"
 RAW_ROOT = _paths.raw
+CONFIRMED_LP_CONFIDENCES = {"exact", "user_confirmed_with_lcu_anchor"}
 HISTORICAL_RECONSTRUCTED_PATH = (
     _paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
 )
@@ -359,9 +360,10 @@ def _history_match(record, rows_by_id):
         "lp_delta_source": str(record.get("lp_delta_source", "post_match_snapshot")),
         "lp_status": str(record.get("lp_status", "confirmed")),
         "lp_adjustment_type": record.get("lp_adjustment_type"),
+        "capture_mode": str(record.get("capture_mode", "manual_post_match")),
         "confidence": str(record.get("confidence", "")),
         "segment_id": str(record.get("segment_id", "")),
-        "source": "exact",
+        "source": "manual_recovery" if record.get("capture_mode") == "manual_recovery" else "exact",
     })
     rank_after_record = _rank_after_record(match_id, after)
     if rank_after_record:
@@ -540,7 +542,7 @@ def build_lp_payload(rows, version):
     exact_matches = [
         _history_match(record, rows_by_id)
         for record in history.get("matches", [])
-        if isinstance(record, dict) and record.get("confidence") == "exact"
+        if isinstance(record, dict) and record.get("confidence") in CONFIRMED_LP_CONFIDENCES
     ]
     historical = _historical_payload(
         rows_by_id,
@@ -570,6 +572,8 @@ def build_lp_payload(rows, version):
             "lp_status": item.get("lp_status", "confirmed"),
             "lp_adjustment_type": item.get("lp_adjustment_type"),
             "confidence": item["confidence"],
+            "source": item["source"],
+            "capture_mode": item["capture_mode"],
             "segment_id": item["segment_id"],
         })
 

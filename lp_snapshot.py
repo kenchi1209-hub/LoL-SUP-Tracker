@@ -25,6 +25,8 @@ from timezone_utils import JST, now_jst
 SCHEMA_VERSION = 1
 SOLO_QUEUE_TYPE = "RANKED_SOLO_5x5"
 SOLO_QUEUE_ID = 420
+MANUAL_RECOVERY_CONFIDENCE = "user_confirmed_with_lcu_anchor"
+CONFIRMED_CONFIDENCES = {"exact", MANUAL_RECOVERY_CONFIDENCE}
 BASELINE_RELATIVE_PATH = Path("lp_progress") / "baseline.json"
 CHECKPOINTS_RELATIVE_PATH = Path("lp_progress") / "checkpoints"
 HISTORY_FILENAME = "lp_history.json"
@@ -204,7 +206,7 @@ def load_confirmed_snapshots(raw_root):
         if (
             snapshot.get("schema_version") == SCHEMA_VERSION
             and snapshot.get("snapshot_type") == "rank_after"
-            and snapshot.get("confidence") == "exact"
+            and snapshot.get("confidence") in CONFIRMED_CONFIDENCES
             and snapshot.get("queue_id") == SOLO_QUEUE_ID
         ):
             snapshots.append(snapshot)
@@ -532,7 +534,11 @@ def wait_for_league_update(
         sleep(poll_interval_seconds)
 
 
-def build_rank_after(match, before, after, captured_at=None):
+def build_rank_after(
+    match, before, after, captured_at=None,
+    capture_mode="manual_post_match", confidence="exact",
+    lp_delta_source="post_match_snapshot", lp_status="provisional",
+):
     return {
         "schema_version": SCHEMA_VERSION,
         "snapshot_type": "rank_after",
@@ -544,13 +550,13 @@ def build_rank_after(match, before, after, captured_at=None):
         "champion": match["champion"],
         "win": match["win"],
         "captured_at_jst": iso_jst(captured_at),
-        "capture_mode": "manual_post_match",
-        "confidence": "exact",
+        "capture_mode": capture_mode,
+        "confidence": confidence,
         "before": dict(before),
         "after": dict(after),
         "lp_delta": rank_value(after) - rank_value(before),
-        "lp_delta_source": "post_match_snapshot",
-        "lp_status": "provisional",
+        "lp_delta_source": lp_delta_source,
+        "lp_status": lp_status,
         "games_since_previous_snapshot": 1,
     }
 
@@ -577,6 +583,7 @@ def history_record(snapshot):
         "lp_delta_source": snapshot.get("lp_delta_source", "post_match_snapshot"),
         "lp_status": snapshot.get("lp_status", "confirmed"),
         "lp_adjustment_type": snapshot.get("lp_adjustment_type"),
+        "capture_mode": snapshot.get("capture_mode", "manual_post_match"),
         "confidence": snapshot["confidence"],
     }
 

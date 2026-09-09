@@ -472,6 +472,37 @@
 1. 次回データ更新後、試合単位の詳細JSONとMatch History表示の整合を確認する。
 2. 必要な追加Statsだけをデータ定義・PII・coverageの確認後に検討する。
 
+## 2026-09-10
+
+### 今日やったこと
+
+- 2026-09-09の未反映Queue 420三試合（Nami WIN、Seraphine LOSS、Morgana LOSS）の通常生成データを確認し、既存試合への変更や無関係な差分がないことを検証した。
+- 各試合のユーザー確認済みLP差分とLCU／Current Rankの境界値を照合し、3件の`rank_after.json`と`lp_history.json`を再生成した。
+- LP Trendが公式exactと区別したまま、検証済み手動復元点を表示できるようにした。
+
+### 決定事項
+
+- 後追いLP復元は、各試合のW/L、LP差分、前後Rank、LCUまたはCurrent Rankのアンカーが一意に連続する場合だけ行う。
+- この種の復元は`capture_mode: manual_recovery`、`confidence: user_confirmed_with_lcu_anchor`、`lp_delta_source: manual_recovery`として扱い、official exactへ格上げしない。
+
+### 実装・変更ファイル
+
+- PrivateData: `raw/JP1_601563835/rank_after.json`、`raw/JP1_601572748/rank_after.json`、`raw/JP1_601577362/rank_after.json`、`csv/lp_history.json`、通常更新に伴うCSV／Excel／raw三試合分。
+- Public: `lp_snapshot.py`、`site_builder/lp_progress.py`、`test_lp_snapshot.py`、`test_lp_progress.py`。
+
+### 動作確認
+
+- 3点はTrendの第130〜132戦として58→78→59→39 LP、+20／-19／-20で連続することを確認した。
+- Python全154テスト、JavaScript構文、PrivateData rootのサイト生成、`git diff --check`を確認した。
+
+### 未解決
+
+- なし。
+
+### 次回
+
+1. PrivateDataとPublicを順に反映後、build-only Pages deploymentで最新PrivateDataを用いたサイト生成を確認する。
+
 ## 運用ルール
 
 ### 作業開始時

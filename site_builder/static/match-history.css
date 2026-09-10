@@ -195,6 +195,8 @@
 .fight-subsection + .fight-subsection { margin-top: 7px; }
 .fight-subheading { display: block; margin-bottom: 3px; }
 .fight-event-list { display: grid; gap: 2px; color: var(--muted); line-height: 1.45; }
+.fight-event-line { overflow-wrap: anywhere; }
+.fight-event-position { color: var(--text); font-size: .92em; white-space: nowrap; }
 .fight-objective-context { margin-bottom: 3px; color: var(--muted); }
 .match-history-empty { color: var(--muted); padding: 24px; text-align: center; }
 .match-history-more {

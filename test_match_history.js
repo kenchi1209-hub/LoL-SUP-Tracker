@@ -62,6 +62,9 @@ Object.entries(labels).forEach(([role, title]) => {
 });
 
 const match = sampleMatch();
+assert.strictEqual(history.eventPositionText({ x: 8421, y: 6724 }), "X:8421 Y:6724");
+assert.strictEqual(history.eventPositionText(null), "");
+assert.strictEqual(history.eventPositionText({ x: 8421 }), "");
 const summary = history.fightSummaryEntries(match);
 assert.deepStrictEqual(summary.map(([label]) => label), ["My Fights", "W-E-L", "Fight勝率", "生存率", "Teamfight"]);
 assert.strictEqual(summary[1][1], "1W-0E-1L");
@@ -76,6 +79,14 @@ assert(!defaults.includes("【戦闘詳細（自分）】"));
 const withSelf = history.copyTextForSelection(match, { overview: false, selfFights: true, allFights: false, details: false });
 assert(withSelf.includes("【戦闘詳細（自分）】"));
 assert(!withSelf.includes("【試合概要】"));
+const fightCopyWithPosition = history.copyTextForSelection(sampleMatch({
+  fights: [{ ...match.fights[0], events: [{
+    type: "CHAMPION_KILL", timestamp: 60000,
+    killer: { champion: "Leona" }, victim: { champion: "Nami" }, assists: [],
+    position: { x: 8421, y: 6724 },
+  }] }],
+}), { overview: false, selfFights: true, allFights: false, details: false });
+assert(fightCopyWithPosition.includes("X:8421 Y:6724"));
 
 const other = history.copyTextForSelection(sampleMatch({ match_id: "JP1_COPY_TWO", champion_name: "ナミ" }), { overview: true, selfFights: false, allFights: false, details: false });
 assert(other.includes("ナミ"));

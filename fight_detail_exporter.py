@@ -85,6 +85,22 @@ def compact_objective(objective):
     }
 
 
+def compact_position(position):
+    """Return a Timeline event position only when Riot supplied numeric coordinates."""
+    if not isinstance(position, dict):
+        return None
+    x = position.get("x")
+    y = position.get("y")
+    if (
+        isinstance(x, bool)
+        or isinstance(y, bool)
+        or not isinstance(x, (int, float))
+        or not isinstance(y, (int, float))
+    ):
+        return None
+    return {"x": x, "y": y}
+
+
 def compact_review_fight(fight, player_team_id=None, roles_by_participant_id=None):
     events = []
     for event in fight.get("events", []) or []:
@@ -101,6 +117,7 @@ def compact_review_fight(fight, player_team_id=None, roles_by_participant_id=Non
                     for person in event.get("assists", []) or []
                     if isinstance(person, dict)
                 ],
+                "position": compact_position(event.get("position")),
             }
         )
 

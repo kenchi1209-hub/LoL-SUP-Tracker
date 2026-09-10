@@ -19,6 +19,10 @@
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
   };
   const clock = (milliseconds) => duration((Number(milliseconds) || 0) / 1000);
+  const eventPositionText = (position) => {
+    if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return "";
+    return `X:${position.x} Y:${position.y}`;
+  };
   const personName = (person) => {
     if (typeof person === "string") return person;
     if (!person) return "Unknown";
@@ -148,7 +152,11 @@
       killEvents.forEach((event) => {
         const assists = (event.assists || []).map((person) => fightEventPersonName(person, rolesByChampion));
         const assistText = assists.length ? ` [A: ${assists.join(", ")}]` : "";
-        list.append(text("div", `${clock(event.timestamp)} K:${fightEventPersonName(event.killer, rolesByChampion)} → D:${fightEventPersonName(event.victim, rolesByChampion)}${assistText}`));
+        const eventLine = text("div", "", "fight-event-line");
+        eventLine.append(text("span", `${clock(event.timestamp)} K:${fightEventPersonName(event.killer, rolesByChampion)} → D:${fightEventPersonName(event.victim, rolesByChampion)}${assistText}`));
+        const position = eventPositionText(event.position);
+        if (position) eventLine.append(text("span", `・ ${position}`, "fight-event-position"));
+        list.append(eventLine);
       });
       kills.append(list);
     }
@@ -719,7 +727,8 @@
       lines.push("キル経過:");
       kills.forEach((event) => {
         const assists = (event.assists || []).map(personName);
-        lines.push(`- ${clock(event.timestamp)} ${personName(event.killer)} → ${personName(event.victim)}${assists.length ? ` [Assist: ${assists.join(", ")}]` : ""}`);
+        const position = eventPositionText(event.position);
+        lines.push(`- ${clock(event.timestamp)} ${personName(event.killer)} → ${personName(event.victim)}${assists.length ? ` [Assist: ${assists.join(", ")}]` : ""}${position ? ` ・ ${position}` : ""}`);
       });
     }
     const context = fight.objective_context || {};
@@ -1184,7 +1193,7 @@
   if (global.document) init();
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
-    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection,
+    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

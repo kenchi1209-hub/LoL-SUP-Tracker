@@ -11,3 +11,4 @@ data/excel/
 .idea/
 # 生成物(GitHub Actionsで都度ビルドするためコミット不要)
 public/
+logs/

@@ -3,6 +3,8 @@
 import argparse
 import ctypes
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import subprocess
@@ -38,6 +40,12 @@ RANK_RECHECK_INTERVAL_SECONDS = 30
 RANK_RECHECK_MAX_SECONDS = 300
 IDENTITY_RETRY_INTERVAL_SECONDS = 5
 IDENTITY_RETRY_PHASES = {"Lobby", "Matchmaking", "ReadyCheck", "ChampSelect"}
+HEARTBEAT_TIMEOUT_SECONDS = 15
+POLL_FAILURE_LOG_THRESHOLD = 3
+SESSION_FAILURE_RECONNECT_THRESHOLD = 3
+WATCHER_LOG_RELATIVE_PATH = Path("logs") / "lcu_watcher.log"
+WATCHER_LOG_MAX_BYTES = 5 * 1024 * 1024
+WATCHER_LOG_BACKUP_COUNT = 3
 
 
 class LiveProcessError(RuntimeError):
@@ -62,6 +70,26 @@ class SingleInstanceLock:
         if self.handle and os.name == "nt":
             ctypes.windll.kernel32.CloseHandle(self.handle)
         self.handle = None
+
+
+def configure_watcher_logger(repo_root):
+    """Create a bounded local event log without changing console output."""
+    log_path = Path(repo_root).resolve() / WATCHER_LOG_RELATIVE_PATH
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger(f"lcu_watcher.{log_path}")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if not logger.handlers:
+        handler = RotatingFileHandler(
+            log_path,
+            maxBytes=WATCHER_LOG_MAX_BYTES,
+            backupCount=WATCHER_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+            delay=True,
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+    return logger
 
 
 def queue_id_from_session(session):
@@ -120,6 +148,7 @@ class LCUWatcher:
         self, client=None, emit=print, sleeper=time.sleep, idle_interval=3,
         active_interval=1, live=False, data_root=None, process_runner=subprocess.run,
         repo_root=None, monotonic=time.monotonic, auto_publish=False, publisher=None,
+        event_logger=None,
     ):
         if idle_interval < 1 or active_interval < 1:
             raise ValueError("Polling intervals must be at least one second")
@@ -139,7 +168,14 @@ class LCUWatcher:
         self.monotonic = monotonic
         self.auto_publish = auto_publish
         self.publisher = publisher
+        self.event_logger = event_logger
         self.recheck = None
+        self.last_successful_phase_read = None
+        self.consecutive_poll_failures = 0
+        self._consecutive_session_failures = 0
+        self._reconnect_pending = False
+        self._has_connected_once = False
+        self._unavailable_kind = "phase"
         # Kept only for the current LCU connection.  It is never logged or
         # written to disk, and is cleared on reconnect/disconnect.
         self._verified_account_riot_id = None
@@ -149,6 +185,80 @@ class LCUWatcher:
 
     def _log(self, message):
         self.emit(message)
+        if self.event_logger is not None:
+            self.event_logger.info(message)
+
+    def _reset_connection_state(self):
+        """Forget connection-scoped observations without discarding game state."""
+        self.last_phase = None
+        self._diagnosed_session = False
+        self._verified_account_riot_id = None
+        self._identity_verification_reason = None
+        self._next_identity_retry_at = 0
+
+    def _record_phase_success(self):
+        self.last_successful_phase_read = self.monotonic()
+        self.consecutive_poll_failures = 0
+
+    def _record_poll_failure(self, kind):
+        self.consecutive_poll_failures += 1
+        count = self.consecutive_poll_failures
+        if count not in {1, POLL_FAILURE_LOG_THRESHOLD}:
+            return
+        if self.last_successful_phase_read is None:
+            elapsed = "unknown"
+        else:
+            elapsed = str(max(0, int(self.monotonic() - self.last_successful_phase_read)))
+        self._log(
+            f"[LCU] {kind} read failed: consecutive={count} "
+            f"seconds_since_phase_success={elapsed}"
+        )
+
+    def _record_session_failure(self):
+        self._consecutive_session_failures += 1
+        if self._consecutive_session_failures in {1, POLL_FAILURE_LOG_THRESHOLD}:
+            self._log(
+                "[LCU] session read failed: "
+                f"consecutive={self._consecutive_session_failures}"
+            )
+
+    def _recover_after_repeated_session_failures(self):
+        if self._consecutive_session_failures < SESSION_FAILURE_RECONNECT_THRESHOLD:
+            return False
+        self._log("[LCU] session failure recovery: reconnect scheduled")
+        self.client.disconnect()
+        self._reset_connection_state()
+        self._reconnect_pending = True
+        return True
+
+    def _recover_heartbeat_if_stale(self):
+        if not self.client.connected or self.last_successful_phase_read is None:
+            return False
+        elapsed = self.monotonic() - self.last_successful_phase_read
+        if elapsed < HEARTBEAT_TIMEOUT_SECONDS:
+            return False
+        self._log(f"[LCU] heartbeat recovery: no phase success for {int(elapsed)} seconds")
+        self.client.disconnect()
+        self._reset_connection_state()
+        self._reconnect_pending = True
+        return True
+
+    def _connect_if_needed(self):
+        if self.client.connected:
+            return
+        reconnecting = self._reconnect_pending or self._has_connected_once
+        if reconnecting:
+            self._log("[LCU] reconnect started")
+        self.client.connect()
+        self._reset_connection_state()
+        self._waiting_logged = False
+        self._has_connected_once = True
+        self._reconnect_pending = False
+        self._log("[LCU] lockfile reloaded")
+        self._log("[LCU] reconnect succeeded" if reconnecting else "[LCU] client detected")
+        self._log("[LCU] connected")
+        self._log_rank_diagnostic()
+        self._retry_identity_verification("Lobby", force=True)
 
     def _start_pending(self, phase, queue_id, session_id):
         before = self._latest_recheck_rank()
@@ -169,6 +279,7 @@ class LCUWatcher:
             "has_reached_in_progress": phase == "InProgress",
             "match_update_attempts": 0,
             "waiting_diagnostics_logged": False,
+            "recovered_finish": False,
         }
         self._log("[LP] solo ranked detected")
         self._log("[LP] pending started")
@@ -398,10 +509,12 @@ class LCUWatcher:
         pending["processing_started"] = True
         try:
             if self.auto_publish:
+                self._log("[GIT] automatic publish preflight started")
                 self._publisher().preflight()
             retry_deadline = self.monotonic() + MATCH_UPDATE_MAX_WAIT_SECONDS
             for attempt in range(1, MATCH_UPDATE_MAX_ATTEMPTS + 1):
                 pending["match_update_attempts"] = attempt
+                self._log("[DATA] match update started")
                 result = self._run_process(
                     self._command("main.py", "--data-root", str(self.data_root)),
                     MAIN_TIMEOUT_SECONDS,
@@ -414,6 +527,7 @@ class LCUWatcher:
                     match_id = matches[0]["match_id"]
                     self._log("[DATA] match update complete")
                     pending["capture_attempted"] = True
+                    self._log("[LP] exact capture started")
                     capture_command = self._command(
                         "lp_snapshot.py", "capture", "--data-root", str(self.data_root),
                     )
@@ -431,6 +545,7 @@ class LCUWatcher:
                             raise LiveProcessError("capture completed without rank_after confirmation")
                         self._log("[LP] exact capture completed")
                         if self.auto_publish:
+                            self._log("[GIT] automatic publish started")
                             correction_match_id = self._correction_match_id(match_id)
                             if correction_match_id:
                                 self._publisher().publish(
@@ -479,6 +594,8 @@ class LCUWatcher:
     def _finish_pending(self):
         pending = self.pending
         pending["processing_started"] = True
+        if pending.get("recovered_finish"):
+            self._log("[LP] finish recovery executing")
         self._log("[LP] ranked finished")
         if not self.live:
             self._log("[LP] WOULD_RUN_MATCH_UPDATE")
@@ -519,6 +636,20 @@ class LCUWatcher:
             f"terminal={pending['terminal']}"
         )
 
+    def _recover_pending_from_finish(self, phase, queue_id, session_id):
+        """Create a marked pending record only for a safely identified Queue 420 finish."""
+        if self.pending is not None or queue_id != SOLO_QUEUE_ID or phase not in FINISH_PHASES:
+            return False
+        self._log(f"[LP] finish recovery detected: {phase}")
+        self._start_pending(phase, queue_id, session_id)
+        self.pending["recovered_finish"] = True
+        # A finish phase is sufficient evidence that this recovered Queue 420
+        # game reached play, but candidate selection still uses the existing
+        # one-match-or-checkpoint safety gate in _live_process.
+        self.pending["has_reached_in_progress"] = True
+        self._log("[LP] finish recovery pending started")
+        return True
+
     def _handle_phase(self, phase, session):
         previous = self.last_phase
         if phase != previous:
@@ -535,6 +666,8 @@ class LCUWatcher:
         session_id = session_id_from_session(session)
         if queue_id is not None and phase != previous:
             self._log(f"[LCU] queue: {queue_id}")
+        elif phase in START_PHASES | FINISH_PHASES and phase != previous:
+            self._log(f"[LCU] queue unavailable for phase: {phase}")
         identity_just_verified = self._retry_identity_verification(phase, force=phase != previous)
         if identity_just_verified and self.recheck is not None:
             # Adopt a newly verified pre-game rank immediately instead of
@@ -547,6 +680,7 @@ class LCUWatcher:
                 self._start_pending(phase, queue_id, session_id)
         if queue_id == SOLO_QUEUE_ID and phase == "Matchmaking":
             self._start_recheck()
+        self._recover_pending_from_finish(phase, queue_id, session_id)
         if self.pending and phase == "InProgress":
             self.pending["has_reached_in_progress"] = True
             self._end_recheck("game_start")
@@ -577,32 +711,37 @@ class LCUWatcher:
 
     def tick(self):
         try:
-            if not self.client.connected:
-                self.client.connect()
-                self._verified_account_riot_id = None
-                self._identity_verification_reason = None
-                self._next_identity_retry_at = 0
-                self._waiting_logged = False
-                self._log("[LCU] client detected")
-                self._log("[LCU] connected")
-                self._log_rank_diagnostic()
-                self._retry_identity_verification("Lobby", force=True)
+            self._recover_heartbeat_if_stale()
+            self._unavailable_kind = "connect"
+            self._connect_if_needed()
+            self._unavailable_kind = "phase"
             phase = self.client.get_gameflow_phase()
-            session = self.client.get_gameflow_session()
+            self._record_phase_success()
+            try:
+                session = self.client.get_gameflow_session()
+                self._consecutive_session_failures = 0
+            except LCUUnavailable:
+                self._record_session_failure()
+                self._unavailable_kind = "session"
+                raise
+            except LCUError:
+                self._record_session_failure()
+                self._recover_after_repeated_session_failures()
+                return False
             self._handle_phase(phase, session)
             self._poll_recheck()
             return phase not in {None, "None"}
         except LCUUnavailable:
+            self._record_poll_failure(self._unavailable_kind)
             self.client.disconnect()
-            self._verified_account_riot_id = None
-            self._identity_verification_reason = None
-            self._next_identity_retry_at = 0
+            self._reset_connection_state()
+            self._reconnect_pending = True
             if not self._waiting_logged:
                 self._log("[LCU] waiting for client")
                 self._waiting_logged = True
             return False
         except LCUError:
-            self._log("[LCU] read-only request failed; monitoring continues")
+            self._record_poll_failure("phase")
             return False
 
     def run(self, max_ticks=None):
@@ -613,6 +752,8 @@ class LCUWatcher:
                 ticks += 1
                 self.sleeper(self.active_interval if active else self.idle_interval)
         except KeyboardInterrupt:
+            pass
+        finally:
             self._log("[LCU] watcher stopped")
 
 
@@ -636,6 +777,7 @@ def run_watcher(watcher, lock):
         return 2
     try:
         watcher._log("[LP] mode: LIVE" if watcher.live else "[LP] mode: DRY-RUN")
+        watcher._log("[LCU] watcher started")
         watcher.run()
     finally:
         lock.release()
@@ -657,8 +799,18 @@ def main(argv=None):
         if not all(path.exists() for path in required):
             print("[LP] LIVE PROCESS FAILED: invalid PrivateData path")
             return 1
+    try:
+        event_logger = configure_watcher_logger(Path(__file__).resolve().parent)
+    except OSError:
+        print("[LCU] persistent log unavailable; console monitoring continues")
+        event_logger = None
     return run_watcher(
-        LCUWatcher(live=args.live, data_root=data_root, auto_publish=args.auto_publish),
+        LCUWatcher(
+            live=args.live,
+            data_root=data_root,
+            auto_publish=args.auto_publish,
+            event_logger=event_logger,
+        ),
         SingleInstanceLock(),
     )
 

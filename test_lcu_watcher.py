@@ -6,14 +6,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from lcu_client import LCUUnavailable
+from lcu_client import LCUError, LCUUnavailable
 from lcu_publish import PublishError
 from lcu_watcher import (
     GAME_NAME,
     TAG_LINE,
     LCUWatcher,
     MATCH_UPDATE_MAX_ATTEMPTS,
+    POLL_FAILURE_LOG_THRESHOLD,
+    SESSION_FAILURE_RECONNECT_THRESHOLD,
     SingleInstanceLock,
+    WATCHER_LOG_BACKUP_COUNT,
+    WATCHER_LOG_MAX_BYTES,
+    configure_watcher_logger,
     main,
     parse_args,
     queue_id_from_session,
@@ -50,10 +55,16 @@ class FakeClient:
     def get_gameflow_phase(self):
         if self.unavailable:
             raise LCUUnavailable("unavailable")
-        return self.phases.pop(0) if self.phases else "None"
+        value = self.phases.pop(0) if self.phases else "None"
+        if isinstance(value, BaseException):
+            raise value
+        return value
 
     def get_gameflow_session(self):
-        return self.sessions.pop(0) if self.sessions else None
+        value = self.sessions.pop(0) if self.sessions else None
+        if isinstance(value, BaseException):
+            raise value
+        return value
 
     def get_solo_rank(self):
         return self.ranks.pop(0) if self.ranks else {"tier": "SILVER", "division": "IV", "leaguePoints": 23, "wins": 41, "losses": 56}
@@ -161,6 +172,111 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertEqual(self.logs.count("[LCU] waiting for client"), 1)
         self.assertFalse(watcher.client.connected)
 
+    def test_phase_success_updates_heartbeat_timestamp(self):
+        clock = [10]
+        watcher = LCUWatcher(
+            client=FakeClient(phases=["Lobby"], sessions=[None]),
+            emit=lambda _message: None,
+            sleeper=lambda _seconds: None,
+            monotonic=lambda: clock[0],
+        )
+        watcher.tick()
+        self.assertEqual(watcher.last_successful_phase_read, 10)
+        self.assertEqual(watcher.consecutive_poll_failures, 0)
+
+    def test_temporary_lcu_failure_reconnects_and_keeps_active_pending(self):
+        client = FakeClient(
+            phases=["ChampSelect", LCUUnavailable("temporary"), "InProgress"],
+            sessions=[session(420), session(420), session(420)],
+        )
+        watcher = self.watcher(client)
+        watcher.tick()
+        original_pending = watcher.pending
+        watcher.tick()
+        watcher.tick()
+        self.assertIs(watcher.pending, original_pending)
+        self.assertTrue(watcher.pending["has_reached_in_progress"])
+        self.assertGreaterEqual(client.disconnects, 1)
+        self.assertIn("[LCU] reconnect succeeded", self.logs)
+
+    def test_session_failure_is_logged_and_reconnects_without_losing_pending(self):
+        client = FakeClient(
+            phases=["ChampSelect", "InProgress", "InProgress"],
+            sessions=[session(420), LCUUnavailable("temporary"), session(420)],
+        )
+        watcher = self.watcher(client)
+        watcher.tick()
+        original_pending = watcher.pending
+        watcher.tick()
+        watcher.tick()
+        self.assertIs(watcher.pending, original_pending)
+        self.assertIn("[LCU] session read failed: consecutive=1", self.logs)
+        self.assertIn("[LCU] reconnect succeeded", self.logs)
+
+    def test_repeated_session_failures_schedule_reconnect_without_losing_pending(self):
+        client = FakeClient(
+            phases=["ChampSelect"] + ["InProgress"] * (SESSION_FAILURE_RECONNECT_THRESHOLD + 1),
+            sessions=[session(420)] + [LCUError("temporary")] * SESSION_FAILURE_RECONNECT_THRESHOLD + [session(420)],
+        )
+        watcher = self.watcher(client)
+        watcher.tick()
+        original_pending = watcher.pending
+        for _ in range(SESSION_FAILURE_RECONNECT_THRESHOLD + 1):
+            watcher.tick()
+        self.assertIs(watcher.pending, original_pending)
+        self.assertTrue(watcher.pending["has_reached_in_progress"])
+        self.assertIn("[LCU] session failure recovery: reconnect scheduled", self.logs)
+
+    def test_heartbeat_recovery_reconnects_after_phase_stalls(self):
+        clock = [0]
+        client = FakeClient(phases=["Lobby", LCUError("temporary"), "Lobby"], sessions=[None, None])
+        self.logs = []
+        watcher = LCUWatcher(
+            client=client,
+            emit=lambda message: self.logs.append(message),
+            sleeper=lambda _seconds: None,
+            monotonic=lambda: clock[0],
+        )
+        watcher.tick()
+        clock[0] = 1
+        watcher.tick()
+        clock[0] = 16
+        watcher.tick()
+        self.assertGreaterEqual(client.disconnects, 1)
+        self.assertEqual(watcher.last_successful_phase_read, 16)
+        self.assertIn("[LCU] heartbeat recovery: no phase success for 16 seconds", self.logs)
+        self.assertIn("[LCU] reconnect succeeded", self.logs)
+
+    def test_poll_failures_log_only_at_meaningful_thresholds(self):
+        watcher = self.watcher(FakeClient(phases=[LCUError("one")] * (POLL_FAILURE_LOG_THRESHOLD + 2)))
+        for _ in range(POLL_FAILURE_LOG_THRESHOLD + 2):
+            watcher.tick()
+        failures = [message for message in self.logs if "phase read failed" in message]
+        self.assertEqual(len(failures), 2)
+        self.assertIn("consecutive=1", failures[0])
+        self.assertIn(f"consecutive={POLL_FAILURE_LOG_THRESHOLD}", failures[1])
+
+    def test_persistent_logger_uses_rotation_without_pii(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            logger = configure_watcher_logger(temporary)
+            handler = logger.handlers[0]
+            self.assertEqual(handler.maxBytes, WATCHER_LOG_MAX_BYTES)
+            self.assertEqual(handler.backupCount, WATCHER_LOG_BACKUP_COUNT)
+            watcher = LCUWatcher(
+                client=FakeClient(phases=["ChampSelect"], sessions=[session(420)]),
+                emit=lambda _message: None,
+                sleeper=lambda _seconds: None,
+                event_logger=logger,
+            )
+            watcher.tick()
+            for handler in logger.handlers:
+                handler.flush()
+            log_path = Path(temporary) / "logs" / "lcu_watcher.log"
+            contents = log_path.read_text(encoding="utf-8")
+            self.assertIn("[LCU] connected", contents)
+            self.assertNotIn("hidden", contents)
+            self.assertNotIn("puuid", contents.lower())
+
     def test_none_unknown_and_session_404_are_safe(self):
         watcher = self.watcher(FakeClient(phases=["None", "FuturePhase"], sessions=[None, None]))
         watcher.tick()
@@ -193,14 +309,11 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertIn("[LCU] rank diagnostic: SILVER IV 23LP 41W/56L", joined)
         self.assertNotIn("puuid", joined.lower())
 
-    def test_in_progress_keeps_pending_and_finish_requires_pending(self):
-        watcher = self.watcher(FakeClient(phases=["EndOfGame", "InProgress", "WaitingForStats"], sessions=[session(420), session(420), session(420)]))
+    def test_in_progress_keeps_pending_and_finish_recovery_creates_pending(self):
+        watcher = self.watcher(FakeClient(phases=["EndOfGame"], sessions=[session(420)]))
         watcher.tick()
-        self.assertIsNone(watcher.pending)
-        watcher.tick()
-        self.assertTrue(watcher.pending["has_reached_in_progress"])
-        watcher.tick()
-        self.assertTrue(watcher.pending["processing_started"])
+        self.assertTrue(watcher.pending["recovered_finish"])
+        self.assertTrue(watcher.pending["terminal"])
         self.assertEqual(self.logs.count("[LP] WOULD_RUN_CAPTURE"), 1)
 
     def test_dry_run_never_uses_subprocess_or_checkpoint(self):
@@ -221,10 +334,9 @@ class LCUWatcherTest(unittest.TestCase):
     def test_live_requires_pending_and_in_progress_before_waiting_for_stats(self):
         runner = RecordingRunner()
         watcher = self.live_watcher(
-            FakeClient(phases=["WaitingForStats", "ChampSelect", "WaitingForStats"], sessions=[session(420)] * 3),
+            FakeClient(phases=["ChampSelect", "WaitingForStats"], sessions=[session(420)] * 2),
             runner,
         )
-        watcher.tick()
         watcher.tick()
         watcher.tick()
         self.assertEqual(runner.calls, [])
@@ -347,7 +459,7 @@ class LCUWatcherTest(unittest.TestCase):
                     {"status": "confirmed", "changed": False},
                     {"status": "corrected", "changed": False, "match_id": "JP1_PREVIOUS"},
                 ],
-            ) as preview:
+            ) as preview, patch("lcu_watcher.HEARTBEAT_TIMEOUT_SECONDS", 999):
                 watcher.tick()
                 clock[0] = 31
                 watcher.tick()
@@ -618,17 +730,44 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertEqual(self.logs.count("[LP] ranked finished"), 1)
         self.assertEqual(len(runner.calls), 2)
 
-    def test_end_of_game_requires_existing_ranked_pending_and_in_progress(self):
+    def test_finish_recovery_requires_queue_420_and_preend_never_triggers(self):
         cases = (
-            (["ChampSelect", "EndOfGame"], [session(420)] * 2),
-            (["InProgress", "EndOfGame"], [session(400)] * 2),
-            (["EndOfGame"], [session(420)]),
+            (["PreEndOfGame"], [session(420)]),
+            (["WaitingForStats"], [session(400)]),
+            (["EndOfGame"], [session(None)]),
         )
         for phases, sessions in cases:
             watcher = self.watcher(FakeClient(phases=phases, sessions=sessions))
             for _ in phases:
                 watcher.tick()
             self.assertNotIn("[LP] ranked finished", self.logs)
+
+    def test_finish_recovery_safely_processes_one_candidate(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(phases=["WaitingForStats", "EndOfGame"], sessions=[session(420)] * 2),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        watcher.tick()
+        watcher.tick()
+        self.assertTrue(watcher.pending["recovered_finish"])
+        self.assertTrue(watcher.pending["completed"])
+        self.assertEqual(len(runner.calls), 2)
+        self.assertEqual(self.logs.count("[LP] ranked finished"), 1)
+
+    def test_finish_recovery_requires_checkpoint_for_multiple_candidates(self):
+        runner = RecordingRunner([FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(phases=["EndOfGame"], sessions=[session(420)]), runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [
+            {"match_id": "JP1_FIRST"}, {"match_id": "JP1_SECOND"},
+        ]
+        watcher.tick()
+        self.assertTrue(watcher.pending["checkpoint_required"])
+        self.assertEqual(len(runner.calls), 1)
+        self.assertIn("[LP] CHECKPOINT_REQUIRED", self.logs)
 
     def test_repeated_end_of_game_and_lobby_none_never_retrigger(self):
         watcher = self.watcher(
@@ -733,7 +872,7 @@ class LCUWatcherTest(unittest.TestCase):
 
     def test_live_match_reflection_stops_at_time_limit(self):
         runner = RecordingRunner([FakeResult(0)])
-        clock = iter([0, 121])
+        clock = iter([0, 0, 0, 0, 121])
         watcher = self.live_watcher(
             FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
             runner,

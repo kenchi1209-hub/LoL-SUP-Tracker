@@ -148,9 +148,37 @@ class DataPathsTest(unittest.TestCase):
             public_registry_version = registry_version()
             temporary = Path(directory)
             root = temporary / "data"
-            shutil.copytree(DEFAULT_DATA_ROOT / "csv", root / "csv")
+            csv_root = root / "csv"
+            csv_root.mkdir(parents=True)
+            source = csv_root / "my_matches.csv"
+            match = {
+                "match_id": "JP1_CUSTOM",
+                "date": "2099-12-31 23:59:00",
+                "queue_id": "420",
+                "win": "True",
+                "game_duration_seconds": "1800",
+                "role": "UTILITY",
+                "champion": "Nami",
+                "patch": "16.18.1",
+                "kills": "1",
+                "deaths": "2",
+                "assists": "12",
+                "team_kills": "20",
+                "team_deaths": "10",
+                "team_assists": "30",
+                "cs": "30",
+                "cs_per_min": "1.0",
+                "vision_score": "70",
+                "vision_score_per_min": "2.33",
+                "total_damage_to_champions": "5000",
+            }
+            with source.open("w", encoding="utf-8", newline="") as file:
+                writer = csv.DictWriter(file, fieldnames=list(match))
+                writer.writeheader()
+                writer.writerow(match)
             marker = "2099-12-31 23:59"
-            (root / "csv" / "last_updated.txt").write_text(marker, encoding="utf-8")
+            (csv_root / "last_updated.txt").write_text(marker, encoding="utf-8")
+            source_before = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
             output = temporary / "public"
 
             with patch.dict(
@@ -162,15 +190,15 @@ class DataPathsTest(unittest.TestCase):
             self.assertTrue((output / "history.html").is_file())
             self.assertIn(marker, (output / "index.html").read_text(encoding="utf-8"))
             self.assertEqual(registry_version(), public_registry_version)
+            self.assertEqual(
+                source_before,
+                {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()},
+            )
             self.assertFalse(any(path.name == "raw" for path in output.rglob("raw")))
             generated_data = [
                 path for path in output.rglob("*") if path.suffix in {".csv", ".json"}
             ]
-            self.assertTrue(generated_data)
-            self.assertTrue(all(
-                path.suffix == ".json" and path.parent == output / "match-details"
-                for path in generated_data
-            ))
+            self.assertEqual(generated_data, [output / "match-details" / "JP1_CUSTOM.json"])
 
     def test_site_build_uses_environment_data_root(self):
         with tempfile.TemporaryDirectory() as directory:

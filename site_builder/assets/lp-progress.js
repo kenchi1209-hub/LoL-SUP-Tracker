@@ -117,6 +117,12 @@
     return (data.historical?.gaps || []).filter((gap) => inRange(gap.timestamp_jst, range));
   }
 
+  function filterUnresolvedMatches(data, range, patch) {
+    return (data.unresolved_matches || []).filter((match) => (
+      inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch)
+    ));
+  }
+
   function usableMatches(data) {
     return Array.isArray(data.usable_matches) ? data.usable_matches : data.matches;
   }
@@ -125,6 +131,12 @@
     return usableMatches(data).filter((match) => (
       inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch)
     ));
+  }
+
+  function rankedMatchesForCoverage(data) {
+    const byId = new Map(usableMatches(data).map((match) => [match.match_id, match]));
+    (data.unresolved_matches || []).forEach((match) => byId.set(match.match_id, match));
+    return [...byId.values()];
   }
 
   function statCard(label, value, sub, valueClass) {
@@ -180,10 +192,10 @@
     const summary = data.usable_summary || {};
     const recordSummary = summary.record || { wins: 0, losses: 0 };
     const totalGames = recordSummary.wins + recordSummary.losses;
-    const recent = [...usableMatches(data)].filter((match) => Number.isFinite(match.game_number)).sort((left, right) => left.game_number - right.game_number).slice(-10);
+    const recent = rankedMatchesForCoverage(data).filter((match) => Number.isFinite(match.game_number)).sort((left, right) => left.game_number - right.game_number).slice(-10);
     const coverage = usableCoverage(recent);
     container.replaceChildren(
-      statCard("Current Rank", rankLabel(data.latest_rank), "最新の正式LP point", "rank-value"),
+      statCard("Current Rank", rankLabel(data.latest_rank), "最新確認済みLP point", "rank-value"),
       statCard("All-period record", `${recordSummary.wins}W-${recordSummary.losses}L`, `${summary.games_tracked || 0} / ${totalGames || summary.games_total || 0} games tracked`),
       statCard("All-period win rate", percentage(recordSummary.wins, totalGames), "全期間Ranked"),
       statCard("Net LP", signed(summary.net_lp), `${summary.lp_available || 0} / ${summary.games_tracked || 0} games LP available`, Number.isFinite(summary.net_lp) ? summary.net_lp >= 0 ? "good" : "bad" : ""),
@@ -223,6 +235,9 @@
         ? `\n${mobalytics ? "LP" : "Candidate LP"}: ${signed(point.candidate_lp_delta)}`
         : "";
       return `${game}${source}\n${rankLabel(point.rank)}${delta}\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.timestamp_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
+    }
+    if (point.kind === "unresolved") {
+      return `${game}LP: 未確定\nChampion: ${point.champion_name}\nResult: ${resultLabel(point.win)}\nDate: ${dateTimeLabel(point.game_datetime_jst)}\nPatch: ${point.patch || "-"}\nQueue: Solo/Duo`;
     }
     const correction = Number.isFinite(point.observed_lp_delta) && point.observed_lp_delta !== point.lp_delta
       ? "\n※ 括弧内は試合終了直後の観測値"
@@ -307,6 +322,10 @@
   function pointShape(point, x, y) {
     if (point.kind === "checkpoint") return el("circle", { cx: x, cy: y, r: 6, fill: "#171d2b", stroke: "#f0b429", "stroke-width": 3 });
     if (point.kind === "baseline") return el("path", { d: `M ${x} ${y - 7} L ${x + 7} ${y} L ${x} ${y + 7} L ${x - 7} ${y} Z`, fill: "#e7ecf4", stroke: "#5b8cff", "stroke-width": 2 });
+    if (point.kind === "unresolved") {
+      const color = point.win ? "#4f9dff" : "#ff6b81";
+      return el("circle", { cx: x, cy: y, r: 4.5, fill: "#171d2b", stroke: color, "stroke-width": 2.2, "stroke-dasharray": "2 1" });
+    }
     const style = resultMarkerStyle(point);
     return el(style.shape, {
       cx: x, cy: y, r: style.radius, fill: style.fill,
@@ -315,7 +334,7 @@
     });
   }
 
-  function renderChart(officialPoints, historicalPoints, historicalGaps) {
+  function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = []) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
@@ -324,11 +343,14 @@
     ));
     const chartOfficial = chartable(officialPoints);
     const chartHistorical = chartable(historicalPoints);
+    const chartUnresolved = unresolvedMatches.filter((point) => Number.isFinite(point.game_number));
     const points = [...chartOfficial, ...chartHistorical]
       .sort((left, right) => left.game_number - right.game_number || Date.parse(left.timestamp_jst) - Date.parse(right.timestamp_jst));
+    const xPoints = [...points, ...chartUnresolved]
+      .sort((left, right) => left.game_number - right.game_number || Date.parse(left.timestamp_jst || left.game_datetime_jst) - Date.parse(right.timestamp_jst || right.game_datetime_jst));
     tooltip.hidden = true;
     chart.replaceChildren();
-    if (!points.length) { empty.hidden = false; return; }
+    if (!points.length || !xPoints.length) { empty.hidden = false; return; }
     empty.hidden = true;
     const width = Math.max(1, Math.round(chart.clientWidth)), height = 360, margin = { top: 32, right: 26, bottom: 54, left: 86 };
     const values = points.map((point) => point.score).filter(Number.isFinite);
@@ -336,8 +358,8 @@
     let min = Math.floor(Math.min(...values) / 100) * 100;
     let max = Math.ceil(Math.max(...values) / 100) * 100;
     if (min === max) { min -= 100; max += 100; }
-    let first = Math.min(...points.map((point) => point.game_number));
-    let last = Math.max(...points.map((point) => point.game_number));
+    let first = Math.min(...xPoints.map((point) => point.game_number));
+    let last = Math.max(...xPoints.map((point) => point.game_number));
     if (first === last) { first -= 1; last += 1; }
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
@@ -431,11 +453,14 @@
       });
     }
 
+    const unresolvedGaps = chartUnresolved.map((point) => ({ game_number: point.game_number, reason: "unresolved" }));
     renderSegments(chartHistorical, { stroke: "#5b8cff", "stroke-width": 2, "stroke-opacity": .55, "stroke-dasharray": "6 4" }, historicalGaps);
-    renderSegments(chartOfficial, { stroke: "#5b8cff", "stroke-width": 3 });
+    renderSegments(chartOfficial, { stroke: "#5b8cff", "stroke-width": 3 }, unresolvedGaps);
     renderGapConnections(chartHistorical, historicalGaps);
-    [...chartHistorical, ...chartOfficial].forEach((point) => {
-      const marker = pointShape(point, x(point), y(point.score));
+    renderGapConnections(chartOfficial, unresolvedGaps);
+    [...chartHistorical, ...chartOfficial, ...chartUnresolved].forEach((point) => {
+      const markerY = Number.isFinite(point.score) ? y(point.score) : height - margin.bottom - 8;
+      const marker = pointShape(point, x(point), markerY);
       const matchUrl = pointMatchUrl(point);
       const label = pointLabel(point).replaceAll("\n", ", ");
       marker.setAttribute("tabindex", "0");
@@ -563,14 +588,15 @@
       if (controls.patch.value === "all") points = points.filter((point) => inRange(point.timestamp_jst, range));
       const historical = filterHistoricalPoints(data, range, controls.patch.value);
       const historicalGaps = filterHistoricalGaps(data, range, controls.patch.value);
-      renderFiltered(usable); renderChart(points, historical, historicalGaps); renderChampionTable(usable, data.ddragon_version);
+      const unresolved = filterUnresolvedMatches(data, range, controls.patch.value);
+      renderFiltered(usable); renderChart(points, historical, historicalGaps, unresolved); renderChampionTable(usable, data.ddragon_version);
     }
     [controls.period, controls.patch, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
     global.addEventListener("resize", render);
     render();
   }
 
-  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape };
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape };
   global.LPProgress = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global.document) {

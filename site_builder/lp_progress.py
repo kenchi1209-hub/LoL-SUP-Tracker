@@ -26,6 +26,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 SEASONS_PATH = REPOSITORY_ROOT / "lp_seasons.json"
 _paths = get_data_paths()
 LP_HISTORY_PATH = _paths.csv / "lp_history.json"
+CURRENT_RANK_PATH = _paths.csv / "current_rank.json"
 RAW_ROOT = _paths.raw
 CONFIRMED_LP_CONFIDENCES = {"exact", "user_confirmed_with_lcu_anchor"}
 HISTORICAL_RECONSTRUCTED_PATH = (
@@ -41,9 +42,10 @@ MOBALYTICS_HISTORICAL_PATH = (
 
 def configure_data_root(data_root=None):
     """Point the build at a local or PrivateData root."""
-    global LP_HISTORY_PATH, RAW_ROOT, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH, MOBALYTICS_HISTORICAL_PATH
+    global LP_HISTORY_PATH, CURRENT_RANK_PATH, RAW_ROOT, HISTORICAL_RECONSTRUCTED_PATH, HISTORICAL_MAPPING_PATH, MOBALYTICS_HISTORICAL_PATH
     paths = get_data_paths(data_root)
     LP_HISTORY_PATH = paths.csv / "lp_history.json"
+    CURRENT_RANK_PATH = paths.csv / "current_rank.json"
     RAW_ROOT = paths.raw
     HISTORICAL_RECONSTRUCTED_PATH = (
         paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
@@ -81,6 +83,20 @@ def _rank_after_record(match_id, expected_rank):
     if not isinstance(wins, int) or not isinstance(losses, int):
         return None
     return {"wins": wins, "losses": losses}
+
+
+def _current_rank_snapshot():
+    """Return only the display-safe Solo/Duo fields from current_rank.json."""
+    snapshot = _load_json(CURRENT_RANK_PATH, {})
+    if not isinstance(snapshot, dict) or snapshot.get("queueType") != "RANKED_SOLO_5x5":
+        return None
+    rank = _rank(snapshot)
+    wins, losses = snapshot.get("wins"), snapshot.get("losses")
+    if rank is None or not isinstance(wins, int) or not isinstance(losses, int):
+        return None
+    if wins < 0 or losses < 0:
+        return None
+    return {"rank": rank, "wins": wins, "losses": losses}
 
 
 def _timestamp_jst(timestamp):
@@ -433,6 +449,74 @@ def _usable_matches(exact_matches, historical):
     )
 
 
+def _unresolved_trailing_matches(rows, known_match_ids, exact_matches, current_rank):
+    """Expose verified trailing ranked games without inventing LP values.
+
+    A current Solo/Duo record can safely number a run only when the immediately
+    preceding exact rank_after record plus the observed match results reaches
+    that record exactly.  No rank, before/after LP, or delta is assigned.
+    """
+    if current_rank is None:
+        return []
+    anchors = [
+        item for item in exact_matches
+        if isinstance(item.get("wins_after"), int)
+        and isinstance(item.get("losses_after"), int)
+        and isinstance(item.get("game_number"), int)
+    ]
+    if not anchors:
+        return []
+    anchor = max(anchors, key=lambda item: item.get("game_datetime_jst", ""))
+    anchor_datetime = str(anchor.get("game_datetime_jst", ""))
+    candidates = []
+    for row in rows:
+        match_id = str(row.get("match_id", ""))
+        try:
+            queue_id = int(float(row.get("queue_id")))
+        except (TypeError, ValueError):
+            continue
+        if (
+            not match_id
+            or match_id in known_match_ids
+            or queue_id != 420
+            or str(row.get("date", "")) <= anchor_datetime[:19].replace("T", " ")
+        ):
+            continue
+        metadata = _match_metadata(row, match_id)
+        if not isinstance(metadata.get("win"), bool):
+            return []
+        candidates.append(metadata)
+    candidates.sort(key=lambda item: (item.get("game_datetime_jst", ""), item["match_id"]))
+    if not candidates:
+        return []
+
+    wins, losses = anchor["wins_after"], anchor["losses_after"]
+    for item in candidates:
+        if item["win"]:
+            wins += 1
+        else:
+            losses += 1
+    if (wins, losses) != (current_rank["wins"], current_rank["losses"]):
+        return []
+
+    first_game = anchor["game_number"]
+    for offset, item in enumerate(candidates, start=1):
+        item.update({
+            "kind": "unresolved",
+            "rank": None,
+            "score": None,
+            "before": None,
+            "after": None,
+            "lp_delta": None,
+            "lp_status": "unresolved",
+            "confidence": "unresolved",
+            "source": "current_rank_reconciliation",
+            "segment_id": "unresolved-trailing",
+            "game_number": first_game + offset,
+        })
+    return candidates
+
+
 def _summary_for_matches(matches, latest_rank=None, latest_record=None):
     """Return compact metrics for the already de-duplicated usable history."""
     ordered = [item for item in matches if isinstance(item.get("rank"), dict)]
@@ -486,6 +570,7 @@ def build_lp_payload(rows, version):
             "checkpoints": [],
             "points": [],
             "matches": [],
+            "unresolved_matches": [],
             "usable_matches": [],
             "usable_summary": _summary_for_matches([]),
             "historical": _historical_payload(rows_by_id, set()),
@@ -577,7 +662,15 @@ def build_lp_payload(rows, version):
             "segment_id": item["segment_id"],
         })
 
-    matches = ambiguous_matches + exact_matches
+    current_rank = _current_rank_snapshot()
+    known_match_ids = {
+        item.get("match_id") for item in [*ambiguous_matches, *exact_matches, *usable_matches]
+        if item.get("match_id")
+    }
+    unresolved_matches = _unresolved_trailing_matches(
+        rows, known_match_ids, exact_matches, current_rank,
+    )
+    matches = ambiguous_matches + exact_matches + unresolved_matches
     matches.sort(key=lambda item: (item.get("game_datetime_jst", ""), item["match_id"]))
     points.sort(key=lambda item: (item.get("timestamp_jst", ""), item.get("match_id", "")))
     latest = max(
@@ -585,11 +678,18 @@ def build_lp_payload(rows, version):
         key=lambda item: item.get("game_datetime_jst", ""),
         default=None,
     )
-    if latest is None and checkpoints:
+    if current_rank:
+        latest_rank = current_rank["rank"]
+        latest_record = {"wins": current_rank["wins"], "losses": current_rank["losses"]}
+    elif latest is None and checkpoints:
         latest_rank = checkpoints[-1]["rank"]
+        latest_record = None
     else:
         latest_rank = latest["after"] if latest else baseline
-    latest_record = _rank_after_record(latest["match_id"], latest_rank) if latest else None
+        latest_record = _rank_after_record(latest["match_id"], latest_rank) if latest else None
+    summary = _summary_for_matches(usable_matches, latest_rank, latest_record)
+    if unresolved_matches:
+        summary["games_total"] = max(summary["games_total"], unresolved_matches[-1]["game_number"])
     return {
         "schema_version": 1,
         "tracking_started_jst": base_event["timestamp_jst"],
@@ -599,8 +699,9 @@ def build_lp_payload(rows, version):
         "checkpoints": checkpoints,
         "points": points,
         "matches": matches,
+        "unresolved_matches": unresolved_matches,
         "usable_matches": usable_matches,
-        "usable_summary": _summary_for_matches(usable_matches, latest_rank, latest_record),
+        "usable_summary": summary,
         "historical": historical,
         "latest_rank": latest_rank,
         "seasons": load_seasons(),

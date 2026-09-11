@@ -13,6 +13,7 @@ def row(match_id, date, champion, win, kills=1, deaths=2, assists=3, team_kills=
     return {
         "match_id": match_id,
         "date": date,
+        "queue_id": 420,
         "champion": champion,
         "patch": "16.17.810.4348",
         "_win": win,
@@ -177,6 +178,33 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(payload["usable_summary"]["record"], {"wins": 41, "losses": 56, "known": 1})
         exact_point = next(item for item in payload["points"] if item.get("match_id") == "JP1_EXACT")
         self.assertEqual(exact_point["game_number"], 97)
+
+    def test_verified_current_rank_numbers_trailing_matches_without_inventing_lp(self):
+        snapshot = self.root / "raw" / "JP1_EXACT" / "rank_after.json"
+        snapshot.parent.mkdir(parents=True)
+        snapshot.write_text(json.dumps({
+            "after": {"tier": "SILVER", "division": "IV", "lp": 44, "wins": 41, "losses": 56},
+        }), encoding="utf-8")
+        (self.root / "csv" / "current_rank.json").write_text(json.dumps({
+            "queueType": "RANKED_SOLO_5x5", "tier": "SILVER", "rank": "IV",
+            "leaguePoints": 80, "wins": 42, "losses": 57, "puuid": "private-only",
+        }), encoding="utf-8")
+        rows = self.rows + [
+            row("JP1_UNRESOLVED_LOSS", "2026-08-31 01:00:00", "Nami", False),
+            row("JP1_UNRESOLVED_WIN", "2026-08-31 02:00:00", "Nami", True),
+        ]
+
+        payload = lp_progress.build_lp_payload(rows, "16.17.1")
+
+        unresolved = payload["unresolved_matches"]
+        self.assertEqual([item["match_id"] for item in unresolved], ["JP1_UNRESOLVED_LOSS", "JP1_UNRESOLVED_WIN"])
+        self.assertEqual([item["game_number"] for item in unresolved], [98, 99])
+        self.assertTrue(all(item["rank"] is None and item["lp_delta"] is None for item in unresolved))
+        self.assertEqual(payload["latest_rank"]["lp"], 80)
+        self.assertEqual(payload["usable_summary"]["record"], {"wins": 42, "losses": 57, "known": 1})
+        self.assertEqual(payload["usable_summary"]["games_total"], 99)
+        self.assertEqual(payload["usable_summary"]["net_lp"], 21)
+        self.assertNotIn("puuid", json.dumps(payload).lower())
 
     def test_exact_point_without_verified_sequence_remains_unresolved(self):
         exact_point = next(item for item in self.payload["points"] if item.get("match_id") == "JP1_EXACT")

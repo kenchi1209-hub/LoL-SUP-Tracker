@@ -35,5 +35,14 @@ assert.strictEqual(lpProgress.pointShape({ kind: "exact", win: true }, 1, 2).nam
 assert.strictEqual(lpProgress.pointShape({ kind: "historical", win: false }, 1, 2).name, "circle");
 assert.strictEqual(lpProgress.pointShape({ kind: "baseline" }, 1, 2).name, "path");
 assert.strictEqual(lpProgress.pointShape({ kind: "checkpoint" }, 1, 2).name, "circle");
+const unresolved = lpProgress.pointShape({ kind: "unresolved", win: false }, 1, 2);
+assert.strictEqual(unresolved.name, "circle");
+assert.strictEqual(unresolved.attributes.fill, "#171d2b");
+assert.strictEqual(unresolved.attributes.stroke, "#ff6b81");
+const coverage = lpProgress.rankedMatchesForCoverage({
+  usable_matches: [{ match_id: "exact", game_number: 136, lp_delta: 5 }],
+  unresolved_matches: [{ match_id: "loss", game_number: 137, lp_delta: null }],
+});
+assert.deepStrictEqual(coverage.map((match) => match.match_id), ["exact", "loss"]);
 
 console.log("LP Trend result marker tests: OK");

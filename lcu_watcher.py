@@ -92,6 +92,18 @@ def configure_watcher_logger(repo_root):
     return logger
 
 
+def close_watcher_logger(logger):
+    """Release this watcher's file handlers without affecting application logging."""
+    if logger is None:
+        return
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        try:
+            handler.flush()
+        finally:
+            handler.close()
+
+
 def queue_id_from_session(session):
     """Return an integer only from known candidate paths; otherwise safely skip."""
     if not isinstance(session, dict):
@@ -774,6 +786,7 @@ def run_watcher(watcher, lock):
     """Run one watcher instance, returning 2 when its named mutex is already held."""
     if not lock.acquire():
         watcher._log("[LCU] another watcher is already running")
+        close_watcher_logger(watcher.event_logger)
         return 2
     try:
         watcher._log("[LP] mode: LIVE" if watcher.live else "[LP] mode: DRY-RUN")
@@ -781,6 +794,7 @@ def run_watcher(watcher, lock):
         watcher.run()
     finally:
         lock.release()
+        close_watcher_logger(watcher.event_logger)
     return 0
 
 

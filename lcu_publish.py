@@ -6,6 +6,7 @@ directories.  It is only invoked by ``lcu_watcher --live --auto-publish``.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 
@@ -42,14 +43,21 @@ RAW_MATCH_FILENAMES = frozenset({
 })
 
 
-def is_allowed_match_path(path, match_id, correction_match_id=None):
-    """Allow generated exports plus raw for this match and one corrected predecessor."""
+def is_allowed_match_path(
+    path, match_id, correction_match_id=None, confirmation_match_id=None,
+):
+    """Allow generated exports, this match, and explicitly verified predecessors."""
     if path in GENERATED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
         return True
     raw_prefix = f"raw/{match_id}/"
     if path.startswith(raw_prefix):
         return path[len(raw_prefix):] in RAW_MATCH_FILENAMES
-    return bool(correction_match_id) and path == f"raw/{correction_match_id}/rank_after.json"
+    predecessor_ids = {candidate for candidate in (
+        correction_match_id, confirmation_match_id,
+    ) if candidate}
+    return path in {
+        f"raw/{candidate}/rank_after.json" for candidate in predecessor_ids
+    }
 
 
 class PrivateDataPublisher:
@@ -143,23 +151,108 @@ class PrivateDataPublisher:
         self.base_sha = head
         self.emit("[GIT] PrivateData preflight verified")
 
+    def _head_json(self, path):
+        """Load a small committed JSON file without reading a textual diff."""
+        try:
+            value = self._git("--no-pager", "show", f"{self.base_sha}:{path}").stdout
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, PublishError) as error:
+            raise PublishError("could not verify prior rank_after confirmation") from error
+        if not isinstance(parsed, dict):
+            raise PublishError("could not verify prior rank_after confirmation")
+        return parsed
+
+    def _worktree_json(self, path):
+        try:
+            with (self.private_root / path).open("r", encoding="utf-8") as file:
+                parsed = json.load(file)
+        except (OSError, json.JSONDecodeError) as error:
+            raise PublishError("could not verify prior rank_after confirmation") from error
+        if not isinstance(parsed, dict):
+            raise PublishError("could not verify prior rank_after confirmation")
+        return parsed
+
+    def _confirmation_match_id(self, paths, match_id, correction_match_id=None):
+        """Return one capture-confirmed predecessor, or reject every other raw change.
+
+        A capture may only confirm the immediately preceding snapshot by changing
+        its status from ``provisional`` to ``confirmed``.  Every other field,
+        including rank, LP, and W/L, must remain byte-for-byte equivalent in
+        parsed JSON.  The confirmed after-state must also be the current
+        match's before-state, so an unrelated historical snapshot cannot gain
+        allow-list access merely because its path ends in ``rank_after.json``.
+        """
+        prefix = "raw/"
+        suffix = "/rank_after.json"
+        candidates = [
+            path for path in paths
+            if path.startswith(prefix)
+            and path.endswith(suffix)
+            and path != f"raw/{match_id}/rank_after.json"
+            and path != f"raw/{correction_match_id}/rank_after.json"
+        ]
+        if not candidates:
+            return None
+        if len(candidates) != 1:
+            raise PublishError("unexpected prior rank_after changes; publish stopped")
+
+        path = candidates[0]
+        parts = path.split("/")
+        if len(parts) != 3 or not parts[1]:
+            raise PublishError("could not verify prior rank_after confirmation")
+        confirmation_match_id = parts[1]
+        previous = self._head_json(path)
+        confirmed = self._worktree_json(path)
+        current = self._worktree_json(f"raw/{match_id}/rank_after.json")
+
+        unchanged_previous = dict(previous)
+        unchanged_confirmed = dict(confirmed)
+        previous_status = unchanged_previous.pop("lp_status", None)
+        confirmed_status = unchanged_confirmed.pop("lp_status", None)
+        previous_time = previous.get("game_datetime_jst")
+        current_time = current.get("game_datetime_jst")
+        if not (
+            previous.get("snapshot_type") == "rank_after"
+            and confirmed.get("snapshot_type") == "rank_after"
+            and current.get("snapshot_type") == "rank_after"
+            and previous.get("match_id") == confirmation_match_id
+            and confirmed.get("match_id") == confirmation_match_id
+            and current.get("match_id") == match_id
+            and previous_status == "provisional"
+            and confirmed_status == "confirmed"
+            and unchanged_previous == unchanged_confirmed
+            and isinstance(previous_time, str)
+            and isinstance(current_time, str)
+            and previous_time < current_time
+            and confirmed.get("after") == current.get("before")
+        ):
+            raise PublishError("prior rank_after is not a confirmation-only change; publish stopped")
+        return confirmation_match_id
+
     def _validate_changed_paths(self, match_id, correction_match_id=None):
         paths = self._status_paths()
         if not paths:
             raise PublishError("no PrivateData changes found after exact capture")
+        confirmation_match_id = self._confirmation_match_id(
+            paths, match_id, correction_match_id,
+        )
         unexpected = [
             path for path in paths
-            if not is_allowed_match_path(path, match_id, correction_match_id)
+            if not is_allowed_match_path(
+                path, match_id, correction_match_id, confirmation_match_id,
+            )
         ]
         if unexpected:
             raise PublishError("unexpected PrivateData path changed; publish stopped")
-        return paths
+        return paths, confirmation_match_id
 
     def publish(self, match_id, correction_match_id=None):
         """Commit one validated match update and dispatch a Pages-only public build."""
         if not self.base_sha:
             raise PublishError("publish preflight was not completed")
-        paths = self._validate_changed_paths(match_id, correction_match_id)
+        paths, confirmation_match_id = self._validate_changed_paths(
+            match_id, correction_match_id,
+        )
 
         head, remote, counts = self._remote_state()
         if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
@@ -170,7 +263,9 @@ class PrivateDataPublisher:
             self._git("--no-pager", "diff", "--cached", "--name-status").stdout
         )
         if sorted(staged) != sorted(paths) or any(
-            not is_allowed_match_path(path, match_id, correction_match_id) for path in staged
+            not is_allowed_match_path(
+                path, match_id, correction_match_id, confirmation_match_id,
+            ) for path in staged
         ):
             raise PublishError("staged paths failed validation; publish stopped")
         # Accept CRLF line endings from Windows CSV exporters, but retain all

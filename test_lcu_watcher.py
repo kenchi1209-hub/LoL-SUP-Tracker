@@ -18,6 +18,7 @@ from lcu_watcher import (
     SingleInstanceLock,
     WATCHER_LOG_BACKUP_COUNT,
     WATCHER_LOG_MAX_BYTES,
+    close_watcher_logger,
     configure_watcher_logger,
     main,
     parse_args,
@@ -259,23 +260,37 @@ class LCUWatcherTest(unittest.TestCase):
     def test_persistent_logger_uses_rotation_without_pii(self):
         with tempfile.TemporaryDirectory() as temporary:
             logger = configure_watcher_logger(temporary)
-            handler = logger.handlers[0]
-            self.assertEqual(handler.maxBytes, WATCHER_LOG_MAX_BYTES)
-            self.assertEqual(handler.backupCount, WATCHER_LOG_BACKUP_COUNT)
-            watcher = LCUWatcher(
-                client=FakeClient(phases=["ChampSelect"], sessions=[session(420)]),
-                emit=lambda _message: None,
-                sleeper=lambda _seconds: None,
-                event_logger=logger,
-            )
-            watcher.tick()
-            for handler in logger.handlers:
-                handler.flush()
-            log_path = Path(temporary) / "logs" / "lcu_watcher.log"
-            contents = log_path.read_text(encoding="utf-8")
-            self.assertIn("[LCU] connected", contents)
-            self.assertNotIn("hidden", contents)
-            self.assertNotIn("puuid", contents.lower())
+            try:
+                handler = logger.handlers[0]
+                self.assertEqual(handler.maxBytes, WATCHER_LOG_MAX_BYTES)
+                self.assertEqual(handler.backupCount, WATCHER_LOG_BACKUP_COUNT)
+                watcher = LCUWatcher(
+                    client=FakeClient(phases=["ChampSelect"], sessions=[session(420)]),
+                    emit=lambda _message: None,
+                    sleeper=lambda _seconds: None,
+                    event_logger=logger,
+                )
+                watcher.tick()
+                for handler in logger.handlers:
+                    handler.flush()
+                log_path = Path(temporary) / "logs" / "lcu_watcher.log"
+                contents = log_path.read_text(encoding="utf-8")
+                self.assertIn("[LCU] connected", contents)
+                self.assertNotIn("hidden", contents)
+                self.assertNotIn("puuid", contents.lower())
+            finally:
+                close_watcher_logger(logger)
+            self.assertEqual(logger.handlers, [])
+
+    def test_watcher_logger_reuses_one_handler_and_run_closes_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            logger = configure_watcher_logger(temporary)
+            self.assertIs(logger, configure_watcher_logger(temporary))
+            self.assertEqual(len(logger.handlers), 1)
+            watcher = LCUWatcher(client=FakeClient(), emit=lambda _message: None, event_logger=logger)
+            watcher.run = lambda: None
+            self.assertEqual(run_watcher(watcher, FakeLock()), 0)
+            self.assertEqual(logger.handlers, [])
 
     def test_none_unknown_and_session_404_are_safe(self):
         watcher = self.watcher(FakeClient(phases=["None", "FuturePhase"], sessions=[None, None]))

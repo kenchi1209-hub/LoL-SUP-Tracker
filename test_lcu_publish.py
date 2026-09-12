@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 import tempfile
@@ -15,7 +16,10 @@ class Result:
 class GitRunner:
     """A no-network git/gh model for the publish transaction tests."""
 
-    def __init__(self, changed_paths=None, remote_state=(0, 0), fail_push=False, fail_trigger=False):
+    def __init__(
+        self, changed_paths=None, remote_state=(0, 0), fail_push=False,
+        fail_trigger=False, head_files=None,
+    ):
         self.changed_paths = list(changed_paths or [])
         self.remote_state = remote_state
         self.fail_push = fail_push
@@ -24,6 +28,7 @@ class GitRunner:
         self.committed = False
         self.pushed = False
         self.changes_visible = False
+        self.head_files = dict(head_files or {})
 
     def __call__(self, command, **_kwargs):
         self.calls.append(command)
@@ -37,6 +42,8 @@ class GitRunner:
             return Result(stdout="base-sha\n" if not self.committed else "commit-sha\n")
         if command[:3] == ["git", "rev-parse", "origin/main"]:
             return Result(stdout="base-sha\n" if not self.pushed else "commit-sha\n")
+        if command[:3] == ["git", "--no-pager", "show"]:
+            return Result(stdout=self.head_files.get(command[3], ""), returncode=0 if command[3] in self.head_files else 1)
         if command[:4] == ["git", "rev-list", "--left-right", "--count"]:
             if not self.committed:
                 counts = self.remote_state
@@ -108,6 +115,160 @@ class PrivateDataPublisherTest(unittest.TestCase):
                 "raw/JP1_OTHER/rank_after.json", self.match_id, previous,
             )
         )
+
+    def test_only_a_verified_previous_rank_after_is_allowed_for_confirmation(self):
+        previous = "JP1_PREVIOUS"
+        self.assertTrue(
+            is_allowed_match_path(
+                f"raw/{previous}/rank_after.json", self.match_id,
+                confirmation_match_id=previous,
+            )
+        )
+        self.assertFalse(
+            is_allowed_match_path(
+                f"raw/{previous}/timeline.json", self.match_id,
+                confirmation_match_id=previous,
+            )
+        )
+
+    def test_confirmation_allows_only_a_status_transition_with_continuity(self):
+        previous_id = "JP1_PREVIOUS"
+        previous_path = f"raw/{previous_id}/rank_after.json"
+        current_path = f"raw/{self.match_id}/rank_after.json"
+        before = {"tier": "SILVER", "division": "IV", "lp": 62, "wins": 63, "losses": 78}
+        previous = {
+            "snapshot_type": "rank_after", "match_id": previous_id,
+            "game_datetime_jst": "2026-09-12T18:00:00+09:00", "lp_status": "provisional",
+            "before": {"tier": "SILVER", "division": "IV", "lp": 82, "wins": 63, "losses": 77},
+            "after": before,
+        }
+        current = {
+            "snapshot_type": "rank_after", "match_id": self.match_id,
+            "game_datetime_jst": "2026-09-12T18:30:00+09:00", "lp_status": "provisional",
+            "before": before, "after": {**before, "losses": 79},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for path, value in ((previous_path, {**previous, "lp_status": "confirmed"}), (current_path, current)):
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(json.dumps(value), encoding="utf-8")
+            runner = GitRunner(
+                [current_path, previous_path], head_files={f"base-sha:{previous_path}": json.dumps(previous)},
+            )
+            runner.changes_visible = True
+            publisher = PrivateDataPublisher(root, "owner/public", runner=runner)
+            publisher.base_sha = "base-sha"
+            paths, confirmation = publisher._validate_changed_paths(self.match_id)
+            self.assertEqual(paths, [current_path, previous_path])
+            self.assertEqual(confirmation, previous_id)
+
+    def test_normal_transaction_with_one_verified_confirmation_reaches_push(self):
+        previous_id = "JP1_PREVIOUS"
+        previous_path = f"raw/{previous_id}/rank_after.json"
+        current_path = f"raw/{self.match_id}/rank_after.json"
+        rank = {"tier": "SILVER", "division": "IV", "lp": 62, "wins": 63, "losses": 78}
+        previous = {
+            "snapshot_type": "rank_after", "match_id": previous_id,
+            "game_datetime_jst": "2026-09-12T18:00:00+09:00", "lp_status": "provisional",
+            "after": rank,
+        }
+        current = {
+            "snapshot_type": "rank_after", "match_id": self.match_id,
+            "game_datetime_jst": "2026-09-12T18:30:00+09:00", "lp_status": "provisional",
+            "before": rank,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for path, value in ((previous_path, {**previous, "lp_status": "confirmed"}), (current_path, current)):
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(json.dumps(value), encoding="utf-8")
+            runner = GitRunner(
+                [current_path, previous_path], head_files={f"base-sha:{previous_path}": json.dumps(previous)},
+            )
+            publisher = PrivateDataPublisher(root, "owner/public", runner=runner)
+            publisher.preflight()
+            runner.changes_visible = True
+            self.assertEqual(publisher.publish(self.match_id), "commit-sha")
+            self.assertTrue(runner.pushed)
+
+    def test_confirmation_rejects_rank_or_lp_changes_and_unrelated_predecessors(self):
+        previous_id = "JP1_PREVIOUS"
+        previous_path = f"raw/{previous_id}/rank_after.json"
+        current_path = f"raw/{self.match_id}/rank_after.json"
+        after = {"tier": "SILVER", "division": "IV", "lp": 62, "wins": 63, "losses": 78}
+        previous = {
+            "snapshot_type": "rank_after", "match_id": previous_id,
+            "game_datetime_jst": "2026-09-12T18:00:00+09:00", "lp_status": "provisional",
+            "after": after,
+        }
+        current = {
+            "snapshot_type": "rank_after", "match_id": self.match_id,
+            "game_datetime_jst": "2026-09-12T18:30:00+09:00", "lp_status": "provisional",
+            "before": after,
+        }
+        for changed, message in (
+            ({**previous, "lp_status": "confirmed", "lp_delta": 99}, "confirmation-only"),
+            ({**previous, "lp_status": "confirmed", "after": {**after, "lp": 61}}, "confirmation-only"),
+            ({**previous, "lp_status": "confirmed", "game_datetime_jst": "2026-09-12T19:00:00+09:00"}, "confirmation-only"),
+        ):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for path, value in ((previous_path, changed), (current_path, current)):
+                    destination = root / path
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text(json.dumps(value), encoding="utf-8")
+                runner = GitRunner(
+                    [current_path, previous_path], head_files={f"base-sha:{previous_path}": json.dumps(previous)},
+                )
+                runner.changes_visible = True
+                publisher = PrivateDataPublisher(root, "owner/public", runner=runner)
+                publisher.base_sha = "base-sha"
+                with self.assertRaisesRegex(PublishError, message):
+                    publisher._validate_changed_paths(self.match_id)
+
+    def test_unrelated_prior_rank_after_without_confirmation_transition_is_rejected(self):
+        previous_id = "JP1_UNRELATED"
+        previous_path = f"raw/{previous_id}/rank_after.json"
+        current_path = f"raw/{self.match_id}/rank_after.json"
+        rank = {"tier": "SILVER", "division": "IV", "lp": 62, "wins": 63, "losses": 78}
+        previous = {
+            "snapshot_type": "rank_after", "match_id": previous_id,
+            "game_datetime_jst": "2026-09-12T18:00:00+09:00", "lp_status": "confirmed",
+            "after": rank,
+        }
+        current = {
+            "snapshot_type": "rank_after", "match_id": self.match_id,
+            "game_datetime_jst": "2026-09-12T18:30:00+09:00", "lp_status": "provisional",
+            "before": rank,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for path, value in ((previous_path, previous), (current_path, current)):
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(json.dumps(value), encoding="utf-8")
+            runner = GitRunner(
+                [current_path, previous_path], head_files={f"base-sha:{previous_path}": json.dumps(previous)},
+            )
+            runner.changes_visible = True
+            publisher = PrivateDataPublisher(root, "owner/public", runner=runner)
+            publisher.base_sha = "base-sha"
+            with self.assertRaisesRegex(PublishError, "confirmation-only"):
+                publisher._validate_changed_paths(self.match_id)
+
+    def test_multiple_or_non_rank_after_unrelated_raw_changes_still_stop(self):
+        runner = GitRunner([
+            f"raw/{self.match_id}/rank_after.json",
+            "raw/JP1_ONE/rank_after.json",
+            "raw/JP1_TWO/rank_after.json",
+        ])
+        runner.changes_visible = True
+        publisher = self.publisher(runner)
+        publisher.base_sha = "base-sha"
+        with self.assertRaisesRegex(PublishError, "prior rank_after"):
+            publisher._validate_changed_paths(self.match_id)
 
     def test_normal_exact_transaction_commits_pushes_then_dispatches(self):
         runner = GitRunner(self.expected_paths)

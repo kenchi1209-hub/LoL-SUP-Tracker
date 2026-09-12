@@ -11,7 +11,7 @@ python .\lcu_watcher.py `
 
 2. モードの意味
 
-- --live --auto-publish: 通常の本番運用。Solo/Duo Ranked終了後、データ更新、exact LP capture、PrivateData commit/push、Pages build triggerまで実行。
+- --live --auto-publish: 通常の本番運用。Solo/Duo Ranked終了後、データ更新、exact LP capture、PrivateData commit/push、Pages build triggerまで実行。LP checkpoint時も通常Matchデータはpublishし、LPだけ未確定として後日復元可能な状態で残す。
 - --live: データ更新とexact LP captureまで実行。自動commit/push・Pages triggerは行わない。
 - --liveなし: 確認用 / DRY-RUN。データ更新・capture・Git操作は行わない。
 - --auto-publish単独: 安全停止する。
@@ -37,7 +37,7 @@ python .\lcu_watcher.py --data-root C:\Users\kissx\Desktop\LoL-SUP-Tracker-Priva
 
 - 自動publishの対象はSolo/Duo Ranked（Queue 420）のみ。Draft / Swift / ARAM等は対象外。
 - Ranked終了はWaitingForStatsまたはEndOfGameを安全な終了トリガーとして扱う。
-- PrivateDataがdirty、remote ahead/diverge、exact capture失敗、対象外ファイル変更時は自動publishしない。
+- PrivateDataがdirty、remote ahead/diverge、exact capture失敗、対象外ファイル変更時は自動publishしない。CHECKPOINT_REQUIREDはLPの安全停止であり、通常Matchデータだけを安全にpublishする。
 - force pushは行わない。PrivateData push成功後のみPages build triggerを実行する。
 
 5. 従来の通常データ更新（daily_update.ps1）

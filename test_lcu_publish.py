@@ -4,7 +4,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from lcu_publish import PrivateDataPublisher, PublishError, is_allowed_match_path
+from lcu_publish import (
+    PrivateDataPublisher, PublishError, is_allowed_match_path,
+    is_allowed_unresolved_match_path,
+)
 
 
 class Result:
@@ -82,6 +85,16 @@ class PrivateDataPublisherTest(unittest.TestCase):
         "csv/match_details.json",
         "excel/lol_report.xlsx",
     ]
+    unresolved_paths = [
+        "raw/JP1_123/match.json",
+        "raw/JP1_123/timeline.json",
+        "raw/JP1_123/combat_timeline.json",
+        "raw/JP1_123/rank_snapshot.json",
+        "csv/my_matches.csv",
+        "csv/current_rank.json",
+        "csv/match_details.json",
+        "excel/lol_report.xlsx",
+    ]
 
     def publisher(self, runner):
         self.logs = []
@@ -97,6 +110,19 @@ class PrivateDataPublisherTest(unittest.TestCase):
             "csv/recovered.json", "data/raw/match.json",
         ):
             self.assertFalse(is_allowed_match_path(path, self.match_id))
+
+    def test_unresolved_paths_are_narrow_and_never_include_lp_allocation_files(self):
+        for path in self.unresolved_paths:
+            self.assertTrue(is_allowed_unresolved_match_path(path, self.match_id))
+        for path in (
+            f"raw/{self.match_id}/rank_after.json",
+            "raw/JP1_OTHER/rank_after.json",
+            "raw/JP1_OTHER/match.json",
+            "csv/lp_history.json",
+            "raw/lp_progress/checkpoints/checkpoint.json",
+            "docs/note.md",
+        ):
+            self.assertFalse(is_allowed_unresolved_match_path(path, self.match_id))
 
     def test_only_a_declared_previous_rank_after_is_allowed_for_lp_correction(self):
         previous = "JP1_PREVIOUS"
@@ -288,6 +314,43 @@ class PrivateDataPublisherTest(unittest.TestCase):
         self.assertGreater(trigger_index, push_index)
         self.assertIn("[GIT] pushed origin/main", self.logs)
         self.assertIn("[PAGES] deploy workflow triggered", self.logs)
+
+    def test_unresolved_transaction_commits_pushes_then_leaves_a_clean_preflight(self):
+        runner = GitRunner(self.unresolved_paths)
+        publisher = self.publisher(runner)
+        publisher.preflight()
+        runner.changes_visible = True
+        self.assertEqual(
+            publisher.publish_unresolved_match_update(self.match_id), "commit-sha",
+        )
+        self.assertTrue(runner.pushed)
+        self.assertIn("[PAGES] deploy workflow triggered", self.logs)
+        publisher.preflight()
+
+    def test_unresolved_transaction_rejects_lp_history_rank_after_and_unrelated_raw(self):
+        for extra in (
+            "csv/lp_history.json",
+            f"raw/{self.match_id}/rank_after.json",
+            "raw/JP1_OTHER/rank_after.json",
+            "raw/JP1_OTHER/match.json",
+        ):
+            with self.subTest(extra=extra):
+                runner = GitRunner([*self.unresolved_paths, extra])
+                publisher = self.publisher(runner)
+                publisher.preflight()
+                runner.changes_visible = True
+                with self.assertRaisesRegex(PublishError, "unresolved publish"):
+                    publisher.publish_unresolved_match_update(self.match_id)
+                self.assertFalse(any(command[:2] == ["git", "add"] for command in runner.calls))
+
+    def test_unresolved_push_failure_never_triggers_pages(self):
+        runner = GitRunner(self.unresolved_paths, fail_push=True)
+        publisher = self.publisher(runner)
+        publisher.preflight()
+        runner.changes_visible = True
+        with self.assertRaises(PublishError):
+            publisher.publish_unresolved_match_update(self.match_id)
+        self.assertFalse(any(command[:3] == ["gh", "workflow", "run"] for command in runner.calls))
 
     def test_unrelated_dirty_file_stops_before_main_changes_are_staged(self):
         runner = GitRunner(["docs/manual.md"])

@@ -145,6 +145,12 @@ class FakePublisher:
             raise self.publish_error
         return "commit-sha"
 
+    def publish_unresolved_match_update(self, match_id):
+        self.calls.append(("publish_unresolved", match_id))
+        if self.publish_error:
+            raise self.publish_error
+        return "commit-sha"
+
 
 class LCUWatcherTest(unittest.TestCase):
     def watcher(self, client):
@@ -831,7 +837,7 @@ class LCUWatcherTest(unittest.TestCase):
             ["preflight", ("publish", "JP1_TEST", "JP1_PREVIOUS")],
         )
 
-    def test_auto_publish_ambiguous_capture_never_publishes(self):
+    def test_auto_publish_checkpoint_publishes_only_unresolved_match_data(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(2)])
         publisher = FakePublisher()
         watcher = self.live_watcher(
@@ -841,9 +847,39 @@ class LCUWatcherTest(unittest.TestCase):
             publisher=publisher,
         )
         watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+        watcher._has_rank_after = lambda _match_id: False
         watcher.tick()
         watcher.tick()
-        self.assertEqual(publisher.calls, ["preflight"])
+        self.assertEqual(
+            publisher.calls,
+            ["preflight", ("publish_unresolved", "JP1_TEST")],
+        )
+        self.assertTrue(watcher.pending["checkpoint_required"])
+        self.assertTrue(watcher.pending["completed"])
+        self.assertTrue(watcher.pending["published"])
+        joined = "\n".join(self.logs)
+        self.assertIn("checkpoint required; match data will be published without LP allocation", joined)
+        self.assertIn("unresolved match data published", joined)
+
+    def test_auto_publish_checkpoint_refuses_rank_after_or_lp_history_mutation(self):
+        for rank_after, history in ((True, (None, None)), (False, (b"before", b"after"))):
+            with self.subTest(rank_after=rank_after, history=history):
+                runner = RecordingRunner([FakeResult(0), FakeResult(2)])
+                publisher = FakePublisher()
+                watcher = self.live_watcher(
+                    FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
+                    runner,
+                    auto_publish=True,
+                    publisher=publisher,
+                )
+                watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TEST"}]
+                watcher._has_rank_after = lambda _match_id, value=rank_after: value
+                values = iter(history)
+                watcher._lp_history_bytes = lambda: next(values)
+                watcher.tick()
+                watcher.tick()
+                self.assertEqual(publisher.calls, ["preflight"])
+                self.assertTrue(watcher.pending["failed"])
 
     def test_auto_publish_preflight_or_trigger_failure_stops_without_retrigger(self):
         for publisher in (FakePublisher(preflight_error=PublishError("remote main is ahead")), FakePublisher(publish_error=PublishError("trigger failed"))):

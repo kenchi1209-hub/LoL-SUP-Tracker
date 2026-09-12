@@ -504,6 +504,18 @@ class LCUWatcher:
     def _has_rank_after(self, match_id):
         return (self.data_root / "raw" / match_id / "rank_after.json").is_file()
 
+    def _lp_history_bytes(self):
+        """Read LP history only to prove a checkpoint capture did not mutate it."""
+        if self.data_root is None:
+            raise LiveProcessError("live data root is unavailable")
+        path = self.data_root / "csv" / "lp_history.json"
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise LiveProcessError("could not verify lp_history after checkpoint") from error
+
     def _correction_match_id(self, match_id):
         """Read an optional, capture-produced correction relation safely."""
         path = self.data_root / "raw" / match_id / "rank_after.json"
@@ -540,6 +552,7 @@ class LCUWatcher:
                     self._log("[DATA] match update complete")
                     pending["capture_attempted"] = True
                     self._log("[LP] exact capture started")
+                    lp_history_before = self._lp_history_bytes()
                     capture_command = self._command(
                         "lp_snapshot.py", "capture", "--data-root", str(self.data_root),
                     )
@@ -572,6 +585,19 @@ class LCUWatcher:
                         return
                     if capture.returncode == 2:
                         self._require_checkpoint()
+                        if self._has_rank_after(match_id):
+                            raise LiveProcessError("checkpoint capture unexpectedly created rank_after")
+                        if self._lp_history_bytes() != lp_history_before:
+                            raise LiveProcessError("checkpoint capture unexpectedly changed lp_history")
+                        if self.auto_publish:
+                            self._log(
+                                "[LP] checkpoint required; match data will be published without LP allocation",
+                            )
+                            self._publisher().publish_unresolved_match_update(match_id)
+                            pending["published"] = True
+                            self._log("[LP] unresolved match data published")
+                        pending["completed"] = True
+                        pending["terminal"] = True
                         return
                     raise LiveProcessError(f"lp_snapshot.py exited with code {capture.returncode}")
 

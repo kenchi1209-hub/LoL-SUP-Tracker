@@ -41,6 +41,8 @@ RAW_MATCH_FILENAMES = frozenset({
     "rank_snapshot.json",
     "rank_after.json",
 })
+UNRESOLVED_RAW_MATCH_FILENAMES = RAW_MATCH_FILENAMES - {"rank_after.json"}
+UNRESOLVED_SHARED_PATHS = GENERATED_SHARED_PATHS - {"csv/lp_history.json"}
 
 
 def is_allowed_match_path(
@@ -58,6 +60,14 @@ def is_allowed_match_path(
     return path in {
         f"raw/{candidate}/rank_after.json" for candidate in predecessor_ids
     }
+
+
+def is_allowed_unresolved_match_path(path, match_id):
+    """Allow one normal match update, but never allocate or revise LP data."""
+    if path in UNRESOLVED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+        return True
+    raw_prefix = f"raw/{match_id}/"
+    return path.startswith(raw_prefix) and path[len(raw_prefix):] in UNRESOLVED_RAW_MATCH_FILENAMES
 
 
 class PrivateDataPublisher:
@@ -246,27 +256,26 @@ class PrivateDataPublisher:
             raise PublishError("unexpected PrivateData path changed; publish stopped")
         return paths, confirmation_match_id
 
-    def publish(self, match_id, correction_match_id=None):
-        """Commit one validated match update and dispatch a Pages-only public build."""
-        if not self.base_sha:
-            raise PublishError("publish preflight was not completed")
-        paths, confirmation_match_id = self._validate_changed_paths(
-            match_id, correction_match_id,
-        )
+    def _validate_unresolved_changed_paths(self, match_id):
+        """Validate a checkpoint-stopped update without permitting LP writes."""
+        paths = self._status_paths()
+        if not paths:
+            raise PublishError("no PrivateData changes found after checkpoint")
+        unexpected = [
+            path for path in paths
+            if not is_allowed_unresolved_match_path(path, match_id)
+        ]
+        if unexpected:
+            raise PublishError("unexpected PrivateData path changed for unresolved publish; publish stopped")
+        return paths
 
-        head, remote, counts = self._remote_state()
-        if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
-            raise PublishError("remote main advanced during update; publish stopped")
-
+    def _commit_push_and_dispatch(self, match_id, paths, allowed_path):
+        """Stage an already validated path set, then commit, push, and dispatch."""
         self._git("add", "--", *paths)
         staged = self._paths_from_name_status(
             self._git("--no-pager", "diff", "--cached", "--name-status").stdout
         )
-        if sorted(staged) != sorted(paths) or any(
-            not is_allowed_match_path(
-                path, match_id, correction_match_id, confirmation_match_id,
-            ) for path in staged
-        ):
+        if sorted(staged) != sorted(paths) or any(not allowed_path(path) for path in staged):
             raise PublishError("staged paths failed validation; publish stopped")
         # Accept CRLF line endings from Windows CSV exporters, but retain all
         # other whitespace checks.  --no-pager also makes this safe for the
@@ -303,3 +312,39 @@ class PrivateDataPublisher:
         )
         self.emit("[PAGES] deploy workflow triggered")
         return commit_sha
+
+    def publish(self, match_id, correction_match_id=None):
+        """Commit one validated match update and dispatch a Pages-only public build."""
+        if not self.base_sha:
+            raise PublishError("publish preflight was not completed")
+        paths, confirmation_match_id = self._validate_changed_paths(
+            match_id, correction_match_id,
+        )
+
+        head, remote, counts = self._remote_state()
+        if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
+            raise PublishError("remote main advanced during update; publish stopped")
+
+        return self._commit_push_and_dispatch(
+            match_id,
+            paths,
+            lambda path: is_allowed_match_path(
+                path, match_id, correction_match_id, confirmation_match_id,
+            ),
+        )
+
+    def publish_unresolved_match_update(self, match_id):
+        """Publish one checkpoint-stopped Match-V5 update without LP allocation."""
+        if not self.base_sha:
+            raise PublishError("publish preflight was not completed")
+        paths = self._validate_unresolved_changed_paths(match_id)
+
+        head, remote, counts = self._remote_state()
+        if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
+            raise PublishError("remote main advanced during update; publish stopped")
+
+        return self._commit_push_and_dispatch(
+            match_id,
+            paths,
+            lambda path: is_allowed_unresolved_match_path(path, match_id),
+        )

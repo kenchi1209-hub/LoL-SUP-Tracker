@@ -593,9 +593,7 @@
       const target = targetAtPointer(event);
       if (target && event.detail !== 0 && pointMatchUrl(target.point)) openMatchDetail(target.point);
     });
-    chart.addEventListener("pointerdown", (event) => {
-      if (event.target === chart) hideTooltip();
-    });
+    chart.addEventListener("pointerdown", hideTooltip);
     for (let score = min; score <= max; score += 25) {
       const boundary = score % 100 === 0;
       svg.append(el("line", { x1: margin.left, y1: y(score), x2: width - margin.right, y2: y(score), stroke: boundary ? "#3b4861" : "#252e40", "stroke-width": boundary ? 1.2 : 1 }));

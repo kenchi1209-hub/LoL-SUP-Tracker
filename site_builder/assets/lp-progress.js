@@ -449,6 +449,19 @@
     });
   }
 
+  function nearestChartPoint(points, pointerX, pointerY, radius = 13) {
+    let nearest = null;
+    let nearestDistance = radius * radius;
+    points.forEach((point) => {
+      const distance = (point.x - pointerX) ** 2 + (point.y - pointerY) ** 2;
+      if (distance < nearestDistance) {
+        nearest = point;
+        nearestDistance = distance;
+      }
+    });
+    return nearest;
+  }
+
   function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = []) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
@@ -482,8 +495,11 @@
     const y = (score) => margin.top + ((max - score) / (max - min)) * chartHeight;
     const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Solo/Duo LP推移" });
     let activeVisual = null;
+    let activeTarget = null;
     let hideTimer = null;
     let activeGuide = null;
+    let touchTarget = null;
+    const pointTargets = [];
 
     function cancelHide() {
       if (hideTimer) global.clearTimeout(hideTimer);
@@ -496,6 +512,8 @@
       tooltip.removeAttribute("data-key");
       if (activeVisual) activeVisual.classList.remove("is-active");
       activeVisual = null;
+      activeTarget = null;
+      touchTarget = null;
       if (activeGuide) activeGuide.setAttribute("visibility", "hidden");
     }
 
@@ -506,9 +524,10 @@
 
     function activatePoint(point, target, visual) {
       cancelHide();
-      showTooltip(point, target);
+      if (activeTarget !== target || tooltip.hidden) showTooltip(point, target);
       if (activeVisual && activeVisual !== visual) activeVisual.classList.remove("is-active");
       activeVisual = visual;
+      activeTarget = target;
       visual.classList.add("is-active");
       if (activeGuide) {
         const pointX = x(point);
@@ -525,36 +544,8 @@
       target.setAttribute("role", matchUrl ? "link" : "img");
       target.setAttribute("aria-label", matchUrl ? `${label}、試合詳細を見る` : label);
       if (matchUrl) target.classList.add("lp-point-link");
-      target.addEventListener("pointerenter", (event) => {
-        if (event.pointerType !== "touch") activatePoint(point, target, visual);
-      });
-      target.addEventListener("pointerleave", (event) => {
-        if (event.pointerType !== "touch") queueTooltipHide();
-      });
-      target.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-        if (event.pointerType === "touch") {
-          event.preventDefault();
-          if (activeVisual === visual && !tooltip.hidden && matchUrl) {
-            openMatchDetail(point);
-            return;
-          }
-          target.dataset.touchHandled = "true";
-        }
-        activatePoint(point, target, visual);
-      });
       target.addEventListener("focus", () => activatePoint(point, target, visual));
       target.addEventListener("blur", queueTooltipHide);
-      if (matchUrl) {
-        target.addEventListener("click", (event) => {
-          if (target.dataset.touchHandled === "true") {
-            target.dataset.touchHandled = "";
-            event.preventDefault();
-            return;
-          }
-          openMatchDetail(point);
-        });
-      }
       target.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -566,8 +557,44 @@
 
     tooltip.addEventListener("pointerenter", cancelHide);
     tooltip.addEventListener("pointerleave", queueTooltipHide);
+    function targetAtPointer(event) {
+      const bounds = svg.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return null;
+      return nearestChartPoint(
+        pointTargets,
+        (event.clientX - bounds.left) * (width / bounds.width),
+        (event.clientY - bounds.top) * (height / bounds.height),
+      );
+    }
+    svg.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      const target = targetAtPointer(event);
+      if (target) activatePoint(target.point, target.target, target.visual);
+      else queueTooltipHide();
+    });
+    svg.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "touch") queueTooltipHide();
+    });
+    svg.addEventListener("pointerdown", (event) => {
+      const target = targetAtPointer(event);
+      if (!target) return;
+      event.stopPropagation();
+      if (event.pointerType === "touch") {
+        event.preventDefault();
+        if (touchTarget === target.target && !tooltip.hidden && pointMatchUrl(target.point)) {
+          openMatchDetail(target.point);
+          return;
+        }
+        touchTarget = target.target;
+      }
+      activatePoint(target.point, target.target, target.visual);
+    });
+    svg.addEventListener("click", (event) => {
+      const target = targetAtPointer(event);
+      if (target && event.detail !== 0 && pointMatchUrl(target.point)) openMatchDetail(target.point);
+    });
     chart.addEventListener("pointerdown", (event) => {
-      if (!event.target.closest?.(".lp-point-hit, .lp-gap-hit")) hideTooltip();
+      if (event.target === chart) hideTooltip();
     });
     for (let score = min; score <= max; score += 25) {
       const boundary = score % 100 === 0;
@@ -684,9 +711,11 @@
       const target = el("circle", {
         cx: x(point), cy: markerY, r: 13, fill: "transparent", stroke: "transparent", class: "lp-point-hit",
       });
+      target.setAttribute("pointer-events", "none");
       bindPointTarget(target, point, marker);
       svg.append(marker);
       svg.append(target);
+      pointTargets.push({ point, target, visual: marker, x: x(point), y: markerY });
     });
     chart.append(svg);
   }
@@ -796,7 +825,7 @@
     render();
   }
 
-  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement };
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint };
   global.LPProgress = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global.document) {

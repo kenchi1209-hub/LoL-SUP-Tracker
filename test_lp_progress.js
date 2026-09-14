@@ -82,4 +82,12 @@ const topEdge = lpProgress.tooltipPlacement(
 );
 assert.strictEqual(topEdge.top, 30);
 
+const densePoints = [
+  { match_id: "JP1_145", x: 100, y: 200 },
+  { match_id: "JP1_148", x: 104, y: 200 },
+];
+assert.strictEqual(lpProgress.nearestChartPoint(densePoints, 100, 200).match_id, "JP1_145");
+assert.strictEqual(lpProgress.nearestChartPoint(densePoints, 104, 200).match_id, "JP1_148");
+assert.strictEqual(lpProgress.nearestChartPoint(densePoints, 118, 200), null);
+
 console.log("LP Trend result marker tests: OK");

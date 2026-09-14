@@ -45,4 +45,41 @@ const coverage = lpProgress.rankedMatchesForCoverage({
 });
 assert.deepStrictEqual(coverage.map((match) => match.match_id), ["exact", "loss"]);
 
+const manualTooltip = lpProgress.tooltipDetails({
+  kind: "exact", game_number: 145, win: false, lp_delta: -20,
+  champion_name: "ナミ", role: "SUP",
+  before: { tier: "SILVER", division: "IV", lp: 20 },
+  after: { tier: "SILVER", division: "IV", lp: 0 },
+  record_before: { wins: 63, losses: 81 },
+  record_after: { wins: 63, losses: 82 },
+  capture_mode: "manual_recovery", confidence: "user_confirmed_with_lcu_anchor",
+  match_id: "JP1_MANUAL",
+});
+assert.strictEqual(manualTooltip.game, "第145戦");
+assert.strictEqual(manualTooltip.result, "LOSS");
+assert.strictEqual(manualTooltip.delta, "-20");
+assert.strictEqual(manualTooltip.champion, "ナミ / SUP");
+assert.strictEqual(manualTooltip.rank, "SILVER IV 20 LP → SILVER IV 0 LP");
+assert.strictEqual(manualTooltip.record, "63W81L → 63W82L");
+assert.deepStrictEqual(manualTooltip.badges, ["Manual recovery", "User confirmed"]);
+
+const unresolvedTooltip = lpProgress.tooltipDetails({ kind: "unresolved", game_number: 148, win: true, lp_delta: null });
+assert.strictEqual(unresolvedTooltip.delta, "LP 未確定");
+assert.deepStrictEqual(unresolvedTooltip.badges, ["LP未確定", "LP値は補間していません"]);
+assert.strictEqual(lpProgress.tooltipDetails({ kind: "baseline", game_number: 95, rank: { tier: "SILVER", division: "IV", lp: 23 } }).delta, "");
+
+const rightEdge = lpProgress.tooltipPlacement(
+  { left: 280, right: 290, top: 50, bottom: 60, width: 10, height: 10 },
+  { left: 0, top: 0, width: 320, height: 360 },
+  { width: 180, height: 100 },
+);
+assert(rightEdge.left < 100);
+assert.strictEqual(rightEdge.top, 74);
+const topEdge = lpProgress.tooltipPlacement(
+  { left: 80, right: 90, top: 6, bottom: 16, width: 10, height: 10 },
+  { left: 0, top: 0, width: 320, height: 360 },
+  { width: 180, height: 100 },
+);
+assert.strictEqual(topEdge.top, 30);
+
 console.log("LP Trend result marker tests: OK");

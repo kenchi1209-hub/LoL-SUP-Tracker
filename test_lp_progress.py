@@ -9,13 +9,14 @@ from site_builder import lp_progress
 
 
 def row(match_id, date, champion, win, kills=1, deaths=2, assists=3, team_kills=10,
-        vision_score=70, vision_score_per_min=2.33, game_duration_seconds=0):
+        vision_score=70, vision_score_per_min=2.33, game_duration_seconds=0, role="SUP"):
     return {
         "match_id": match_id,
         "date": date,
         "queue_id": 420,
         "champion": champion,
         "patch": "16.17.810.4348",
+        "role": role,
         "_win": win,
         "kills": kills,
         "deaths": deaths,
@@ -164,6 +165,24 @@ class LPProgressPayloadTest(unittest.TestCase):
         self.assertEqual(match["source"], "manual_recovery")
         self.assertEqual(point["source"], "manual_recovery")
         self.assertEqual(point["confidence"], "user_confirmed_with_lcu_anchor")
+
+    def test_point_tooltip_context_uses_only_safe_role_and_snapshot_records(self):
+        snapshot = self.root / "raw" / "JP1_EXACT" / "rank_after.json"
+        snapshot.parent.mkdir(parents=True)
+        snapshot.write_text(json.dumps({
+            "before": {"tier": "SILVER", "division": "IV", "lp": 23, "wins": 40, "losses": 55},
+            "after": {"tier": "SILVER", "division": "IV", "lp": 44, "wins": 41, "losses": 55},
+        }), encoding="utf-8")
+
+        payload = lp_progress.build_lp_payload(self.rows, "16.17.1")
+        point = next(item for item in payload["points"] if item.get("match_id") == "JP1_EXACT")
+
+        self.assertEqual(point["role"], "SUP")
+        self.assertEqual(point["record_before"], {"wins": 40, "losses": 55})
+        self.assertEqual(point["record_after"], {"wins": 41, "losses": 55})
+        encoded = json.dumps(point).lower()
+        for forbidden in ("puuid", "summonerid", "participantid", "accountid", "credential", "token"):
+            self.assertNotIn(forbidden, encoded)
 
     def test_latest_exact_rank_after_record_overrides_stale_history_record(self):
         snapshot = self.root / "raw" / "JP1_EXACT" / "rank_after.json"

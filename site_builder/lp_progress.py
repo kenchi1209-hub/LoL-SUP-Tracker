@@ -29,6 +29,7 @@ LP_HISTORY_PATH = _paths.csv / "lp_history.json"
 CURRENT_RANK_PATH = _paths.csv / "current_rank.json"
 RAW_ROOT = _paths.raw
 CONFIRMED_LP_CONFIDENCES = {"exact", "user_confirmed_with_lcu_anchor"}
+ROLE_DISPLAY = {"TOP": "TOP", "JUNGLE": "JG", "JG": "JG", "MIDDLE": "MID", "MID": "MID", "BOTTOM": "ADC", "ADC": "ADC", "UTILITY": "SUP", "SUP": "SUP"}
 HISTORICAL_RECONSTRUCTED_PATH = (
     _paths.raw / "lp_progress" / "recovered" / "blitz_2026-08-31_reconstructed.json"
 )
@@ -74,6 +75,17 @@ def load_lp_history():
 
 def _rank_after_record(match_id, expected_rank):
     """Read only the public-safe W/L pair from the selected exact snapshot."""
+    records = _rank_snapshot_records(match_id, expected_rank)
+    return records["after"] if records else None
+
+
+def _rank_snapshot_records(match_id, expected_rank):
+    """Read display-safe before/after W/L values for an LP tooltip.
+
+    The rank-after snapshot is accepted only when its after rank matches the
+    already selected LP history record.  This prevents a stale or unrelated
+    raw snapshot from changing public trend context.
+    """
     snapshot = _load_json(RAW_ROOT / str(match_id) / "rank_after.json", {})
     after = snapshot.get("after") if isinstance(snapshot, dict) else None
     rank = _rank(after) if isinstance(after, dict) else None
@@ -82,7 +94,11 @@ def _rank_after_record(match_id, expected_rank):
     wins, losses = after.get("wins"), after.get("losses")
     if not isinstance(wins, int) or not isinstance(losses, int):
         return None
-    return {"wins": wins, "losses": losses}
+    result = {"after": {"wins": wins, "losses": losses}}
+    before = snapshot.get("before")
+    if isinstance(before, dict) and isinstance(before.get("wins"), int) and isinstance(before.get("losses"), int):
+        result["before"] = {"wins": before["wins"], "losses": before["losses"]}
+    return result
 
 
 def _current_rank_snapshot():
@@ -196,6 +212,7 @@ def _historical_payload(rows_by_id, official_ids):
             "champion": metadata["champion"],
             "champion_name": metadata["champion_name"],
             "champion_icon_id": metadata["champion_icon_id"],
+            "role": metadata["role"],
             "patch": metadata["patch"],
             "win": metadata["win"],
             "kills": metadata["kills"],
@@ -274,6 +291,7 @@ def _match_metadata(row, match_id):
             "champion": "Unknown",
             "champion_name": "Unknown",
             "champion_icon_id": "",
+            "role": "",
             "patch": "",
             "win": None,
             "kills": None,
@@ -321,6 +339,7 @@ def _match_metadata(row, match_id):
         "champion": champion,
         "champion_name": champion_name_ja(champion),
         "champion_icon_id": champion_icon_id(champion),
+        "role": ROLE_DISPLAY.get(str(row.get("role", "")).upper(), ""),
         "patch": normalize_patch(row.get("patch", "")),
         "win": bool(row.get("_win", False)),
         "kills": kills,
@@ -381,10 +400,13 @@ def _history_match(record, rows_by_id):
         "segment_id": str(record.get("segment_id", "")),
         "source": "manual_recovery" if record.get("capture_mode") == "manual_recovery" else "exact",
     })
-    rank_after_record = _rank_after_record(match_id, after)
-    if rank_after_record:
-        metadata["wins_after"] = rank_after_record["wins"]
-        metadata["losses_after"] = rank_after_record["losses"]
+    rank_records = _rank_snapshot_records(match_id, after)
+    if rank_records:
+        metadata["wins_after"] = rank_records["after"]["wins"]
+        metadata["losses_after"] = rank_records["after"]["losses"]
+        metadata["record_after"] = rank_records["after"]
+        if rank_records.get("before"):
+            metadata["record_before"] = rank_records["before"]
     return metadata
 
 
@@ -644,10 +666,13 @@ def build_lp_payload(rows, version):
             "match_url": item["match_url"],
             "champion": item["champion"],
             "champion_name": item["champion_name"],
+            "role": item["role"],
             "patch": item["patch"],
             "win": item["win"],
             "queue": item["queue"],
             "rank": item["after"],
+            "before": item["before"],
+            "after": item["after"],
             "score": item["score"],
             "game_number": usable.get("game_number"),
             "lp_delta": item["lp_delta"],
@@ -660,6 +685,8 @@ def build_lp_payload(rows, version):
             "source": item["source"],
             "capture_mode": item["capture_mode"],
             "segment_id": item["segment_id"],
+            "record_before": item.get("record_before"),
+            "record_after": item.get("record_after"),
         })
 
     current_rank = _current_rank_snapshot()

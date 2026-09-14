@@ -485,7 +485,12 @@
     chart.replaceChildren();
     if (!points.length || !xPoints.length) { empty.hidden = false; return; }
     empty.hidden = true;
-    const viewportWidth = Math.max(1, Math.round(chart.clientWidth)), height = 360, margin = { top: 32, right: 26, bottom: 54, left: 86 };
+    const yAxis = htmlEl("div", "lp-y-axis", "");
+    const scroll = htmlEl("div", "lp-chart-scroll", "");
+    chart.append(yAxis, scroll);
+    const height = Math.max(1, Math.round(scroll.clientHeight));
+    const viewportWidth = Math.max(1, Math.round(scroll.clientWidth));
+    const margin = { top: 32, right: 26, bottom: 54, left: 14 };
     const values = points.map((point) => point.score).filter(Number.isFinite);
     if (!values.length) { empty.hidden = false; return; }
     let min = Math.floor(Math.min(...values) / 100) * 100;
@@ -604,7 +609,11 @@
     for (let score = min; score <= max; score += 25) {
       const boundary = score % 100 === 0;
       svg.append(el("line", { x1: margin.left, y1: y(score), x2: width - margin.right, y2: y(score), stroke: boundary ? "#3b4861" : "#252e40", "stroke-width": boundary ? 1.2 : 1 }));
-      if (boundary) svg.append(el("text", { x: margin.left - 9, y: y(score) + 4, fill: "#aeb9ca", "font-size": 10, "text-anchor": "end" }, `${rankTick(score)} ${score % 100}`));
+      if (boundary) {
+        const label = htmlEl("div", "lp-y-axis-label", `${rankTick(score)} ${score % 100}`);
+        label.style.top = `${y(score)}px`;
+        yAxis.append(label);
+      }
     }
     const desiredTicks = global.innerWidth <= 430 ? 4 : 6;
     const rawStep = Math.max(1, Math.ceil((last - first) / desiredTicks));
@@ -722,7 +731,7 @@
       svg.append(target);
       pointTargets.push({ point, target, visual: marker, x: x(point), y: markerY });
     });
-    chart.append(svg);
+    scroll.append(svg);
   }
 
   function championSummary(matches) {

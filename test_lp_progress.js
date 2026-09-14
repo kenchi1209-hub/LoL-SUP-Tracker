@@ -90,4 +90,8 @@ assert.strictEqual(lpProgress.nearestChartPoint(densePoints, 100, 200).match_id,
 assert.strictEqual(lpProgress.nearestChartPoint(densePoints, 104, 200).match_id, "JP1_148");
 assert.strictEqual(lpProgress.nearestChartPoint(densePoints, 118, 200), null);
 
+assert.strictEqual(lpProgress.chartWidthForGames(1010, 1, 148), 1582);
+assert.strictEqual(lpProgress.chartWidthForGames(345, 1, 148), 1582);
+assert.strictEqual(lpProgress.chartWidthForGames(1600, 1, 148), 1600);
+
 console.log("LP Trend result marker tests: OK");

@@ -462,6 +462,11 @@
     return nearest;
   }
 
+  function chartWidthForGames(viewportWidth, firstGame, lastGame, margins = 112, minimumSpacing = 10) {
+    const gameSpan = Math.max(0, lastGame - firstGame);
+    return Math.max(viewportWidth, margins + gameSpan * minimumSpacing);
+  }
+
   function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = []) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
@@ -480,7 +485,7 @@
     chart.replaceChildren();
     if (!points.length || !xPoints.length) { empty.hidden = false; return; }
     empty.hidden = true;
-    const width = Math.max(1, Math.round(chart.clientWidth)), height = 360, margin = { top: 32, right: 26, bottom: 54, left: 86 };
+    const viewportWidth = Math.max(1, Math.round(chart.clientWidth)), height = 360, margin = { top: 32, right: 26, bottom: 54, left: 86 };
     const values = points.map((point) => point.score).filter(Number.isFinite);
     if (!values.length) { empty.hidden = false; return; }
     let min = Math.floor(Math.min(...values) / 100) * 100;
@@ -489,11 +494,13 @@
     let first = Math.min(...xPoints.map((point) => point.game_number));
     let last = Math.max(...xPoints.map((point) => point.game_number));
     if (first === last) { first -= 1; last += 1; }
+    const width = chartWidthForGames(viewportWidth, first, last, margin.left + margin.right);
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
     const x = (point) => margin.left + ((point.game_number - first) / (last - first)) * chartWidth;
     const y = (score) => margin.top + ((max - score) / (max - min)) * chartHeight;
     const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Solo/Duo LP推移" });
+    svg.style.width = `${width}px`;
     let activeVisual = null;
     let activeTarget = null;
     let hideTimer = null;
@@ -823,7 +830,7 @@
     render();
   }
 
-  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint };
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames };
   global.LPProgress = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global.document) {

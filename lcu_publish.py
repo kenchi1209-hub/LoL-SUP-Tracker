@@ -44,6 +44,12 @@ RAW_MATCH_FILENAMES = frozenset({
 UNRESOLVED_RAW_MATCH_FILENAMES = RAW_MATCH_FILENAMES - {"rank_after.json"}
 UNRESOLVED_SHARED_PATHS = GENERATED_SHARED_PATHS - {"csv/lp_history.json"}
 
+# A non-solo-queue match update is intentionally separate from an unresolved
+# ranked update.  Both may write the ordinary Match-V5 exports, but neither is
+# allowed to create or revise per-match LP allocation data.
+MATCH_ONLY_RAW_MATCH_FILENAMES = UNRESOLVED_RAW_MATCH_FILENAMES
+MATCH_ONLY_SHARED_PATHS = UNRESOLVED_SHARED_PATHS
+
 
 def is_allowed_match_path(
     path, match_id, correction_match_id=None, confirmation_match_id=None,
@@ -68,6 +74,14 @@ def is_allowed_unresolved_match_path(path, match_id):
         return True
     raw_prefix = f"raw/{match_id}/"
     return path.startswith(raw_prefix) and path[len(raw_prefix):] in UNRESOLVED_RAW_MATCH_FILENAMES
+
+
+def is_allowed_match_only_path(path, match_id):
+    """Allow one non-LP eligible match update, never LP allocation data."""
+    if path in MATCH_ONLY_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+        return True
+    raw_prefix = f"raw/{match_id}/"
+    return path.startswith(raw_prefix) and path[len(raw_prefix):] in MATCH_ONLY_RAW_MATCH_FILENAMES
 
 
 class PrivateDataPublisher:
@@ -269,6 +283,19 @@ class PrivateDataPublisher:
             raise PublishError("unexpected PrivateData path changed for unresolved publish; publish stopped")
         return paths
 
+    def _validate_match_only_changed_paths(self, match_id):
+        """Validate one Normal/Draft-style update without LP allocation writes."""
+        paths = self._status_paths()
+        if not paths:
+            raise PublishError("no PrivateData changes found after match-only update")
+        unexpected = [
+            path for path in paths
+            if not is_allowed_match_only_path(path, match_id)
+        ]
+        if unexpected:
+            raise PublishError("unexpected PrivateData path changed for match-only publish; publish stopped")
+        return paths
+
     def _commit_push_and_dispatch(self, match_id, paths, allowed_path):
         """Stage an already validated path set, then commit, push, and dispatch."""
         self._git("add", "--", *paths)
@@ -347,4 +374,20 @@ class PrivateDataPublisher:
             match_id,
             paths,
             lambda path: is_allowed_unresolved_match_path(path, match_id),
+        )
+
+    def publish_match_only_update(self, match_id):
+        """Publish one eligible non-Queue-420 update with no LP allocation."""
+        if not self.base_sha:
+            raise PublishError("publish preflight was not completed")
+        paths = self._validate_match_only_changed_paths(match_id)
+
+        head, remote, counts = self._remote_state()
+        if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
+            raise PublishError("remote main advanced during update; publish stopped")
+
+        return self._commit_push_and_dispatch(
+            match_id,
+            paths,
+            lambda path: is_allowed_match_only_path(path, match_id),
         )

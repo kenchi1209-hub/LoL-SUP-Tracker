@@ -1,4 +1,4 @@
-"""Windows LCU watcher with an explicit, opt-in post-ranked live mode."""
+"""Windows LCU watcher with explicit post-game live processing."""
 
 import argparse
 import ctypes
@@ -21,6 +21,7 @@ from lp_snapshot import (
     previous_state,
     reconcile_previous_rank_after,
 )
+from queue_map import is_allowed_queue_id
 from timezone_utils import now_jst
 
 
@@ -273,14 +274,18 @@ class LCUWatcher:
         self._retry_identity_verification("Lobby", force=True)
 
     def _start_pending(self, phase, queue_id, session_id):
-        before = self._latest_recheck_rank()
-        if before is None:
-            before = self._verified_lcu_before_rank(self.client.get_solo_rank())
+        mode = "ranked_lp" if queue_id == SOLO_QUEUE_ID else "match_only"
+        before = None
+        if mode == "ranked_lp":
+            before = self._latest_recheck_rank()
+            if before is None:
+                before = self._verified_lcu_before_rank(self.client.get_solo_rank())
         self.pending = {
             "detected_at_jst": now_jst().replace(microsecond=0).isoformat(),
             "start_phase": phase,
             "queue_id": queue_id,
             "session_id": session_id,
+            "mode": mode,
             "lcu_before_rank": before,
             "processing_started": False,
             "capture_attempted": False,
@@ -293,8 +298,12 @@ class LCUWatcher:
             "waiting_diagnostics_logged": False,
             "recovered_finish": False,
         }
-        self._log("[LP] solo ranked detected")
-        self._log("[LP] pending started")
+        if mode == "ranked_lp":
+            self._log("[LP] solo ranked detected")
+            self._log("[LP] pending started")
+        else:
+            self._log("[LCU] eligible non-ranked match detected")
+            self._log("[MATCH] match-only pending started")
 
     def _require_checkpoint(self):
         """Terminally stop one game without blocking the next ranked game."""
@@ -527,6 +536,35 @@ class LCUWatcher:
         previous = snapshot.get("reconciled_previous_match_id") if isinstance(snapshot, dict) else None
         return previous if isinstance(previous, str) and previous else None
 
+    def _raw_match_ids(self):
+        """Return local raw Match-V5 directories without changing PrivateData."""
+        if self.data_root is None:
+            raise LiveProcessError("live data root is unavailable")
+        raw_root = self.data_root / "raw"
+        try:
+            return {
+                child.name for child in raw_root.iterdir()
+                if child.is_dir() and child.name.startswith("JP1_")
+            }
+        except OSError as error:
+            raise LiveProcessError("could not inspect local Match-V5 data") from error
+
+    def _new_match_only_candidates(self, before_ids, queue_id):
+        """Identify only new raw matches for this pending non-LP queue."""
+        if self.data_root is None:
+            raise LiveProcessError("live data root is unavailable")
+        candidates = []
+        for match_id in sorted(self._raw_match_ids() - before_ids):
+            match_path = self.data_root / "raw" / match_id / "match.json"
+            try:
+                with match_path.open("r", encoding="utf-8") as file:
+                    detail = json.load(file)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if queue_id_from_session({"queueId": detail.get("info", {}).get("queueId")}) == queue_id:
+                candidates.append(match_id)
+        return candidates
+
     def _live_process(self):
         """Delegate all writes to the existing update and exact-capture CLIs."""
         pending = self.pending
@@ -620,6 +658,57 @@ class LCUWatcher:
             pending["terminal"] = True
             self._log(f"[LP] LIVE PROCESS FAILED: {error}")
 
+    def _live_match_only_process(self):
+        """Update and publish one eligible non-Queue-420 match without LP writes."""
+        pending = self.pending
+        pending["processing_started"] = True
+        try:
+            if self.auto_publish:
+                self._log("[GIT] automatic publish preflight started")
+                self._publisher().preflight()
+            before_ids = self._raw_match_ids()
+            retry_deadline = self.monotonic() + MATCH_UPDATE_MAX_WAIT_SECONDS
+            for attempt in range(1, MATCH_UPDATE_MAX_ATTEMPTS + 1):
+                pending["match_update_attempts"] = attempt
+                self._log("[MATCH] match data update started")
+                result = self._run_process(
+                    self._command("main.py", "--data-root", str(self.data_root)),
+                    MAIN_TIMEOUT_SECONDS,
+                )
+                if result.returncode != 0:
+                    raise LiveProcessError(f"main.py exited with code {result.returncode}")
+
+                matches = self._new_match_only_candidates(before_ids, pending["queue_id"])
+                if len(matches) == 1:
+                    match_id = matches[0]
+                    self._log("[MATCH] match data update complete")
+                    if self.auto_publish:
+                        self._log("[GIT] match-only publish started")
+                        self._publisher().publish_match_only_update(match_id)
+                        pending["published"] = True
+                        self._log("[MATCH] match-only publish complete")
+                    pending["completed"] = True
+                    pending["terminal"] = True
+                    return
+
+                if len(matches) > 1:
+                    raise LiveProcessError("multiple non-ranked Match-V5 candidates found")
+                remaining = retry_deadline - self.monotonic()
+                if remaining <= 0:
+                    break
+                if attempt < MATCH_UPDATE_MAX_ATTEMPTS:
+                    self._log("[MATCH] waiting for Match-V5 reflection")
+                    self.sleeper(min(MATCH_UPDATE_RETRY_SECONDS, remaining))
+            raise LiveProcessError("Match-V5 reflection timed out")
+        except subprocess.TimeoutExpired:
+            pending["failed"] = True
+            pending["terminal"] = True
+            self._log("[MATCH] LIVE PROCESS FAILED: subprocess timeout")
+        except (LiveProcessError, PublishError, OSError, ValueError) as error:
+            pending["failed"] = True
+            pending["terminal"] = True
+            self._log(f"[MATCH] LIVE PROCESS FAILED: {error}")
+
     def _publisher(self):
         if self.publisher is None:
             self.publisher = PrivateDataPublisher(
@@ -632,18 +721,28 @@ class LCUWatcher:
     def _finish_pending(self):
         pending = self.pending
         pending["processing_started"] = True
+        mode = pending.get("mode", "ranked_lp")
         if pending.get("recovered_finish"):
             self._log("[LP] finish recovery executing")
-        self._log("[LP] ranked finished")
+        if mode == "ranked_lp":
+            self._log("[LP] ranked finished")
+        else:
+            self._log("[MATCH] eligible non-ranked match finished")
         if not self.live:
-            self._log("[LP] WOULD_RUN_MATCH_UPDATE")
-            self._log("[LP] WOULD_RUN_CAPTURE")
+            if mode == "ranked_lp":
+                self._log("[LP] WOULD_RUN_MATCH_UPDATE")
+                self._log("[LP] WOULD_RUN_CAPTURE")
+            else:
+                self._log("[MATCH] WOULD_RUN_MATCH_UPDATE")
             pending["terminal"] = True
             return
-        self._live_process()
+        if mode == "ranked_lp":
+            self._live_process()
+        else:
+            self._live_match_only_process()
 
     def _log_waiting_diagnostics(self, queue_id, session_id):
-        """Log one non-PII trigger check for each pending ranked game."""
+        """Log one non-PII trigger check for each pending eligible game."""
         pending = self.pending
         if pending["waiting_diagnostics_logged"]:
             return
@@ -652,14 +751,16 @@ class LCUWatcher:
         current_id_present = session_id is not None
         id_match = pending_id_present and current_id_present and session_id == pending["session_id"]
         self._log(
-            "[LP] trigger diagnostics: "
+            ("[LP]" if pending.get("mode", "ranked_lp") == "ranked_lp" else "[MATCH]")
+            + " trigger diagnostics: "
             f"queue={queue_id} in_progress={pending['has_reached_in_progress']} "
             f"processing={pending['processing_started']} completed={pending['completed']} "
             f"terminal={pending['terminal']} pending_id_present={pending_id_present} "
             f"current_id_present={current_id_present} id_match={id_match}"
         )
         if not id_match:
-            self._log("[LP] session id unavailable/mismatch; continuing with phase-safe trigger")
+            prefix = "[LP]" if pending.get("mode", "ranked_lp") == "ranked_lp" else "[MATCH]"
+            self._log(f"{prefix} session id unavailable/mismatch; continuing with phase-safe trigger")
 
     def _log_finish_skip(self, phase, queue_id):
         """Emit one non-PII explanation when a finish phase cannot trigger."""
@@ -667,8 +768,9 @@ class LCUWatcher:
         if pending is None or pending.get("finish_skip_diagnostics_logged"):
             return
         pending["finish_skip_diagnostics_logged"] = True
+        prefix = "[LP]" if pending.get("mode", "ranked_lp") == "ranked_lp" else "[MATCH]"
         self._log(
-            "[LP] finish trigger skipped: "
+            f"{prefix} finish trigger skipped: "
             f"phase={phase} queue={queue_id} in_progress={pending['has_reached_in_progress']} "
             f"processing={pending['processing_started']} completed={pending['completed']} "
             f"terminal={pending['terminal']}"
@@ -706,12 +808,17 @@ class LCUWatcher:
             self._log(f"[LCU] queue: {queue_id}")
         elif phase in START_PHASES | FINISH_PHASES and phase != previous:
             self._log(f"[LCU] queue unavailable for phase: {phase}")
-        identity_just_verified = self._retry_identity_verification(phase, force=phase != previous)
+        # Identity and rank rechecks are Queue 420-only.  Eligible non-solo
+        # queues need no LP state and should not emit unrelated LP activity.
+        identity_just_verified = (
+            self._retry_identity_verification(phase, force=phase != previous)
+            if queue_id == SOLO_QUEUE_ID or self.recheck is not None else False
+        )
         if identity_just_verified and self.recheck is not None:
             # Adopt a newly verified pre-game rank immediately instead of
             # waiting for the normal 30-second recheck cadence.
             self._poll_recheck(force=True)
-        if queue_id == SOLO_QUEUE_ID and phase in START_PHASES:
+        if is_allowed_queue_id(queue_id) and phase in START_PHASES:
             if self.pending is None:
                 self._start_pending(phase, queue_id, session_id)
             elif self.pending["terminal"]:
@@ -719,31 +826,32 @@ class LCUWatcher:
         if queue_id == SOLO_QUEUE_ID and phase == "Matchmaking":
             self._start_recheck()
         self._recover_pending_from_finish(phase, queue_id, session_id)
-        if self.pending and phase == "InProgress":
+        if self.pending and phase == "InProgress" and queue_id == self.pending["queue_id"]:
             self.pending["has_reached_in_progress"] = True
-            self._end_recheck("game_start")
+            if self.pending.get("mode", "ranked_lp") == "ranked_lp":
+                self._end_recheck("game_start")
         if self.pending and phase == "WaitingForStats":
             self._log_waiting_diagnostics(queue_id, session_id)
         if self.pending and phase in FINISH_PHASES:
             can_finish = (
-                self.pending["queue_id"] == SOLO_QUEUE_ID
+                self.pending.get("mode") in {"ranked_lp", "match_only"}
                 and self.pending["has_reached_in_progress"]
                 and not self.pending["processing_started"]
                 and not self.pending["completed"]
                 and not self.pending["terminal"]
-                and queue_id == SOLO_QUEUE_ID
+                and queue_id == self.pending["queue_id"]
             )
             if not can_finish:
                 self._log_finish_skip(phase, queue_id)
         if (
             self.pending
-            and self.pending["queue_id"] == SOLO_QUEUE_ID
+            and self.pending.get("mode") in {"ranked_lp", "match_only"}
             and self.pending["has_reached_in_progress"]
             and phase in FINISH_PHASES
             and not self.pending["processing_started"]
             and not self.pending["completed"]
             and not self.pending["terminal"]
-            and queue_id == SOLO_QUEUE_ID
+            and queue_id == self.pending["queue_id"]
         ):
             self._finish_pending()
 
@@ -799,7 +907,10 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", help="Absolute PrivateData root required for --live")
     parser.add_argument("--dry-run", action="store_true", default=True, help="Observe only (default)")
-    parser.add_argument("--live", action="store_true", help="Opt in to main.py then exact LP capture")
+    parser.add_argument(
+        "--live", action="store_true",
+        help="Opt in to eligible Match updates; Queue 420 also performs exact LP capture",
+    )
     parser.add_argument(
         "--auto-publish",
         action="store_true",

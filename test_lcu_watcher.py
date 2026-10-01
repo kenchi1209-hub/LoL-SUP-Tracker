@@ -151,6 +151,12 @@ class FakePublisher:
             raise self.publish_error
         return "commit-sha"
 
+    def publish_match_only_update(self, match_id):
+        self.calls.append(("publish_match_only", match_id))
+        if self.publish_error:
+            raise self.publish_error
+        return "commit-sha"
+
 
 class LCUWatcherTest(unittest.TestCase):
     def watcher(self, client):
@@ -1014,14 +1020,155 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertTrue(watcher.pending["failed"])
         self.assertFalse(watcher.pending["completed"])
 
-    def test_live_unknown_or_non_solo_queue_never_runs_processes(self):
+    def test_live_ineligible_queue_never_runs_processes(self):
         runner = RecordingRunner()
         watcher = self.live_watcher(
-            FakeClient(phases=["ChampSelect", "InProgress", "WaitingForStats"], sessions=[session(440)] * 3), runner,
+            FakeClient(phases=["ChampSelect", "InProgress", "WaitingForStats"], sessions=[session(480)] * 3), runner,
         )
         for _ in range(3):
             watcher.tick()
         self.assertEqual(runner.calls, [])
+
+    def test_live_eligible_non_ranked_queue_updates_and_publishes_without_lp_capture(self):
+        runner = RecordingRunner([FakeResult(0)])
+        publisher = FakePublisher()
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "WaitingForStats"],
+                sessions=[session(400)] * 3,
+            ),
+            runner,
+            auto_publish=True,
+            publisher=publisher,
+        )
+        watcher._raw_match_ids = lambda: set()
+        watcher._new_match_only_candidates = lambda _before, _queue: ["JP1_NORMAL"]
+        for _ in range(3):
+            watcher.tick()
+        self.assertTrue(watcher.pending["completed"])
+        self.assertEqual(watcher.pending["mode"], "match_only")
+        self.assertFalse(watcher.pending["capture_attempted"])
+        self.assertEqual(len(runner.calls), 1)
+        self.assertTrue(runner.calls[0][0][1].endswith("main.py"))
+        self.assertEqual(publisher.calls, ["preflight", ("publish_match_only", "JP1_NORMAL")])
+        joined = "\n".join(self.logs)
+        self.assertIn("[LCU] eligible non-ranked match detected", joined)
+        self.assertIn("[MATCH] match-only publish complete", joined)
+        self.assertNotIn("[LP] exact capture", joined)
+
+    def test_match_only_end_of_game_fallback_runs_once_and_preend_does_not_trigger(self):
+        runner = RecordingRunner([FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "PreEndOfGame", "EndOfGame", "EndOfGame", "Lobby"],
+                sessions=[session(470)] * 6,
+            ),
+            runner,
+        )
+        watcher._raw_match_ids = lambda: set()
+        watcher._new_match_only_candidates = lambda _before, _queue: ["JP1_NORMAL"]
+        for _ in range(6):
+            watcher.tick()
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(self.logs.count("[MATCH] eligible non-ranked match finished"), 1)
+        self.assertNotIn("[LP] ranked finished", self.logs)
+
+    def test_match_only_waiting_for_stats_then_end_of_game_runs_once(self):
+        runner = RecordingRunner([FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "WaitingForStats", "EndOfGame"],
+                sessions=[session(400)] * 4,
+            ),
+            runner,
+        )
+        watcher._raw_match_ids = lambda: set()
+        watcher._new_match_only_candidates = lambda _before, _queue: ["JP1_NORMAL"]
+        for _ in range(4):
+            watcher.tick()
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(self.logs.count("[MATCH] eligible non-ranked match finished"), 1)
+
+    def test_match_only_dry_run_does_not_run_main_or_lp_capture(self):
+        runner = RecordingRunner()
+        watcher = LCUWatcher(
+            client=FakeClient(
+                phases=["ChampSelect", "InProgress", "WaitingForStats"],
+                sessions=[session(440)] * 3,
+            ),
+            emit=lambda _message: None,
+            sleeper=lambda _: None,
+            process_runner=runner,
+        )
+        for _ in range(3):
+            watcher.tick()
+        self.assertTrue(watcher.pending["terminal"])
+        self.assertFalse(watcher.pending["capture_attempted"])
+        self.assertEqual(runner.calls, [])
+
+    def test_match_only_requires_pending_in_progress_and_current_allowed_queue(self):
+        runner = RecordingRunner()
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "WaitingForStats", "ChampSelect", "InProgress", "EndOfGame"],
+                sessions=[session(400), session(400), session(480), session(480), session(480)],
+            ),
+            runner,
+        )
+        for _ in range(5):
+            watcher.tick()
+        self.assertEqual(runner.calls, [])
+
+    def test_match_only_multiple_candidates_or_publish_failure_stops_without_lp_capture(self):
+        for candidates, publisher in (
+            (["JP1_ONE", "JP1_TWO"], FakePublisher()),
+            (["JP1_NORMAL"], FakePublisher(publish_error=PublishError("push failed"))),
+        ):
+            with self.subTest(candidates=candidates):
+                runner = RecordingRunner([FakeResult(0)])
+                watcher = self.live_watcher(
+                    FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(400)] * 2),
+                    runner,
+                    auto_publish=True,
+                    publisher=publisher,
+                )
+                watcher._raw_match_ids = lambda: set()
+                watcher._new_match_only_candidates = lambda _before, _queue, value=candidates: value
+                watcher.tick()
+                watcher.tick()
+                self.assertTrue(watcher.pending["failed"])
+                self.assertFalse(watcher.pending["capture_attempted"])
+                self.assertFalse(any("lp_snapshot.py" in " ".join(call[0]) for call in runner.calls))
+
+    def test_all_existing_non_solo_allowed_queues_use_match_only_pending(self):
+        watcher = self.watcher(FakeClient())
+        for queue_id in (400, 440, 470):
+            with self.subTest(queue_id=queue_id):
+                watcher.pending = None
+                watcher._start_pending("ChampSelect", queue_id, "game")
+                self.assertEqual(watcher.pending["mode"], "match_only")
+                self.assertIsNone(watcher.pending["lcu_before_rank"])
+
+    def test_new_match_only_candidates_are_new_and_queue_scoped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for match_id, queue_id in (
+                ("JP1_EXISTING", 400),
+                ("JP1_NORMAL", 400),
+                ("JP1_OTHER", 470),
+            ):
+                destination = root / "raw" / match_id
+                destination.mkdir(parents=True)
+                (destination / "match.json").write_text(
+                    json.dumps({"info": {"queueId": queue_id}}), encoding="utf-8",
+                )
+            watcher = LCUWatcher(
+                client=FakeClient(), live=True, data_root=root, emit=lambda _message: None,
+            )
+            self.assertEqual(
+                watcher._new_match_only_candidates({"JP1_EXISTING"}, 400),
+                ["JP1_NORMAL"],
+            )
 
     def test_live_backend_continues_after_lcu_disconnect(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])

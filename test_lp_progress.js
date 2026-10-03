@@ -94,4 +94,15 @@ assert.strictEqual(lpProgress.chartWidthForGames(1010, 1, 148), 1582);
 assert.strictEqual(lpProgress.chartWidthForGames(345, 1, 148), 1582);
 assert.strictEqual(lpProgress.chartWidthForGames(1600, 1, 148), 1600);
 
+const priorAnimationFrame = global.requestAnimationFrame;
+let scheduledScroll = null;
+global.requestAnimationFrame = (callback) => { scheduledScroll = callback; return 1; };
+const scrollContainer = { scrollLeft: 0, scrollWidth: 1582, clientWidth: 345 };
+lpProgress.scrollLpChartToLatest(scrollContainer);
+assert.strictEqual(scrollContainer.scrollLeft, 0);
+scheduledScroll();
+assert.strictEqual(scrollContainer.scrollLeft, 1237);
+if (priorAnimationFrame) global.requestAnimationFrame = priorAnimationFrame;
+else delete global.requestAnimationFrame;
+
 console.log("LP Trend result marker tests: OK");

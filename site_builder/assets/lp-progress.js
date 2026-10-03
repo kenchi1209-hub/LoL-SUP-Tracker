@@ -467,6 +467,15 @@
     return Math.max(viewportWidth, margins + gameSpan * minimumSpacing);
   }
 
+  function scrollLpChartToLatest(scroll) {
+    if (!scroll) return;
+    const apply = () => {
+      scroll.scrollLeft = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+    };
+    if (typeof global.requestAnimationFrame === "function") global.requestAnimationFrame(apply);
+    else apply();
+  }
+
   function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = []) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
@@ -732,6 +741,7 @@
       pointTargets.push({ point, target, visual: marker, x: x(point), y: markerY });
     });
     scroll.append(svg);
+    scrollLpChartToLatest(scroll);
   }
 
   function championSummary(matches) {
@@ -839,7 +849,7 @@
     render();
   }
 
-  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames };
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames, scrollLpChartToLatest };
   global.LPProgress = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global.document) {

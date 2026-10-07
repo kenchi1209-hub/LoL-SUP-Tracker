@@ -470,7 +470,7 @@ class PrivateDataPublisher:
             raise PublishError("unexpected PrivateData path changed for match-only publish; publish stopped")
         return paths
 
-    def _commit_push_and_dispatch(self, match_id, paths, allowed_path):
+    def _commit_push_and_dispatch(self, match_id, paths, allowed_path, commit_message=None):
         """Stage an already validated path set, then commit, push, and dispatch."""
         self._git("add", "--", *paths)
         staged = self._paths_from_name_status(
@@ -489,7 +489,7 @@ class PrivateDataPublisher:
 
         self._git("config", "user.name", "LoL LCU watcher")
         self._git("config", "user.email", "lcu-watcher@users.noreply.github.com")
-        self._git("commit", "-m", f"Update match {match_id}")
+        self._git("commit", "-m", commit_message or f"Update match {match_id}")
         commit_sha = self._git("rev-parse", "HEAD").stdout.strip()
         ahead, behind = self._remote_state()[2]
         if (ahead, behind) != (1, 0):
@@ -582,4 +582,5 @@ class PrivateDataPublisher:
             lambda path: is_allowed_ranked_remake_path(
                 path, match_id, confirmation_match_id,
             ),
+            commit_message=f"Publish remake match {match_id}",
         )

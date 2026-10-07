@@ -494,6 +494,10 @@ class PrivateDataPublisherTest(unittest.TestCase):
         self.assertTrue(publisher.is_ranked_remake_candidate(self.remake_id))
         self.assertEqual(publisher.publish_ranked_remake_update(self.remake_id), "commit-sha")
         self.assertTrue(runner.pushed)
+        self.assertIn(
+            ["git", "commit", "-m", f"Publish remake match {self.remake_id}"],
+            runner.calls,
+        )
 
     def test_ranked_remake_rejects_non_remake_or_any_current_lp_allocation(self):
         for duration, queue_id, current_history_record, extra, message in (

@@ -6,7 +6,8 @@ import unittest
 
 from lcu_publish import (
     PrivateDataPublisher, PublishError, is_allowed_match_path,
-    is_allowed_match_only_path, is_allowed_unresolved_match_path,
+    is_allowed_match_only_path, is_allowed_ranked_remake_path,
+    is_allowed_unresolved_match_path,
 )
 
 
@@ -96,12 +97,78 @@ class PrivateDataPublisherTest(unittest.TestCase):
         "excel/lol_report.xlsx",
     ]
     match_only_paths = list(unresolved_paths)
+    remake_id = "JP1_REMAKE"
+    remake_previous_id = "JP1_PREVIOUS"
+    remake_paths = [
+        "raw/JP1_REMAKE/match.json",
+        "raw/JP1_REMAKE/timeline.json",
+        "raw/JP1_REMAKE/combat_timeline.json",
+        "raw/JP1_REMAKE/rank_snapshot.json",
+        "csv/my_matches.csv",
+        "csv/current_rank.json",
+        "csv/match_details.json",
+        "excel/lol_report.xlsx",
+        "csv/lp_history.json",
+        "raw/JP1_PREVIOUS/rank_after.json",
+    ]
 
     def publisher(self, runner):
         self.logs = []
         return PrivateDataPublisher(
             "/tmp/private-data", "owner/public", runner=runner, emit=self.logs.append,
         )
+
+    def remake_publisher(self, *, changed_paths=None, duration=77, queue_id=420,
+                         current_history_record=False, prior_change=True):
+        """Build a minimal on-disk remake transaction for narrow validator tests."""
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        current_match = {
+            "metadata": {"matchId": self.remake_id},
+            "info": {
+                "queueId": queue_id, "gameDuration": duration,
+                "gameStartTimestamp": 1773214200000,
+            },
+        }
+        previous_rank_after = {
+            "snapshot_type": "rank_after", "match_id": self.remake_previous_id,
+            "game_datetime_jst": "2026-03-10T23:00:00+09:00",
+            "lp_status": "provisional", "after": {"tier": "BRONZE", "lp": 33},
+        }
+        confirmed_rank_after = {
+            **previous_rank_after,
+            "lp_status": "confirmed" if prior_change else "provisional",
+        }
+        previous_history = {"matches": [{
+            "match_id": self.remake_previous_id, "lp_status": "provisional",
+            "after": {"tier": "BRONZE", "lp": 33},
+        }]}
+        confirmed_history = {"matches": [{
+            "match_id": self.remake_previous_id,
+            "lp_status": "confirmed" if prior_change else "provisional",
+            "after": {"tier": "BRONZE", "lp": 33},
+        }]}
+        if current_history_record:
+            confirmed_history["matches"].append({"match_id": self.remake_id, "lp_status": "confirmed"})
+        files = {
+            f"raw/{self.remake_id}/match.json": current_match,
+            f"raw/{self.remake_previous_id}/rank_after.json": confirmed_rank_after,
+            "csv/lp_history.json": confirmed_history,
+        }
+        for path, value in files.items():
+            destination = root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(value), encoding="utf-8")
+        paths = self.remake_paths if changed_paths is None else changed_paths
+        runner = GitRunner(paths, head_files={
+            f"base-sha:raw/{self.remake_previous_id}/rank_after.json": json.dumps(previous_rank_after),
+            "base-sha:csv/lp_history.json": json.dumps(previous_history),
+        })
+        publisher = PrivateDataPublisher(root, "owner/public", runner=runner, emit=lambda _message: None)
+        publisher.base_sha = "base-sha"
+        runner.changes_visible = True
+        return publisher, runner
 
     def test_expected_paths_are_narrow_and_match_scoped(self):
         for path in self.expected_paths:
@@ -138,6 +205,23 @@ class PrivateDataPublisherTest(unittest.TestCase):
             "docs/note.md",
         ):
             self.assertFalse(is_allowed_match_only_path(path, self.match_id))
+
+    def test_ranked_remake_paths_are_narrow_and_only_allow_declared_confirmation(self):
+        for path in self.remake_paths:
+            self.assertTrue(is_allowed_ranked_remake_path(
+                path, self.remake_id, self.remake_previous_id,
+            ))
+        for path in (
+            f"raw/{self.remake_id}/rank_after.json",
+            "raw/JP1_OTHER/rank_after.json",
+            "raw/JP1_OTHER/match.json",
+            "raw/lp_progress/checkpoints/checkpoint.json",
+            "raw/lp_progress/recovered/manual.json",
+            "docs/note.md",
+        ):
+            self.assertFalse(is_allowed_ranked_remake_path(
+                path, self.remake_id, self.remake_previous_id,
+            ))
 
     def test_only_a_declared_previous_rank_after_is_allowed_for_lp_correction(self):
         previous = "JP1_PREVIOUS"
@@ -401,6 +485,65 @@ class PrivateDataPublisherTest(unittest.TestCase):
         with self.assertRaises(PublishError):
             publisher.publish_match_only_update(self.match_id)
         self.assertFalse(any(command[:3] == ["gh", "workflow", "run"] for command in runner.calls))
+
+    def test_ranked_remake_transaction_allows_only_status_confirmation_and_commits(self):
+        publisher, runner = self.remake_publisher()
+        paths, confirmation = publisher._validate_ranked_remake_changed_paths(self.remake_id)
+        self.assertEqual(paths, self.remake_paths)
+        self.assertEqual(confirmation, self.remake_previous_id)
+        self.assertTrue(publisher.is_ranked_remake_candidate(self.remake_id))
+        self.assertEqual(publisher.publish_ranked_remake_update(self.remake_id), "commit-sha")
+        self.assertTrue(runner.pushed)
+
+    def test_ranked_remake_rejects_non_remake_or_any_current_lp_allocation(self):
+        for duration, queue_id, current_history_record, extra, message in (
+            (300, 420, False, None, "eligible Queue 420 remake"),
+            (77, 400, False, None, "eligible Queue 420 remake"),
+            (77, 420, True, None, "must not have a current LP history record"),
+            (77, 420, False, f"raw/{self.remake_id}/rank_after.json", "must not create rank_after"),
+        ):
+            with self.subTest(duration=duration, queue_id=queue_id, extra=extra):
+                paths = None if extra is None else [*self.remake_paths, extra]
+                publisher, _runner = self.remake_publisher(
+                    changed_paths=paths,
+                    duration=duration,
+                    queue_id=queue_id,
+                    current_history_record=current_history_record,
+                )
+                if extra:
+                    destination = publisher.private_root / extra
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text(json.dumps({"match_id": self.remake_id}), encoding="utf-8")
+                with self.assertRaisesRegex(PublishError, message):
+                    publisher._validate_ranked_remake_changed_paths(self.remake_id)
+
+    def test_ranked_remake_rejects_lp_value_change_unrelated_record_and_unrelated_raw(self):
+        for changed_paths, mutate, message in (
+            (None, "prior_lp", "confirmation-only"),
+            (None, "unrelated_history", "added or removed a record"),
+            ([*self.remake_paths, "raw/JP1_OTHER/match.json"], None, "unexpected PrivateData path"),
+            ([*self.remake_paths, "docs/note.md"], None, "unexpected PrivateData path"),
+        ):
+            with self.subTest(mutate=mutate, paths=changed_paths):
+                publisher, _runner = self.remake_publisher(changed_paths=changed_paths)
+                if mutate == "prior_lp":
+                    path = publisher.private_root / f"raw/{self.remake_previous_id}/rank_after.json"
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    payload["after"]["lp"] = 34
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                elif mutate == "unrelated_history":
+                    path = publisher.private_root / "csv/lp_history.json"
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    payload["matches"].append({"match_id": "JP1_OTHER", "lp_status": "confirmed"})
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                with self.assertRaisesRegex(PublishError, message):
+                    publisher._validate_ranked_remake_changed_paths(self.remake_id)
+
+    def test_ranked_remake_rejects_delete_rename_or_copy_status(self):
+        for status in ("D ", "R ", "C "):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(PublishError, "rename, copy, or deletion"):
+                    PrivateDataPublisher._paths_from_status(f"{status} raw/JP1_REMAKE/match.json\n")
 
     def test_unrelated_dirty_file_stops_before_main_changes_are_staged(self):
         runner = GitRunner(["docs/manual.md"])

@@ -126,9 +126,10 @@ class RecordingRunner:
 
 
 class FakePublisher:
-    def __init__(self, preflight_error=None, publish_error=None):
+    def __init__(self, preflight_error=None, publish_error=None, remake_candidate=False):
         self.preflight_error = preflight_error
         self.publish_error = publish_error
+        self.remake_candidate = remake_candidate
         self.calls = []
 
     def preflight(self):
@@ -153,6 +154,17 @@ class FakePublisher:
 
     def publish_match_only_update(self, match_id):
         self.calls.append(("publish_match_only", match_id))
+        if self.publish_error:
+            raise self.publish_error
+        return "commit-sha"
+
+    def is_ranked_remake_candidate(self, match_id):
+        if self.remake_candidate:
+            self.calls.append(("is_ranked_remake_candidate", match_id))
+        return self.remake_candidate
+
+    def publish_ranked_remake_update(self, match_id):
+        self.calls.append(("publish_ranked_remake", match_id))
         if self.publish_error:
             raise self.publish_error
         return "commit-sha"
@@ -886,6 +898,52 @@ class LCUWatcherTest(unittest.TestCase):
                 watcher.tick()
                 self.assertEqual(publisher.calls, ["preflight"])
                 self.assertTrue(watcher.pending["failed"])
+
+    def test_auto_publish_verified_ranked_remake_skips_lp_capture_and_uses_dedicated_publish(self):
+        runner = RecordingRunner([FakeResult(0)])
+        publisher = FakePublisher(remake_candidate=True)
+        watcher = self.live_watcher(
+            FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
+            runner,
+            auto_publish=True,
+            publisher=publisher,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_REMAKE"}]
+        watcher.tick()
+        watcher.tick()
+        self.assertTrue(watcher.pending["completed"])
+        self.assertFalse(watcher.pending["capture_attempted"])
+        self.assertEqual(len(runner.calls), 1)
+        self.assertTrue(runner.calls[0][0][1].endswith("main.py"))
+        self.assertEqual(
+            publisher.calls,
+            [
+                "preflight",
+                ("is_ranked_remake_candidate", "JP1_REMAKE"),
+                ("publish_ranked_remake", "JP1_REMAKE"),
+            ],
+        )
+        joined = "\n".join(self.logs)
+        self.assertIn("ranked remake detected; LP allocation skipped", joined)
+        self.assertIn("ranked remake publish complete", joined)
+        self.assertNotIn("[LP] exact capture started", joined)
+
+    def test_ranked_capture_failure_is_not_reclassified_as_remake(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(1)])
+        publisher = FakePublisher(remake_candidate=False)
+        watcher = self.live_watcher(
+            FakeClient(phases=["InProgress", "WaitingForStats"], sessions=[session(420)] * 2),
+            runner,
+            auto_publish=True,
+            publisher=publisher,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_RANKED"}]
+        watcher.tick()
+        watcher.tick()
+        self.assertTrue(watcher.pending["failed"])
+        self.assertFalse(watcher.pending["completed"])
+        self.assertEqual(publisher.calls, ["preflight"])
+        self.assertEqual(len(runner.calls), 2)
 
     def test_auto_publish_preflight_or_trigger_failure_stops_without_retrigger(self):
         for publisher in (FakePublisher(preflight_error=PublishError("remote main is ahead")), FakePublisher(publish_error=PublishError("trigger failed"))):

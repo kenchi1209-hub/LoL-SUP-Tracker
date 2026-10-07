@@ -588,6 +588,20 @@ class LCUWatcher:
                 if len(matches) == 1:
                     match_id = matches[0]["match_id"]
                     self._log("[DATA] match update complete")
+                    # A verified short Queue 420 remake has Match History data
+                    # but intentionally has no per-match LP allocation.  Test
+                    # this before invoking lp_snapshot: capture failure alone
+                    # must never make an ordinary ranked game look like a remake.
+                    if self._publisher().is_ranked_remake_candidate(match_id):
+                        self._log("[MATCH] ranked remake detected; LP allocation skipped")
+                        if self.auto_publish:
+                            self._log("[GIT] ranked remake publish started")
+                            self._publisher().publish_ranked_remake_update(match_id)
+                            pending["published"] = True
+                            self._log("[MATCH] ranked remake publish complete")
+                        pending["completed"] = True
+                        pending["terminal"] = True
+                        return
                     pending["capture_attempted"] = True
                     self._log("[LP] exact capture started")
                     lp_history_before = self._lp_history_bytes()

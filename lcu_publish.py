@@ -7,6 +7,7 @@ directories.  It is only invoked by ``lcu_watcher --live --auto-publish``.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
 
@@ -50,6 +51,13 @@ UNRESOLVED_SHARED_PATHS = GENERATED_SHARED_PATHS - {"csv/lp_history.json"}
 MATCH_ONLY_RAW_MATCH_FILENAMES = UNRESOLVED_RAW_MATCH_FILENAMES
 MATCH_ONLY_SHARED_PATHS = UNRESOLVED_SHARED_PATHS
 
+# A Queue 420 remake is still valuable Match History data, but must never
+# allocate LP.  Keep this path set separate from unresolved/checkpoint and
+# non-ranked match-only publishing so that its one permitted LP-side effect
+# (confirming the immediately preceding provisional snapshot) stays narrow.
+RANKED_REMAKE_RAW_MATCH_FILENAMES = UNRESOLVED_RAW_MATCH_FILENAMES
+RANKED_REMAKE_SHARED_PATHS = UNRESOLVED_SHARED_PATHS
+
 
 def is_allowed_match_path(
     path, match_id, correction_match_id=None, confirmation_match_id=None,
@@ -82,6 +90,20 @@ def is_allowed_match_only_path(path, match_id):
         return True
     raw_prefix = f"raw/{match_id}/"
     return path.startswith(raw_prefix) and path[len(raw_prefix):] in MATCH_ONLY_RAW_MATCH_FILENAMES
+
+
+def is_allowed_ranked_remake_path(path, match_id, confirmation_match_id=None):
+    """Allow one verified Queue 420 remake and an optional status-only confirmation."""
+    if path in RANKED_REMAKE_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+        return True
+    if confirmation_match_id and path == "csv/lp_history.json":
+        return True
+    raw_prefix = f"raw/{match_id}/"
+    if path.startswith(raw_prefix):
+        return path[len(raw_prefix):] in RANKED_REMAKE_RAW_MATCH_FILENAMES
+    return bool(confirmation_match_id) and path == (
+        f"raw/{confirmation_match_id}/rank_after.json"
+    )
 
 
 class PrivateDataPublisher:
@@ -195,6 +217,158 @@ class PrivateDataPublisher:
         if not isinstance(parsed, dict):
             raise PublishError("could not verify prior rank_after confirmation")
         return parsed
+
+    @staticmethod
+    def _lp_history_records(history):
+        records = history.get("matches") if isinstance(history, dict) else None
+        if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
+            raise PublishError("could not verify LP history confirmation")
+        return records
+
+    @staticmethod
+    def _ranked_remake_metadata(match, match_id):
+        """Return validated queue/duration metadata; reject incomplete raw data."""
+        if not isinstance(match, dict):
+            raise PublishError("could not verify ranked remake metadata")
+        info = match.get("info")
+        metadata = match.get("metadata")
+        if not isinstance(info, dict) or not isinstance(metadata, dict):
+            raise PublishError("could not verify ranked remake metadata")
+        if metadata.get("matchId") != match_id:
+            raise PublishError("ranked remake match ID does not match raw data")
+        queue_id = info.get("queueId")
+        duration = info.get("gameDuration")
+        if not isinstance(queue_id, int) or isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            raise PublishError("could not verify ranked remake metadata")
+        return queue_id, duration
+
+    def _ranked_remake_confirmation_match_id(self, paths, match_id):
+        """Verify an optional, status-only confirmation of the prior LP snapshot.
+
+        Remakes have no current rank_after record to anchor the normal capture
+        confirmation logic.  Therefore the LP history itself must also be
+        byte-for-byte unchanged except for the same predecessor's
+        provisional-to-confirmed transition.
+        """
+        suffix = "/rank_after.json"
+        candidates = [
+            path for path in paths
+            if path.startswith("raw/") and path.endswith(suffix)
+            and path != f"raw/{match_id}/rank_after.json"
+        ]
+        history_changed = "csv/lp_history.json" in paths
+        if not candidates and not history_changed:
+            return None
+        if len(candidates) != 1 or not history_changed:
+            raise PublishError("ranked remake LP changes are not confirmation-only; publish stopped")
+
+        path = candidates[0]
+        parts = path.split("/")
+        if len(parts) != 3 or not parts[1]:
+            raise PublishError("could not verify ranked remake confirmation")
+        confirmation_match_id = parts[1]
+        previous = self._head_json(path)
+        confirmed = self._worktree_json(path)
+        unchanged_previous = dict(previous)
+        unchanged_confirmed = dict(confirmed)
+        previous_status = unchanged_previous.pop("lp_status", None)
+        confirmed_status = unchanged_confirmed.pop("lp_status", None)
+        if not (
+            previous.get("snapshot_type") == "rank_after"
+            and confirmed.get("snapshot_type") == "rank_after"
+            and previous.get("match_id") == confirmation_match_id
+            and confirmed.get("match_id") == confirmation_match_id
+            and previous_status == "provisional"
+            and confirmed_status == "confirmed"
+            and unchanged_previous == unchanged_confirmed
+        ):
+            raise PublishError("ranked remake prior rank_after is not confirmation-only; publish stopped")
+
+        previous_history = self._lp_history_records(self._head_json("csv/lp_history.json"))
+        confirmed_history = self._lp_history_records(self._worktree_json("csv/lp_history.json"))
+        if any(record.get("match_id") == match_id for record in (*previous_history, *confirmed_history)):
+            raise PublishError("ranked remake must not have a current LP history record")
+        if len(previous_history) != len(confirmed_history):
+            raise PublishError("ranked remake LP history added or removed a record; publish stopped")
+        if not previous_history or previous_history[-1].get("match_id") != confirmation_match_id:
+            raise PublishError("ranked remake confirmation is not for the immediately prior LP record")
+
+        changed_records = []
+        for old, new in zip(previous_history, confirmed_history):
+            if old != new:
+                changed_records.append((old, new))
+        if len(changed_records) != 1:
+            raise PublishError("ranked remake LP history is not confirmation-only; publish stopped")
+        old, new = changed_records[0]
+        unchanged_old = dict(old)
+        unchanged_new = dict(new)
+        old_status = unchanged_old.pop("lp_status", None)
+        new_status = unchanged_new.pop("lp_status", None)
+        if not (
+            old.get("match_id") == confirmation_match_id
+            and new.get("match_id") == confirmation_match_id
+            and old_status == "provisional"
+            and new_status == "confirmed"
+            and unchanged_old == unchanged_new
+        ):
+            raise PublishError("ranked remake LP history is not confirmation-only; publish stopped")
+        current_match = self._worktree_json(f"raw/{match_id}/match.json")
+        current_start_ms = current_match.get("info", {}).get("gameStartTimestamp")
+        previous_time = previous.get("game_datetime_jst")
+        if isinstance(current_start_ms, bool) or not isinstance(current_start_ms, (int, float)) or not isinstance(previous_time, str):
+            raise PublishError("could not verify ranked remake confirmation ordering")
+        try:
+            previous_start = datetime.fromisoformat(previous_time)
+            remake_start = datetime.fromtimestamp(current_start_ms / 1000, tz=timezone.utc)
+        except (OverflowError, ValueError):
+            raise PublishError("could not verify ranked remake confirmation ordering") from None
+        if previous_start.tzinfo is None or previous_start.astimezone(timezone.utc) >= remake_start:
+            raise PublishError("ranked remake confirmation is not for a prior match")
+        return confirmation_match_id
+
+    def _validate_ranked_remake_changed_paths(self, match_id):
+        """Validate one short Queue 420 remake without creating LP allocation."""
+        paths = self._status_paths()
+        if not paths:
+            raise PublishError("no PrivateData changes found after ranked remake update")
+        current_rank_after = f"raw/{match_id}/rank_after.json"
+        if current_rank_after in paths or (self.private_root / current_rank_after).exists():
+            raise PublishError("ranked remake must not create rank_after")
+        current_match = self._worktree_json(f"raw/{match_id}/match.json")
+        queue_id, duration = self._ranked_remake_metadata(current_match, match_id)
+        if queue_id != 420 or duration >= 300:
+            raise PublishError("current match is not an eligible Queue 420 remake")
+        confirmation_match_id = self._ranked_remake_confirmation_match_id(paths, match_id)
+        unexpected = [
+            path for path in paths
+            if not is_allowed_ranked_remake_path(path, match_id, confirmation_match_id)
+        ]
+        if unexpected:
+            raise PublishError("unexpected PrivateData path changed for ranked remake publish; publish stopped")
+        return paths, confirmation_match_id
+
+    def is_ranked_remake_candidate(self, match_id):
+        """Return true only for a current Queue 420 short game with no LP record.
+
+        This deliberately does not validate paths or grant publish permission;
+        ``publish_ranked_remake_update`` remains the authoritative validator.
+        It only lets the watcher avoid running an LP capture that cannot exist
+        for a verified remake.
+        """
+        try:
+            current_rank_after = f"raw/{match_id}/rank_after.json"
+            if (self.private_root / current_rank_after).exists():
+                return False
+            current_match = self._worktree_json(f"raw/{match_id}/match.json")
+            queue_id, duration = self._ranked_remake_metadata(current_match, match_id)
+            records = self._lp_history_records(self._worktree_json("csv/lp_history.json"))
+        except PublishError:
+            return False
+        return (
+            queue_id == 420
+            and duration < 300
+            and not any(record.get("match_id") == match_id for record in records)
+        )
 
     def _confirmation_match_id(self, paths, match_id, correction_match_id=None):
         """Return one capture-confirmed predecessor, or reject every other raw change.
@@ -390,4 +564,22 @@ class PrivateDataPublisher:
             match_id,
             paths,
             lambda path: is_allowed_match_only_path(path, match_id),
+        )
+
+    def publish_ranked_remake_update(self, match_id):
+        """Publish a verified Queue 420 remake without any LP allocation."""
+        if not self.base_sha:
+            raise PublishError("publish preflight was not completed")
+        paths, confirmation_match_id = self._validate_ranked_remake_changed_paths(match_id)
+
+        head, remote, counts = self._remote_state()
+        if head != self.base_sha or remote != self.base_sha or counts != (0, 0):
+            raise PublishError("remote main advanced during update; publish stopped")
+
+        return self._commit_push_and_dispatch(
+            match_id,
+            paths,
+            lambda path: is_allowed_ranked_remake_path(
+                path, match_id, confirmation_match_id,
+            ),
         )

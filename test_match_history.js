@@ -62,6 +62,9 @@ Object.entries(labels).forEach(([role, title]) => {
 });
 
 const match = sampleMatch();
+assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "420", lp_delta: 18 })), { result: "WIN", lp: "(+18)" });
+assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "420", win: false, lp_delta: -60 })), { result: "LOSS", lp: "(-60)" });
+assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "400", lp_delta: 18 })), { result: "WIN", lp: "" });
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: 18 })), "WIN (+18)");
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", win: false, lp_delta: -22 })), "LOSS (-22)");
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", win: false, lp_delta: -60 })), "LOSS (-60)");

@@ -26,11 +26,24 @@
       ? match.lp_delta
       : null
   );
-  const matchResultLabel = (match) => {
+  const matchResultTokens = (match) => {
     const result = match?.win ? "WIN" : "LOSS";
     const delta = savedLpDelta(match);
-    if (delta === null) return result;
-    return `${result} (${delta > 0 ? "+" : ""}${delta})`;
+    return {
+      result,
+      lp: delta === null ? "" : `(${delta > 0 ? "+" : ""}${delta})`,
+    };
+  };
+  const matchResultLabel = (match) => {
+    const tokens = matchResultTokens(match);
+    return tokens.lp ? `${tokens.result} ${tokens.lp}` : tokens.result;
+  };
+  const matchResultElement = (tag, match, className) => {
+    const tokens = matchResultTokens(match);
+    const element = text(tag, "", className);
+    element.append(text("span", tokens.result, "match-result-main"));
+    if (tokens.lp) element.append(text("span", tokens.lp, "match-result-lp"));
+    return element;
   };
   const eventPositionText = (position) => {
     if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return "";
@@ -643,7 +656,7 @@
 
   function detailedStatsContent(match, version) {
     const root = text("div", "", "match-detail-content match-detail-stats-content");
-    root.append(text("p", matchResultLabel(match), `match-result-context ${match.win ? "win" : "loss"}`));
+    root.append(matchResultElement("p", match, `match-result-context ${match.win ? "win" : "loss"}`));
     const participants = matrixParticipants(match);
     if (!participants.length) {
       root.append(text("p", "10人詳細データなし", "match-detail-empty"));
@@ -942,7 +955,7 @@
         const fights = Array.isArray(isAll ? match.all_fights : match.fights)
           ? (isAll ? match.all_fights : match.fights)
           : [];
-        const result = text("p", matchResultLabel(match), `match-result-context ${match.win ? "win" : "loss"}`);
+        const result = matchResultElement("p", match, `match-result-context ${match.win ? "win" : "loss"}`);
         detail.replaceChildren(...(
           isAll ? [result, ...fights.map(fightCard)] : [result, fightSummaryContent(match), ...fights.map(fightCard)]
         ));
@@ -1032,7 +1045,7 @@
     element.id = matchAnchorId(match.match_id);
     element.tabIndex = -1;
     element.dataset.matchId = match.match_id || "";
-    const result = text("div", matchResultLabel(match), "m-result");
+    const result = matchResultElement("div", match, "m-result");
     const champion = text("div", "", "m-champ");
     const image = global.document.createElement("img");
     image.loading = "lazy";
@@ -1208,7 +1221,7 @@
   if (global.document) init();
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
-    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText, savedLpDelta, matchResultLabel,
+    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText, savedLpDelta, matchResultTokens, matchResultLabel,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

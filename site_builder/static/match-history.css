@@ -92,6 +92,9 @@
   margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border);
 }
 .match-detail-empty { margin: 0; color: var(--muted); font-size: .67rem; }
+.match-result-context { margin: 0; font-size: .72rem; font-weight: 700; }
+.match-result-context.win { color: var(--good, #38d39f); }
+.match-result-context.loss { color: var(--bad, #ff6b81); }
 .match-detail-stats-grid { grid-template-columns: repeat(4, minmax(0, 230px)); gap: 14px; }
 .fight-summary { padding: 7px; background: rgba(91, 140, 255, .05); border: 1px solid var(--border); border-radius: 8px; }
 .fight-summary .match-detail-group h4 { color: var(--accent, #6ea8fe); }

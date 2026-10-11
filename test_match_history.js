@@ -62,6 +62,14 @@ Object.entries(labels).forEach(([role, title]) => {
 });
 
 const match = sampleMatch();
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: 18 })), "WIN (+18)");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", win: false, lp_delta: -22 })), "LOSS (-22)");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", win: false, lp_delta: -60 })), "LOSS (-60)");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420" })), "WIN");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: null })), "WIN");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: 0 })), "WIN (0)");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "400", lp_delta: 18 })), "WIN");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", game_duration_seconds: 77, lp_delta: 0 })), "WIN");
 assert.strictEqual(history.eventPositionText({ x: 8421, y: 6724 }), "X:8421 Y:6724");
 assert.strictEqual(history.eventPositionText(null), "");
 assert.strictEqual(history.eventPositionText({ x: 8421 }), "");

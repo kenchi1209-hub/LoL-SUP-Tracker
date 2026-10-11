@@ -25,17 +25,20 @@ _paths = get_data_paths()
 FIGHT_DETAILS_PATH = _paths.csv / "fight_details.json"
 ALL_FIGHT_DETAILS_PATH = _paths.csv / "all_fight_details.json"
 MATCH_DETAILS_PATH = _paths.csv / "match_details.json"
+LP_HISTORY_PATH = _paths.csv / "lp_history.json"
 
 
 def configure_data_root(data_root=None):
-    global FIGHT_DETAILS_PATH, ALL_FIGHT_DETAILS_PATH, MATCH_DETAILS_PATH
+    global FIGHT_DETAILS_PATH, ALL_FIGHT_DETAILS_PATH, MATCH_DETAILS_PATH, LP_HISTORY_PATH
     paths = get_data_paths(data_root)
     FIGHT_DETAILS_PATH = paths.csv / "fight_details.json"
     ALL_FIGHT_DETAILS_PATH = paths.csv / "all_fight_details.json"
     MATCH_DETAILS_PATH = paths.csv / "match_details.json"
+    LP_HISTORY_PATH = paths.csv / "lp_history.json"
     load_fight_details.cache_clear()
     load_all_fight_details.cache_clear()
     load_match_details.cache_clear()
+    load_lp_deltas.cache_clear()
 
 
 def load_template(name):
@@ -86,6 +89,42 @@ def load_match_details():
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+@lru_cache(maxsize=1)
+def load_lp_deltas():
+    """Return only saved per-match LP deltas, keyed by Match ID.
+
+    ``lp_history.json`` is authoritative: Match History must never infer an LP
+    change from ranks, the current rank, or a match result.
+    """
+    try:
+        with LP_HISTORY_PATH.open("r", encoding="utf-8") as file:
+            history = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    records = history.get("matches", []) if isinstance(history, dict) else []
+    if not isinstance(records, list):
+        return {}
+    deltas = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        match_id = str(record.get("match_id", ""))
+        delta = record.get("lp_delta")
+        if match_id and isinstance(delta, (int, float)) and not isinstance(delta, bool):
+            deltas[match_id] = delta
+    return deltas
+
+
+def ranked_non_remake(row):
+    """Whether a Match History row may expose its saved Queue 420 LP delta."""
+    if str(row.get("queue_id", "")) != "420":
+        return False
+    try:
+        return int(float(row.get("game_duration_seconds", 0) or 0)) >= 300
+    except (TypeError, ValueError):
+        return False
 
 
 def load_match_detail(match_id):
@@ -166,6 +205,7 @@ NAV_ROWS = (
 
 def match_history_data(rows):
     """TOP/ロール共通Match History用のJSONを生成する。"""
+    lp_deltas = load_lp_deltas()
     matches = [
         {
             "match_id": row.get("match_id", ""),
@@ -176,6 +216,11 @@ def match_history_data(rows):
             "champion_icon_id": champion_icon_id(row.get("champion", "")),
             "queue_id": str(row.get("queue_id", "")),
             "queue_name": queue_id_to_name(row.get("queue_id", "")),
+            # Only Queue 420 may display an LP delta, and only when it was
+            # explicitly persisted in lp_history.json.  Remakes are excluded
+            # even if malformed legacy data happened to contain a record.
+            "lp_delta": lp_deltas.get(str(row.get("match_id", "")))
+            if ranked_non_remake(row) else None,
             "role": row.get("role", ""),
             "win": row.get("_win", False),
             "kills": row.get("_k", 0),

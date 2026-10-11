@@ -65,6 +65,8 @@ const match = sampleMatch();
 assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "420", lp_delta: 18 })), { result: "WIN", lp: "(+18)" });
 assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "420", win: false, lp_delta: -60 })), { result: "LOSS", lp: "(-60)" });
 assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "400", lp_delta: 18 })), { result: "WIN", lp: "" });
+assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "420", game_duration_seconds: 77 })), { result: "REMAKE", lp: "(±0)" });
+assert.deepStrictEqual(history.matchResultTokens(sampleMatch({ queue_id: "400", game_duration_seconds: 77 })), { result: "WIN", lp: "" });
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: 18 })), "WIN (+18)");
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", win: false, lp_delta: -22 })), "LOSS (-22)");
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", win: false, lp_delta: -60 })), "LOSS (-60)");
@@ -72,7 +74,7 @@ assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420" })), "
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: null })), "WIN");
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", lp_delta: 0 })), "WIN (0)");
 assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "400", lp_delta: 18 })), "WIN");
-assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", game_duration_seconds: 77, lp_delta: 0 })), "WIN");
+assert.strictEqual(history.matchResultLabel(sampleMatch({ queue_id: "420", game_duration_seconds: 77, lp_delta: 0 })), "REMAKE (±0)");
 assert.strictEqual(history.eventPositionText({ x: 8421, y: 6724 }), "X:8421 Y:6724");
 assert.strictEqual(history.eventPositionText(null), "");
 assert.strictEqual(history.eventPositionText({ x: 8421 }), "");

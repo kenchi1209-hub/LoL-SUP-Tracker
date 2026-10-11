@@ -26,7 +26,13 @@
       ? match.lp_delta
       : null
   );
+  const isRankedRemake = (match) => {
+    const seconds = Number(match?.game_duration_seconds);
+    return String(match?.queue_id || "") === "420"
+      && Number.isFinite(seconds) && seconds > 0 && seconds < 300;
+  };
   const matchResultTokens = (match) => {
+    if (isRankedRemake(match)) return { result: "REMAKE", lp: "(±0)" };
     const result = match?.win ? "WIN" : "LOSS";
     const delta = savedLpDelta(match);
     return {
@@ -1221,7 +1227,7 @@
   if (global.document) init();
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
-    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText, savedLpDelta, matchResultTokens, matchResultLabel,
+    fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText, savedLpDelta, isRankedRemake, matchResultTokens, matchResultLabel,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

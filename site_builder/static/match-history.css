@@ -25,7 +25,10 @@
   display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 1px 4px;
   max-width: 100%; font-weight: 700;
 }
-.m-result { font-size: .78rem; }
+.m-result {
+  flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font-size: .78rem; line-height: 1.15; text-align: center;
+}
 .match-result-main, .match-result-lp { white-space: nowrap; }
 .match-result-lp { font-size: .88em; font-weight: 600; opacity: .84; }
 .match.win .m-result { color: var(--good, #38d39f); }

@@ -160,4 +160,27 @@ assert(detailedCopy.includes("【味方・敵10人比較】"));
 assert(detailedCopy.includes("【ALLY TOP エイトロックス / YOU】"));
 assert(detailedCopy.includes("Gold@10 / @15"));
 
+const mapFight = {
+  fight_id: 13,
+  kill_event_positions: [{ timestamp: 1000, x: 5000, y: 5000 }, { timestamp: 1200, x: 5300, y: 5100 }],
+  movement_snapshot: { participants: [
+    { participant_id: 5, is_self: true, team: "ALLY", role: "SUP", engaged: true, start: { x: 4900, y: 4900 }, end: { x: 5050, y: 5050 } },
+    { participant_id: 4, team: "ALLY", role: "ADC", engaged: true, start: { x: 5000, y: 4900 }, end: { x: 5200, y: 5100 } },
+    { participant_id: 9, team: "ENEMY", role: "ADC", engaged: true, start: { x: 5400, y: 5000 }, end: { x: 5500, y: 5200 } },
+    { participant_id: 1, team: "ALLY", role: "TOP", engaged: true, start: { x: 14500, y: 14500 }, end: { x: 14600, y: 14600 } },
+    { participant_id: 2, team: "ALLY", role: "JG", engaged: false, start: { x: 5050, y: 5000 }, end: { x: 5100, y: 5050 } },
+  ] },
+};
+const mapData = history.movementMapData(mapFight);
+assert(mapData);
+assert.strictEqual(history.killFlowPoints(mapData).length, 2);
+assert.strictEqual(history.killFlowPoints(history.movementMapData({ ...mapFight, kill_event_positions: [mapFight.kill_event_positions[0]] })).length, 0);
+const mapFocus = history.movementFocus(mapData);
+assert(mapFocus.span >= 2400);
+const visibleMapParticipants = history.movementVisibleParticipants(mapData, mapFocus);
+assert(visibleMapParticipants.some((person) => person.is_self));
+assert(visibleMapParticipants.some((person) => person.role === "ADC" && person.team === "ENEMY"));
+assert(!visibleMapParticipants.some((person) => person.participant_id === 1));
+assert.strictEqual(history.movementMapData({ movement_snapshot: { participants: [] } }), null);
+
 console.log("match history detail/copy tests: OK");

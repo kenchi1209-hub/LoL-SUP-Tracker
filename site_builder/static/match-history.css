@@ -211,6 +211,58 @@
 .fight-event-line { overflow-wrap: anywhere; }
 .fight-event-position { color: var(--text); font-size: .92em; white-space: nowrap; }
 .fight-objective-context { margin-bottom: 3px; color: var(--muted); }
+.fight-item-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(250px, 25vw, 330px);
+  align-items: start;
+  gap: 8px;
+}
+.fight-item-content { min-width: 0; }
+.fight-movement-thumb {
+  position: relative;
+  display: grid;
+  width: 100%; min-width: 0; aspect-ratio: 1;
+  overflow: hidden; contain: paint; padding: 0; color: var(--text);
+  background: #101b25; border: 1px solid var(--border); border-radius: 6px;
+  cursor: zoom-in;
+}
+.fight-movement-thumb:focus-visible { outline: 2px solid var(--accent, #6ea8fe); outline-offset: 2px; }
+.fight-movement-svg { display: block; width: 100%; height: 100%; overflow: hidden; background: #101b25; }
+.fight-map-observed-arrow { stroke-linecap: round; stroke-linejoin: round; }
+.fight-map-person-label { font-family: inherit; pointer-events: none; }
+.fight-map-kill-flow { filter: drop-shadow(0 0 22px rgba(246,207,78,.8)); pointer-events: none; }
+.fight-map-kill-point { filter: drop-shadow(0 0 28px rgba(246,207,78,.9)); pointer-events: none; }
+.fight-map-kill-number { font-family: inherit; pointer-events: none; }
+.fight-movement-thumb-label {
+  position: absolute; right: 5px; bottom: 5px;
+  padding: 2px 5px; border-radius: 4px;
+  color: #eff7ff; background: rgba(8, 15, 22, .78);
+  font-size: .6rem; font-weight: 700; letter-spacing: .02em;
+}
+.fight-map-modal-open { overflow: hidden; }
+.fight-map-modal {
+  position: fixed; z-index: 90; inset: 0;
+  display: grid; place-items: center; padding: 22px;
+  background: rgba(3, 8, 13, .76);
+}
+.fight-map-modal[hidden] { display: none; }
+.fight-map-modal-panel {
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(920px, 100%); max-height: min(92dvh, 880px);
+  overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); background: var(--panel, #142333); box-shadow: 0 18px 55px rgba(0,0,0,.5);
+}
+.fight-map-modal-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fight-map-modal-title { font-size: .88rem; }
+.fight-map-modal-close {
+  padding: 4px 8px; color: var(--text); background: var(--panel2, #182936);
+  border: 1px solid var(--border); border-radius: 5px; cursor: pointer;
+}
+.fight-map-modal-meta, .fight-map-modal-note { color: var(--muted); font-size: .68rem; line-height: 1.45; }
+.fight-map-modal-meta { margin: 5px 0 8px; }
+.fight-map-modal-map { min-height: 0; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: #101b25; }
+.fight-map-modal-map .fight-movement-svg { width: 100%; height: 100%; }
+.fight-map-modal-note { margin: 8px 0 0; }
 .match-history-empty { color: var(--muted); padding: 24px; text-align: center; }
 .match-history-more {
   display: block; margin: 14px auto 0; padding: 8px 18px; color: var(--text);
@@ -261,6 +313,8 @@
   .fight-subheading { margin-bottom: 1px; }
   .fight-event-list { gap: 1px; line-height: 1.35; }
   .fight-objective-context { margin-bottom: 1px; }
+  .fight-item-body { grid-template-columns: minmax(0, 1fr); }
+  .fight-movement-thumb { width: min(100%, 350px); justify-self: end; }
   .match-detail-overview { grid-template-columns: minmax(0, 1fr); }
   .match-detail-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-detail-info .match-detail-metrics {
@@ -306,6 +360,14 @@
     grid-template-columns: 27px 104px 28px 43px 39px 57px 57px 39px 82px;
     gap: 1px; min-width: 484px; padding: 1px 0;
   }
+}
+@media (max-width: 600px) {
+  .fight-summary-metrics .match-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fight-summary-metrics .match-detail-metric { grid-template-columns: max-content minmax(0, 1fr); }
+  .fight-movement-thumb { width: 100%; justify-self: stretch; }
+  .fight-map-modal { padding: 8px; }
+  .fight-map-modal-panel { width: 100%; max-height: 96dvh; padding: 8px; }
+  .fight-map-modal-map { aspect-ratio: 1; }
 }
 @media (max-width: 429px) {
   .m-detail-toggle, .m-fight-toggle, .m-copy-toggle { padding: 4px 3px; font-size: .66rem; }

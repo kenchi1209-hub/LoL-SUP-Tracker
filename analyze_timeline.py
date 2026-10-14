@@ -277,6 +277,179 @@ def event_participant_ids(event):
     return participant_ids
 
 
+def valid_participant_id(participant_id):
+    """Return True only for Riot's ten in-game participant identifiers."""
+    return (
+        not isinstance(participant_id, bool)
+        and isinstance(participant_id, int)
+        and 1 <= participant_id <= 10
+    )
+
+
+def valid_position(position):
+    """Keep Riot coordinates as supplied; never create a substitute position."""
+    if not isinstance(position, dict):
+        return None
+    x = position.get("x")
+    y = position.get("y")
+    if (
+        isinstance(x, bool)
+        or isinstance(y, bool)
+        or not isinstance(x, (int, float))
+        or not isinstance(y, (int, float))
+    ):
+        return None
+    return {"x": x, "y": y}
+
+
+def engaged_reasons_for_event(event):
+    """Return timeline-evidenced engagement reasons without changing Fight grouping."""
+    reasons = {}
+
+    def add(participant_id, reason):
+        if valid_participant_id(participant_id):
+            reasons.setdefault(participant_id, set()).add(reason)
+
+    add(event.get("killerId"), "killer")
+    add(event.get("victimId"), "victim")
+    for participant_id in event.get("assistingParticipantIds", []) or []:
+        add(participant_id, "assist")
+    for damage in event.get("victimDamageReceived", []) or []:
+        if isinstance(damage, dict):
+            add(damage.get("participantId"), "damage_source")
+    for damage in event.get("victimDamageDealt", []) or []:
+        if isinstance(damage, dict):
+            add(damage.get("participantId"), "damage_target")
+    return reasons
+
+
+def movement_role(participant):
+    position = (
+        participant.get("teamPosition")
+        or participant.get("individualPosition")
+        or ""
+    )
+    return {
+        "TOP": "TOP",
+        "JUNGLE": "JG",
+        "MIDDLE": "MID",
+        "BOTTOM": "ADC",
+        "UTILITY": "SUP",
+    }.get(position, "UNKNOWN")
+
+
+def frame_at_or_before(frames, timestamp):
+    candidates = [
+        frame for frame in frames
+        if isinstance(frame, dict)
+        and isinstance(frame.get("timestamp"), (int, float))
+        and frame["timestamp"] <= timestamp
+    ]
+    return max(candidates, key=lambda frame: frame["timestamp"], default=None)
+
+
+def frame_at_or_after(frames, timestamp):
+    candidates = [
+        frame for frame in frames
+        if isinstance(frame, dict)
+        and isinstance(frame.get("timestamp"), (int, float))
+        and frame["timestamp"] >= timestamp
+    ]
+    return min(candidates, key=lambda frame: frame["timestamp"], default=None)
+
+
+def fight_movement_snapshot(fight, frames, participants, player_team_id, player_participant_id=None):
+    """Build non-interpolated before/after observations for a Fight map.
+
+    This is display metadata only. It does not alter Fight membership,
+    classification, or any existing combat aggregate.
+    """
+    start_timestamp = fight.get("start_timestamp")
+    end_timestamp = fight.get("end_timestamp")
+    if not isinstance(start_timestamp, (int, float)) or not isinstance(end_timestamp, (int, float)):
+        return None
+    pre_frame = frame_at_or_before(frames, start_timestamp)
+    post_frame = frame_at_or_after(frames, end_timestamp)
+    if not pre_frame or not post_frame:
+        return None
+    engagement = {
+        participant_id: set(reasons)
+        for participant_id, reasons in (fight.get("engagement_reasons") or {}).items()
+        if valid_participant_id(participant_id)
+    }
+    kill_positions = list(fight.get("kill_event_positions") or [])
+    for event in fight.get("events", []) or []:
+        if not isinstance(event, dict):
+            continue
+        for participant_id, reasons in engaged_reasons_for_event(event).items():
+            engagement.setdefault(participant_id, set()).update(reasons)
+        position = valid_position(event.get("position"))
+        timestamp = event.get("timestamp")
+        if position and isinstance(timestamp, (int, float)) and not kill_positions:
+            kill_positions.append({"timestamp": timestamp, **position})
+    pre_frames = pre_frame.get("participantFrames") or {}
+    post_frames = post_frame.get("participantFrames") or {}
+    snapshot_participants = []
+    for participant_id in sorted(participants):
+        if not valid_participant_id(participant_id):
+            continue
+        participant = participants[participant_id]
+        pre_entry = pre_frames.get(str(participant_id)) or pre_frames.get(participant_id) or {}
+        post_entry = post_frames.get(str(participant_id)) or post_frames.get(participant_id) or {}
+        start = valid_position(pre_entry.get("position")) if isinstance(pre_entry, dict) else None
+        end = valid_position(post_entry.get("position")) if isinstance(post_entry, dict) else None
+        if start and end:
+            delta_x = end["x"] - start["x"]
+            delta_y = end["y"] - start["y"]
+            distance = math.sqrt(delta_x * delta_x + delta_y * delta_y)
+        else:
+            delta_x = delta_y = distance = None
+        reasons = sorted(engagement.get(participant_id, set()))
+        snapshot_participants.append({
+            "participant_id": participant_id,
+            "champion": participant.get("championName") or "Unknown",
+            "team": "ALLY" if participant.get("teamId") == player_team_id else "ENEMY",
+            "is_self": participant_id == player_participant_id,
+            "role": movement_role(participant),
+            "engaged": bool(reasons),
+            "engaged_reasons": reasons,
+            "start": start,
+            "end": end,
+            "delta_x": delta_x,
+            "delta_y": delta_y,
+            "distance": distance,
+        })
+    engaged_ally_count = sum(1 for participant in snapshot_participants if participant["engaged"] and participant["team"] == "ALLY")
+    engaged_enemy_count = sum(1 for participant in snapshot_participants if participant["engaged"] and participant["team"] == "ENEMY")
+    return {
+        "kill_event_positions": kill_positions,
+        "movement_snapshot": {
+            "pre_frame_timestamp": pre_frame["timestamp"],
+            "post_frame_timestamp": post_frame["timestamp"],
+            "pre_offset_seconds": (pre_frame["timestamp"] - start_timestamp) / 1000,
+            "post_offset_seconds": (post_frame["timestamp"] - end_timestamp) / 1000,
+            "observed_only": True,
+            "participants": snapshot_participants,
+        },
+        "engaged_ally_count": engaged_ally_count,
+        "engaged_enemy_count": engaged_enemy_count,
+        "engaged_total_count": engaged_ally_count + engaged_enemy_count,
+    }
+
+
+def attach_fight_movement_snapshots(fights, frames, participants, player_team_id, player_participant_id=None):
+    """Add optional map metadata to mutable Fight objects in place."""
+    for fight in fights:
+        if not isinstance(fight, dict):
+            continue
+        snapshot = fight_movement_snapshot(
+            fight, frames, participants, player_team_id, player_participant_id
+        )
+        if snapshot:
+            fight.update(snapshot)
+    return fights
+
+
 def position_distance(position_a, position_b):
     if not position_a or not position_b:
         return None
@@ -359,6 +532,7 @@ def build_fight(
     end_timestamp = raw_events[-1]["timestamp"]
 
     participant_ids = set()
+    engagement_reasons = {}
 
     friendly_kills = 0
     enemy_kills = 0
@@ -375,6 +549,8 @@ def build_fight(
         participant_ids.update(
             event_participant_ids(event)
         )
+        for engaged_id, reasons in engaged_reasons_for_event(event).items():
+            engagement_reasons.setdefault(engaged_id, set()).update(reasons)
 
         position = event.get("position")
 
@@ -474,6 +650,15 @@ def build_fight(
             - start_timestamp
         ),
         "center_position": center_position,
+        "kill_event_positions": [
+            {"timestamp": event["timestamp"], **position}
+            for event in raw_events
+            if (position := valid_position(event.get("position")))
+        ],
+        "engagement_reasons": {
+            participant_id: sorted(reasons)
+            for participant_id, reasons in engagement_reasons.items()
+        },
         "participant_count": len(participant_ids),
         "participants": participant_list,
         "friendly_kills": friendly_kills,
@@ -950,6 +1135,11 @@ def build_fight_context(fights, include_player_involved=False):
                 "center_position": (
                     fight["center_position"]
                 ),
+                "kill_event_positions": fight.get("kill_event_positions"),
+                "movement_snapshot": fight.get("movement_snapshot"),
+                "engaged_ally_count": fight.get("engaged_ally_count"),
+                "engaged_enemy_count": fight.get("engaged_enemy_count"),
+                "engaged_total_count": fight.get("engaged_total_count"),
                 "my_kda": (
                     fight["my_kda"]
                     if fight["player_involved"]
@@ -1030,6 +1220,13 @@ def build_all_fight_context_from_timeline(
         fights,
         participant_map,
         player["teamId"],
+    )
+    attach_fight_movement_snapshots(
+        fights,
+        timeline_data.get("info", {}).get("frames", []),
+        participant_map,
+        player["teamId"],
+        player["participantId"],
     )
     return build_all_fight_context(fights)
 
@@ -1200,6 +1397,13 @@ def analyze_combat(
         champion_kills,
         participants,
         player,
+    )
+    attach_fight_movement_snapshots(
+        fights,
+        frames,
+        participants,
+        player_team_id,
+        participant_id,
     )
 
     my_fights = [

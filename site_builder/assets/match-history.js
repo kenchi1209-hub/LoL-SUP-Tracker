@@ -101,6 +101,188 @@
     return `${monster}${subtype}`;
   }
 
+  const MAP_SIZE = 15000;
+  const MAP_IMAGE_URL = "https://ddragon.leagueoflegends.com/cdn/16.20.1/img/map/map11.png";
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  let movementModal = null;
+  let movementModalReturnFocus = null;
+
+  const mapNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const mapPosition = (position) => {
+    const x = mapNumber(position?.x);
+    const y = mapNumber(position?.y);
+    return x === null || y === null ? null : { x, y };
+  };
+
+  function movementMapData(fight) {
+    const snapshot = fight?.movement_snapshot;
+    if (!snapshot || !Array.isArray(snapshot.participants)) return null;
+    const kills = (fight.kill_event_positions || []).map(mapPosition).filter(Boolean);
+    const participants = snapshot.participants
+      .filter((person) => person && mapPosition(person.start) && mapPosition(person.end))
+      .map((person) => ({ ...person, start: mapPosition(person.start), end: mapPosition(person.end) }));
+    if (!kills.length || !participants.length) return null;
+    return { fight, snapshot, kills, participants };
+  }
+
+  const killFlowPoints = (data) => data.kills.length > 1 ? data.kills : [];
+
+  function movementFocus(data) {
+    const priority = data.participants.filter((person) => person.is_self || person.role === "ADC");
+    const points = [...data.kills];
+    priority.forEach((person) => points.push(person.start, person.end));
+    if (!points.length) {
+      data.participants.filter((person) => person.engaged).forEach((person) => points.push(person.start, person.end));
+    }
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const base = Math.max(2400, maxX - minX, maxY - minY);
+    const padding = Math.max(520, base * 0.18);
+    const span = Math.min(MAP_SIZE, base + padding * 2);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    return {
+      x: Math.max(0, Math.min(MAP_SIZE - span, centerX - span / 2)),
+      y: Math.max(0, Math.min(MAP_SIZE - span, centerY - span / 2)),
+      span,
+    };
+  }
+
+  function participantInsideFocus(person, focus) {
+    const points = [person.start, person.end];
+    return points.some((point) => point.x >= focus.x && point.x <= focus.x + focus.span && point.y >= focus.y && point.y <= focus.y + focus.span);
+  }
+
+  function movementVisibleParticipants(data, focus) {
+    return data.participants.filter((person) => (
+      person.is_self || person.role === "ADC" || (person.engaged && participantInsideFocus(person, focus))
+    ));
+  }
+
+  function svgNode(name, attributes = {}) {
+    const node = global.document.createElementNS(SVG_NS, name);
+    Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
+    return node;
+  }
+
+  function mapParticipantLabel(person, expanded) {
+    const champion = person.champion_name || person.champion || "?";
+    if (!expanded) return person.is_self ? "YOU" : person.role || champion.slice(0, 7);
+    return `${person.is_self ? "YOU " : ""}${person.role || "?"}:${champion}`;
+  }
+
+  function movementMapSvg(data, expanded = false) {
+    const focus = movementFocus(data);
+    const visible = movementVisibleParticipants(data, focus);
+    const svg = svgNode("svg", {
+      class: `fight-movement-svg${expanded ? " is-expanded" : ""}`,
+      viewBox: `${focus.x} ${focus.y} ${focus.span} ${focus.span}`,
+      role: "img",
+      "aria-label": `戦闘 #${data.fight.fight_id} の観測位置マップ`,
+    });
+    const mapScale = MAP_SIZE / focus.span;
+    const backgroundX = focus.x / Math.max(1, MAP_SIZE - focus.span) * 100;
+    const backgroundY = (MAP_SIZE - focus.y - focus.span) / Math.max(1, MAP_SIZE - focus.span) * 100;
+    svg.style.backgroundImage = `url("${MAP_IMAGE_URL}")`;
+    svg.style.backgroundSize = `${mapScale * 100}% ${mapScale * 100}%`;
+    svg.style.backgroundPosition = `${backgroundX}% ${backgroundY}%`;
+    const defs = svgNode("defs");
+    const markerId = `fight-map-arrow-${String(data.fight.fight_id)}-${expanded ? "full" : "thumb"}`;
+    const clipId = `fight-map-clip-${String(data.fight.fight_id)}-${expanded ? "full" : "thumb"}`;
+    const clip = svgNode("clipPath", { id: clipId });
+    clip.append(svgNode("rect", { x: focus.x, y: focus.y, width: focus.span, height: focus.span }));
+    defs.append(clip);
+    const marker = svgNode("marker", { id: markerId, markerWidth: 120, markerHeight: 120, refX: 105, refY: 60, orient: "auto", markerUnits: "userSpaceOnUse" });
+    marker.append(svgNode("path", { d: "M0 0 L120 60 L0 120 Z", fill: "context-stroke" }));
+    defs.append(marker);
+    svg.append(defs);
+    svg.append(svgNode("rect", { x: focus.x, y: focus.y, width: focus.span, height: focus.span, fill: "rgba(7, 14, 21, .14)" }));
+
+    visible.forEach((person) => {
+      const color = person.team === "ALLY" ? "#57aaff" : "#ff6b78";
+      const opacity = person.engaged ? (person.is_self ? "0.9" : "0.62") : "0.23";
+      const width = person.is_self ? 70 : 42;
+      svg.append(svgNode("line", { x1: person.start.x, y1: person.start.y, x2: person.end.x, y2: person.end.y, class: "fight-map-observed-arrow", stroke: color, "stroke-width": width, "stroke-opacity": opacity, "marker-end": `url(#${markerId})` }));
+      svg.append(svgNode("circle", { cx: person.start.x, cy: person.start.y, r: person.is_self ? 105 : 76, class: "fight-map-pre", fill: "#111b25", stroke: color, "stroke-width": person.is_self ? 46 : 32, "stroke-opacity": opacity }));
+      svg.append(svgNode("circle", { cx: person.end.x, cy: person.end.y, r: person.is_self ? 105 : 76, class: "fight-map-post", fill: color, stroke: person.is_self ? "#fff2a3" : "#eaf4ff", "stroke-width": person.is_self ? 33 : 20, "fill-opacity": opacity }));
+      const label = svgNode("text", { x: person.end.x + 105, y: person.end.y - 92, class: "fight-map-person-label", fill: "#f6fbff", "font-size": expanded ? 230 : 170, "font-weight": person.is_self ? 800 : 700, "paint-order": "stroke", stroke: "#0b1219", "stroke-width": expanded ? 52 : 42, "stroke-linejoin": "round" });
+      label.textContent = mapParticipantLabel(person, expanded);
+      svg.append(label);
+    });
+
+    const flowPoints = killFlowPoints(data);
+    if (flowPoints.length) {
+      svg.append(svgNode("polyline", { points: flowPoints.map((point) => `${point.x},${point.y}`).join(" "), class: "fight-map-kill-flow", fill: "none", stroke: "#f6cf4e", "stroke-width": expanded ? 64 : 45, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    }
+    data.kills.forEach((point, index) => {
+      svg.append(svgNode("circle", { cx: point.x, cy: point.y, r: expanded ? 170 : 130, class: "fight-map-kill-point", fill: "#f6cf4e", stroke: "#182330", "stroke-width": expanded ? 40 : 30 }));
+      const order = svgNode("text", { x: point.x, y: point.y + (expanded ? 66 : 50), "text-anchor": "middle", class: "fight-map-kill-number", fill: "#17212d", "font-size": expanded ? 210 : 160, "font-weight": 900 });
+      order.textContent = String(index + 1);
+      svg.append(order);
+    });
+    return { svg, focus, visible };
+  }
+
+  function modalClose() {
+    if (!movementModal) return;
+    movementModal.element.hidden = true;
+    global.document.body.classList.remove("fight-map-modal-open");
+    movementModalReturnFocus?.focus?.();
+    movementModalReturnFocus = null;
+  }
+
+  function ensureMovementModal() {
+    if (movementModal) return movementModal;
+    const modal = text("div", "", "fight-map-modal");
+    modal.hidden = true;
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-label", "戦闘位置マップ");
+    const panel = text("div", "", "fight-map-modal-panel");
+    const heading = text("div", "", "fight-map-modal-heading");
+    const title = text("strong", "", "fight-map-modal-title");
+    const close = text("button", "閉じる", "fight-map-modal-close");
+    close.type = "button";
+    close.addEventListener("click", modalClose);
+    heading.append(title, close);
+    const meta = text("div", "", "fight-map-modal-meta");
+    const map = text("div", "", "fight-map-modal-map");
+    const note = text("p", "矢印は観測frame間の位置変化であり、実際の移動経路を示すものではありません。", "fight-map-modal-note");
+    panel.append(heading, meta, map, note);
+    modal.append(panel);
+    modal.addEventListener("click", (event) => { if (event.target === modal) modalClose(); });
+    global.document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !modal.hidden) modalClose(); });
+    global.document.body.append(modal);
+    movementModal = { element: modal, title, meta, map, close };
+    return movementModal;
+  }
+
+  function openMovementModal(data, returnFocus) {
+    const modal = ensureMovementModal();
+    const result = movementMapSvg(data, true);
+    modal.title.textContent = `戦闘 #${data.fight.fight_id} の位置マップ`;
+    modal.meta.textContent = `${Math.round((Number(data.fight.duration_ms) || 0) / 1000)}秒 / kill event ${data.kills.length}件 / ENGAGED 味方${data.fight.engaged_ally_count ?? "-"} 敵${data.fight.engaged_enemy_count ?? "-"} / pre ${Number(data.snapshot.pre_offset_seconds || 0).toFixed(1)}秒 / post +${Number(data.snapshot.post_offset_seconds || 0).toFixed(1)}秒`;
+    modal.map.replaceChildren(result.svg);
+    movementModalReturnFocus = returnFocus;
+    modal.element.hidden = false;
+    global.document.body.classList.add("fight-map-modal-open");
+    modal.close.focus();
+  }
+
+  function fightMovementThumbnail(fight) {
+    const data = movementMapData(fight);
+    if (!data) return null;
+    const button = text("button", "", "fight-movement-thumb");
+    button.type = "button";
+    button.setAttribute("aria-label", `戦闘 #${fight.fight_id} の位置マップを拡大表示`);
+    const result = movementMapSvg(data);
+    button.append(result.svg, text("span", "位置マップ", "fight-movement-thumb-label"));
+    button.addEventListener("click", () => openMovementModal(data, button));
+    return button;
+  }
+
   function fightCard(fight) {
     const item = text("section", "", `fight-item fight-item-${String(fight.result || "even").toLowerCase()}`);
     const header = text("div", "", "fight-item-header");
@@ -210,7 +392,13 @@
     if (!objectiveList.children.length) objectiveList.append(text("div", "オブジェクトイベント：なし", "fight-empty"));
     objectives.append(objectiveList);
 
-    item.append(header, info, kills, objectives);
+    const content = text("div", "", "fight-item-content");
+    const body = text("div", "", "fight-item-body");
+    content.append(info, kills, objectives);
+    body.append(content);
+    const movementMap = fightMovementThumbnail(fight);
+    if (movementMap) body.append(movementMap);
+    item.append(header, body);
     return item;
   }
 
@@ -1228,6 +1416,7 @@
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
     fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText, savedLpDelta, isRankedRemake, matchResultTokens, matchResultLabel,
+    movementMapData, movementFocus, movementVisibleParticipants, killFlowPoints,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

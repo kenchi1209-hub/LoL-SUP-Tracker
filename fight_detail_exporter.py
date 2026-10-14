@@ -1,11 +1,12 @@
 import argparse
+import copy
 import glob
 import json
 import os
 import tempfile
 from pathlib import Path
 
-from analyze_timeline import build_all_fight_context_from_timeline, find_player
+from analyze_timeline import analyze_combat, build_all_fight_context_from_timeline, find_player
 from champion_registry import champion_name_ja
 from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_from_path
 from data_paths import CSV_ROOT
@@ -101,6 +102,89 @@ def compact_position(position):
     return {"x": x, "y": y}
 
 
+def compact_movement_position(position):
+    return compact_position(position)
+
+
+def compact_movement_snapshot(snapshot):
+    if not isinstance(snapshot, dict):
+        return None
+    participants = []
+    for person in snapshot.get("participants", []) or []:
+        if not isinstance(person, dict):
+            continue
+        participant_id = person.get("participant_id")
+        if isinstance(participant_id, bool) or not isinstance(participant_id, int) or not 1 <= participant_id <= 10:
+            continue
+        participants.append(
+            {
+                "participant_id": participant_id,
+                "champion": person.get("champion") or "Unknown",
+                "champion_name": champion_name_ja(person.get("champion") or "Unknown"),
+                "team": person.get("team") if person.get("team") in {"ALLY", "ENEMY"} else "UNKNOWN",
+                "is_self": bool(person.get("is_self")),
+                "role": person.get("role") or "UNKNOWN",
+                "engaged": bool(person.get("engaged")),
+                "engaged_reasons": [
+                    reason for reason in person.get("engaged_reasons", []) or []
+                    if reason in {"killer", "victim", "assist", "damage_source", "damage_target"}
+                ],
+                "start": compact_movement_position(person.get("start")),
+                "end": compact_movement_position(person.get("end")),
+                "delta_x": person.get("delta_x") if isinstance(person.get("delta_x"), (int, float)) else None,
+                "delta_y": person.get("delta_y") if isinstance(person.get("delta_y"), (int, float)) else None,
+                "distance": person.get("distance") if isinstance(person.get("distance"), (int, float)) else None,
+            }
+        )
+    return {
+        "pre_frame_timestamp": snapshot.get("pre_frame_timestamp"),
+        "post_frame_timestamp": snapshot.get("post_frame_timestamp"),
+        "pre_offset_seconds": snapshot.get("pre_offset_seconds"),
+        "post_offset_seconds": snapshot.get("post_offset_seconds"),
+        "observed_only": bool(snapshot.get("observed_only")),
+        "participants": participants,
+    }
+
+
+def compact_kill_event_positions(positions):
+    compact = []
+    for position in positions or []:
+        if not isinstance(position, dict):
+            continue
+        coordinates = compact_position(position)
+        timestamp = position.get("timestamp")
+        if coordinates and isinstance(timestamp, (int, float)):
+            compact.append({"timestamp": timestamp, **coordinates})
+    return compact
+
+
+def with_movement_metadata(fights, match_data, timeline_data, participant_id):
+    """Enrich an export-only copy from raw timeline data without rewriting raw files."""
+    player = find_player(match_data, participant_id=participant_id)
+    analysis = analyze_combat(match_data, timeline_data, player)
+    metadata = {
+        fight["fight_id"]: fight
+        for fight in analysis.get("fights", [])
+        if isinstance(fight, dict)
+    }
+    enriched = []
+    for fight in fights or []:
+        copied = copy.deepcopy(fight)
+        source = metadata.get(copied.get("fight_id"))
+        if source:
+            for key in (
+                "center_position",
+                "kill_event_positions",
+                "movement_snapshot",
+                "engaged_ally_count",
+                "engaged_enemy_count",
+                "engaged_total_count",
+            ):
+                copied[key] = source.get(key)
+        enriched.append(copied)
+    return enriched
+
+
 def compact_review_fight(fight, player_team_id=None, roles_by_participant_id=None):
     events = []
     for event in fight.get("events", []) or []:
@@ -131,6 +215,12 @@ def compact_review_fight(fight, player_team_id=None, roles_by_participant_id=Non
         "end_timestamp": fight.get("end_timestamp", 0),
         "duration_ms": fight.get("duration_ms", 0),
         "participant_count": fight.get("participant_count", 0),
+        "center_position": compact_position(fight.get("center_position")),
+        "kill_event_positions": compact_kill_event_positions(fight.get("kill_event_positions")),
+        "movement_snapshot": compact_movement_snapshot(fight.get("movement_snapshot")),
+        "engaged_ally_count": fight.get("engaged_ally_count"),
+        "engaged_enemy_count": fight.get("engaged_enemy_count"),
+        "engaged_total_count": fight.get("engaged_total_count"),
         "participants": [
             compact_fight_person(
                 person,
@@ -194,8 +284,23 @@ def build_fight_details(timeline_pattern=None, raw_root=DEFAULT_RAW_ROOT):
             fights = data.get("review_fights", [])
             if not isinstance(fights, list):
                 fights = []
+            participant_id = (data.get("participant") or {}).get("participant_id")
+            match_path = path.parent / "match.json"
+            timeline_path = path.parent / "timeline.json"
+            with open(match_path, "r", encoding="utf-8") as file:
+                match_data = json.load(file)
+            with open(timeline_path, "r", encoding="utf-8") as file:
+                timeline_data = json.load(file)
+            if participant_id is None:
+                raise ValueError("combat timeline participant_id is missing")
+            fights = with_movement_metadata(
+                fights,
+                match_data,
+                timeline_data,
+                participant_id,
+            )
             player_team_id = (data.get("participant") or {}).get("team_id")
-            roles_by_participant_id = load_participant_roles(path.parent / "match.json")
+            roles_by_participant_id = load_participant_roles(match_path)
             details[match_id] = [
                 compact_review_fight(fight, player_team_id, roles_by_participant_id)
                 for fight in fights

@@ -183,4 +183,12 @@ assert(visibleMapParticipants.some((person) => person.role === "ADC" && person.t
 assert(!visibleMapParticipants.some((person) => person.participant_id === 1));
 assert.strictEqual(history.movementMapData({ movement_snapshot: { participants: [] } }), null);
 
+assert.deepStrictEqual(history.rawMapPosition({ x: 949, y: 10258 }), { x: 949, y: 10258 });
+assert.deepStrictEqual(history.displayMapPosition({ x: 949, y: 10258 }), { x: 949, y: 4742 });
+assert.strictEqual(history.displayMapPosition({ x: 11232, y: 1196 }).x, 11232);
+assert.strictEqual(history.displayMapPosition({ x: 11232, y: 1196 }).y, 13804);
+assert.strictEqual(mapData.kills[0].y, 10000);
+assert.strictEqual(mapData.participants.find((person) => person.is_self).start.y, 10100);
+assert(history.participantInsideFocus(mapData.participants.find((person) => person.is_self), mapFocus));
+
 console.log("match history detail/copy tests: OK");

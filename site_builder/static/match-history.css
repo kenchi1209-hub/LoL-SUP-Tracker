@@ -213,7 +213,7 @@
 .fight-objective-context { margin-bottom: 3px; color: var(--muted); }
 .fight-item-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(250px, 25vw, 330px);
+  grid-template-columns: minmax(0, 1fr) 220px;
   align-items: start;
   gap: 8px;
 }
@@ -221,7 +221,7 @@
 .fight-movement-thumb {
   position: relative;
   display: grid;
-  width: 100%; min-width: 0; aspect-ratio: 1;
+  width: 220px; min-width: 0; aspect-ratio: 1; justify-self: end;
   overflow: hidden; contain: paint; padding: 0; color: var(--text);
   background: #101b25; border: 1px solid var(--border); border-radius: 6px;
   cursor: zoom-in;
@@ -233,11 +233,12 @@
 .fight-map-kill-flow { filter: drop-shadow(0 0 22px rgba(246,207,78,.8)); pointer-events: none; }
 .fight-map-kill-point { filter: drop-shadow(0 0 28px rgba(246,207,78,.9)); pointer-events: none; }
 .fight-map-kill-number { font-family: inherit; pointer-events: none; }
+.fight-movement-thumb .fight-map-person-label { display: none; }
 .fight-movement-thumb-label {
-  position: absolute; right: 5px; bottom: 5px;
-  padding: 2px 5px; border-radius: 4px;
-  color: #eff7ff; background: rgba(8, 15, 22, .78);
-  font-size: .6rem; font-weight: 700; letter-spacing: .02em;
+  position: absolute; right: 4px; bottom: 4px;
+  padding: 1px 4px; border-radius: 4px;
+  color: #eff7ff; background: rgba(8, 15, 22, .72);
+  font-size: .52rem; font-weight: 700; letter-spacing: .02em;
 }
 .fight-map-modal-open { overflow: hidden; }
 .fight-map-modal {
@@ -314,7 +315,7 @@
   .fight-event-list { gap: 1px; line-height: 1.35; }
   .fight-objective-context { margin-bottom: 1px; }
   .fight-item-body { grid-template-columns: minmax(0, 1fr); }
-  .fight-movement-thumb { width: min(100%, 350px); justify-self: end; }
+  .fight-movement-thumb { width: min(100%, 220px); justify-self: end; }
   .match-detail-overview { grid-template-columns: minmax(0, 1fr); }
   .match-detail-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-detail-info .match-detail-metrics {
@@ -364,7 +365,7 @@
 @media (max-width: 600px) {
   .fight-summary-metrics .match-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fight-summary-metrics .match-detail-metric { grid-template-columns: max-content minmax(0, 1fr); }
-  .fight-movement-thumb { width: 100%; justify-self: stretch; }
+  .fight-movement-thumb { width: min(100%, 210px); justify-self: center; }
   .fight-map-modal { padding: 8px; }
   .fight-map-modal-panel { width: 100%; max-height: 96dvh; padding: 8px; }
   .fight-map-modal-map { aspect-ratio: 1; }

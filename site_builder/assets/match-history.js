@@ -108,19 +108,29 @@
   let movementModalReturnFocus = null;
 
   const mapNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
-  const mapPosition = (position) => {
+  // Riot timeline coordinates start at the blue-side (bottom-left) base. The
+  // Data Dragon map image uses a top-left image origin, so only Y is inverted.
+  const rawMapPosition = (position) => {
     const x = mapNumber(position?.x);
     const y = mapNumber(position?.y);
     return x === null || y === null ? null : { x, y };
+  };
+  const displayMapPosition = (position) => {
+    const raw = rawMapPosition(position);
+    return raw ? { x: raw.x, y: MAP_SIZE - raw.y } : null;
   };
 
   function movementMapData(fight) {
     const snapshot = fight?.movement_snapshot;
     if (!snapshot || !Array.isArray(snapshot.participants)) return null;
-    const kills = (fight.kill_event_positions || []).map(mapPosition).filter(Boolean);
+    const kills = (fight.kill_event_positions || []).map(displayMapPosition).filter(Boolean);
     const participants = snapshot.participants
-      .filter((person) => person && mapPosition(person.start) && mapPosition(person.end))
-      .map((person) => ({ ...person, start: mapPosition(person.start), end: mapPosition(person.end) }));
+      .filter((person) => person && displayMapPosition(person.start) && displayMapPosition(person.end))
+      .map((person) => ({
+        ...person,
+        start: displayMapPosition(person.start),
+        end: displayMapPosition(person.end),
+      }));
     if (!kills.length || !participants.length) return null;
     return { fight, snapshot, kills, participants };
   }
@@ -184,7 +194,9 @@
     });
     const mapScale = MAP_SIZE / focus.span;
     const backgroundX = focus.x / Math.max(1, MAP_SIZE - focus.span) * 100;
-    const backgroundY = (MAP_SIZE - focus.y - focus.span) / Math.max(1, MAP_SIZE - focus.span) * 100;
+    // focus and SVG points are already in image/display coordinates. This is
+    // equivalent to the prior raw-coordinate crop, without a second Y flip.
+    const backgroundY = focus.y / Math.max(1, MAP_SIZE - focus.span) * 100;
     svg.style.backgroundImage = `url("${MAP_IMAGE_URL}")`;
     svg.style.backgroundSize = `${mapScale * 100}% ${mapScale * 100}%`;
     svg.style.backgroundPosition = `${backgroundX}% ${backgroundY}%`;
@@ -1416,7 +1428,7 @@
   const api = {
     PAGE_SIZE, card, create, matchAnchorId, roleSummaryDefinition,
     fightSummaryEntries, overviewGroups, detailStatGroups, participantStatGroups, matrixParticipants, matrixValue, playerComparisonText, copyTextForSelection, eventPositionText, savedLpDelta, isRankedRemake, matchResultTokens, matchResultLabel,
-    movementMapData, movementFocus, movementVisibleParticipants, killFlowPoints,
+    rawMapPosition, displayMapPosition, movementMapData, movementFocus, participantInsideFocus, movementVisibleParticipants, killFlowPoints,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

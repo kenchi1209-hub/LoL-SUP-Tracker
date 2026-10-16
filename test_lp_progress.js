@@ -45,6 +45,38 @@ const coverage = lpProgress.rankedMatchesForCoverage({
 });
 assert.deepStrictEqual(coverage.map((match) => match.match_id), ["exact", "loss"]);
 
+const championData = {
+  matches: [
+    { match_id: "L1", champion: "Leona", champion_name: "レオナ", game_number: 220, game_datetime_jst: "2026-10-10T20:00:00+09:00", win: true, lp_delta: 18, rank: { score: 600 } },
+    { match_id: "M1", champion: "Morgana", champion_name: "モルガナ", game_number: 221, game_datetime_jst: "2026-10-10T21:00:00+09:00", win: false, lp_delta: -22, rank: { score: 578 } },
+  ],
+  usable_matches: [
+    { match_id: "L1", champion: "Leona", champion_name: "レオナ", game_number: 220, game_datetime_jst: "2026-10-10T20:00:00+09:00", win: true, lp_delta: 18, rank: { score: 600 } },
+    { match_id: "L2", champion: "Leona", champion_name: "レオナ", game_number: 222, game_datetime_jst: "2026-10-10T22:00:00+09:00", win: false, lp_delta: -22, rank: { score: 578 } },
+    { match_id: "M1", champion: "Morgana", champion_name: "モルガナ", game_number: 221, game_datetime_jst: "2026-10-10T21:00:00+09:00", win: false, lp_delta: -22, rank: { score: 578 } },
+  ],
+  unresolved_matches: [{ match_id: "Z1", champion: "Zyra", champion_name: "ザイラ", game_number: 223, game_datetime_jst: "2026-10-10T23:00:00+09:00", win: false, lp_delta: null }],
+};
+assert.deepStrictEqual(lpProgress.championOptions(championData).map((item) => [item.champion, item.games]), [["Leona", 2], ["Zyra", 1], ["Morgana", 1]]);
+const leonaSeries = lpProgress.renumberChampionSeries("Leona", {
+  matches: championData.matches.filter((item) => item.champion === "Leona"),
+  usable: championData.usable_matches.filter((item) => item.champion === "Leona"),
+  points: championData.usable_matches.filter((item) => item.champion === "Leona"),
+  historical: [], unresolved: [],
+});
+assert.deepStrictEqual(leonaSeries.usable.map((item) => item.game_number), [1, 2]);
+assert.deepStrictEqual(championData.usable_matches.map((item) => item.game_number), [220, 222, 221]);
+assert.deepStrictEqual(lpProgress.filterUsableMatches(championData, { start: '', end: '' }, 'all', 'Leona').map((item) => item.match_id), ['L1', 'L2']);
+assert.deepStrictEqual(lpProgress.filterUnresolvedMatches(championData, { start: '', end: '' }, 'all', 'Leona'), []);
+assert.deepStrictEqual(lpProgress.filterUsableMatches(championData, { start: '', end: '' }, 'all', 'Unknown'), []);
+const championMetrics = lpProgress.usableMetrics([
+  ...leonaSeries.usable,
+  { match_id: "L3", champion: "Leona", game_number: 3, game_datetime_jst: "2026-10-11T00:00:00+09:00", win: true, lp_delta: null },
+]);
+assert.deepStrictEqual(championMetrics.result, { games: 3, known: 3, wins: 2, losses: 1 });
+assert.strictEqual(championMetrics.coverage.delta, -4);
+assert.strictEqual(championData.usable_matches[0].rank.score, 600);
+
 const manualTooltip = lpProgress.tooltipDetails({
   kind: "exact", game_number: 145, win: false, lp_delta: -20,
   champion_name: "ナミ", role: "SUP",

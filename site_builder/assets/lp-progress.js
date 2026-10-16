@@ -94,21 +94,34 @@
     return { start, end: "" };
   }
 
-  function filterMatches(data, range, patch) {
-    return data.matches.filter((match) => inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch));
+  function championKey(match) {
+    return String(match?.champion || match?.champion_name || "");
   }
 
-  function filterPoints(data, range, patch) {
+  function isChampion(match, champion) {
+    return champion === "all" || championKey(match) === champion;
+  }
+
+  function filterMatches(data, range, patch, champion = "all") {
+    return data.matches.filter((match) => (
+      inRange(match.game_datetime_jst, range)
+      && (patch === "all" || match.patch === patch)
+      && isChampion(match, champion)
+    ));
+  }
+
+  function filterPoints(data, range, patch, champion = "all") {
     return data.points.filter((point) => {
       if (!inRange(point.timestamp_jst, range)) return false;
+      if (!isChampion(point, champion)) return false;
       if (patch === "all") return true;
       return point.kind === "exact" && point.patch === patch;
     });
   }
 
-  function filterHistoricalPoints(data, range, patch) {
+  function filterHistoricalPoints(data, range, patch, champion = "all") {
     return (data.historical?.points || []).filter((point) => (
-      inRange(point.timestamp_jst, range) && (patch === "all" || point.patch === patch)
+      inRange(point.timestamp_jst, range) && (patch === "all" || point.patch === patch) && isChampion(point, champion)
     ));
   }
 
@@ -117,9 +130,9 @@
     return (data.historical?.gaps || []).filter((gap) => inRange(gap.timestamp_jst, range));
   }
 
-  function filterUnresolvedMatches(data, range, patch) {
+  function filterUnresolvedMatches(data, range, patch, champion = "all") {
     return (data.unresolved_matches || []).filter((match) => (
-      inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch)
+      inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch) && isChampion(match, champion)
     ));
   }
 
@@ -127,9 +140,9 @@
     return Array.isArray(data.usable_matches) ? data.usable_matches : data.matches;
   }
 
-  function filterUsableMatches(data, range, patch) {
+  function filterUsableMatches(data, range, patch, champion = "all") {
     return usableMatches(data).filter((match) => (
-      inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch)
+      inRange(match.game_datetime_jst, range) && (patch === "all" || match.patch === patch) && isChampion(match, champion)
     ));
   }
 
@@ -137,6 +150,44 @@
     const byId = new Map(usableMatches(data).map((match) => [match.match_id, match]));
     (data.unresolved_matches || []).forEach((match) => byId.set(match.match_id, match));
     return [...byId.values()];
+  }
+
+  function championOptions(data) {
+    const groups = new Map();
+    rankedMatchesForCoverage(data).forEach((match) => {
+      const champion = championKey(match);
+      if (!champion) return;
+      const entry = groups.get(champion) || { champion, name: match.champion_name || champion, games: 0 };
+      entry.games += 1;
+      groups.set(champion, entry);
+    });
+    return [...groups.values()].sort((left, right) => (
+      right.games - left.games || left.name.localeCompare(right.name, "ja")
+    ));
+  }
+
+  function renumberChampionSeries(champion, series) {
+    if (champion === "all") return series;
+    const byId = new Map();
+    Object.values(series).flat().forEach((item) => {
+      if (item?.match_id && isChampion(item, champion)) byId.set(item.match_id, item);
+    });
+    const numbers = new Map([...byId.values()]
+      .sort((left, right) => (
+        String(left.game_datetime_jst || left.timestamp_jst).localeCompare(String(right.game_datetime_jst || right.timestamp_jst))
+        || String(left.match_id).localeCompare(String(right.match_id))
+      ))
+      .map((item, index) => [item.match_id, index + 1]));
+    const renumber = (items) => items
+      .filter((item) => item?.match_id && numbers.has(item.match_id))
+      .map((item) => ({ ...item, game_number: numbers.get(item.match_id) }));
+    return {
+      matches: renumber(series.matches),
+      usable: renumber(series.usable),
+      points: renumber(series.points),
+      historical: renumber(series.historical),
+      unresolved: renumber(series.unresolved),
+    };
   }
 
   function statCard(label, value, sub, valueClass) {
@@ -165,11 +216,12 @@
   }
 
   function usableMetrics(matches) {
-    const ordered = [...matches].filter((match) => match.rank).sort((left, right) => (
+    const all = [...matches].sort((left, right) => (
       (left.game_number ?? Infinity) - (right.game_number ?? Infinity) || String(left.game_datetime_jst).localeCompare(String(right.game_datetime_jst))
     ));
-    const result = record(ordered);
-    const coverage = usableCoverage(ordered);
+    const ordered = all.filter((match) => match.rank);
+    const result = record(all);
+    const coverage = usableCoverage(all);
     const peak = ordered.reduce((best, match) => (
       !best
       || match.rank.score > best.rank.score
@@ -178,6 +230,7 @@
         : best
     ), null);
     return {
+      matches: all,
       ordered,
       result,
       coverage,
@@ -208,7 +261,7 @@
     const metrics = usableMetrics(matches);
     const { result, coverage, start, peak, end } = metrics;
     container.replaceChildren(
-      statCard("LP delta", signed(coverage.delta), `${coverage.available.length} / ${metrics.ordered.length} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : ""),
+      statCard("LP delta", signed(coverage.delta), `${coverage.available.length} / ${metrics.result.games} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : ""),
       statCard("Record", `${result.wins}W-${result.losses}L`, `${result.games} games`),
       statCard("Win Rate", percentage(result.wins, result.known), result.known === result.games ? "" : `${result.known}/${result.games} games available`),
       statCard("Start Rank", rankLabel(start), "表示中の利用可能point", "rank-value"),
@@ -476,7 +529,7 @@
     else apply();
   }
 
-  function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = []) {
+  function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = [], champion = "all") {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
@@ -634,7 +687,8 @@
     [...tickValues].sort((left, right) => left - right).forEach((game) => {
       svg.append(el("text", { x: margin.left + ((game - first) / (last - first)) * chartWidth, y: height - 21, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, String(game)));
     });
-    svg.append(el("text", { x: margin.left + chartWidth / 2, y: height - 5, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, "累積ランク試合数（第N戦）"));
+    const axisLabel = champion === "all" ? "累積ランク試合数（第N戦）" : `${champion}のランク試合数（第N戦）`;
+    svg.append(el("text", { x: margin.left + chartWidth / 2, y: height - 5, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, axisLabel));
     const exact = chartOfficial.filter((point) => point.kind === "exact");
     let priorPatch = "";
     exact.forEach((point) => {
@@ -816,13 +870,19 @@
   }
 
   function init(data) {
-    const controls = { period: global.document.getElementById("lp-period"), patch: global.document.getElementById("lp-patch"), start: global.document.getElementById("lp-start"), end: global.document.getElementById("lp-end"), custom: global.document.getElementById("lp-custom") };
+    const controls = { period: global.document.getElementById("lp-period"), patch: global.document.getElementById("lp-patch"), champion: global.document.getElementById("lp-champion"), start: global.document.getElementById("lp-start"), end: global.document.getElementById("lp-end"), custom: global.document.getElementById("lp-custom") };
     const historicalPoints = data.historical?.points || [];
     const patches = [...new Set([
       ...data.matches.map((match) => match.patch),
       ...historicalPoints.map((point) => point.patch),
     ].filter(Boolean))].sort().reverse();
     patches.forEach((patch) => { const option = global.document.createElement("option"); option.value = patch; option.textContent = patch; controls.patch.append(option); });
+    championOptions(data).forEach((champion) => {
+      const option = global.document.createElement("option");
+      option.value = champion.champion;
+      option.textContent = `${champion.name} (${champion.games})`;
+      controls.champion.append(option);
+    });
     global.document.getElementById("lp-tracking").textContent = `LP履歴開始：${localDate(data.history_started_jst || data.tracking_started_jst).replaceAll("-", "/")}`;
     const legend = global.document.getElementById("lp-chart-legend");
     const notice = global.document.getElementById("lp-historical-notice");
@@ -835,21 +895,24 @@
     function render() {
       controls.custom.hidden = controls.period.value !== "custom";
       const range = rangeFor(controls.period.value, data, controls);
-      const matches = filterMatches(data, range, controls.patch.value);
-      const usable = filterUsableMatches(data, range, controls.patch.value);
-      let points = filterPoints(data, range, controls.patch.value);
+      const champion = controls.champion.value;
+      const matches = filterMatches(data, range, controls.patch.value, champion);
+      const usable = filterUsableMatches(data, range, controls.patch.value, champion);
+      let points = filterPoints(data, range, controls.patch.value, champion);
       if (controls.patch.value === "all") points = points.filter((point) => inRange(point.timestamp_jst, range));
-      const historical = filterHistoricalPoints(data, range, controls.patch.value);
-      const historicalGaps = filterHistoricalGaps(data, range, controls.patch.value);
-      const unresolved = filterUnresolvedMatches(data, range, controls.patch.value);
-      renderFiltered(usable); renderChart(points, historical, historicalGaps, unresolved); renderChampionTable(usable, data.ddragon_version);
+      const historical = filterHistoricalPoints(data, range, controls.patch.value, champion);
+      const historicalGaps = champion === "all" ? filterHistoricalGaps(data, range, controls.patch.value) : [];
+      const unresolved = filterUnresolvedMatches(data, range, controls.patch.value, champion);
+      const series = renumberChampionSeries(champion, { matches, usable, points, historical, unresolved });
+      const summaryMatches = champion === "all" ? series.usable : [...series.usable, ...series.unresolved];
+      renderFiltered(summaryMatches); renderChart(series.points, series.historical, historicalGaps, series.unresolved, champion); renderChampionTable(series.usable, data.ddragon_version);
     }
-    [controls.period, controls.patch, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
+    [controls.period, controls.patch, controls.champion, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
     global.addEventListener("resize", render);
     render();
   }
 
-  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, filterMatches, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames, scrollLpChartToLatest };
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, championOptions, filterMatches, filterPoints, filterHistoricalPoints, filterHistoricalGaps, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, renumberChampionSeries, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames, scrollLpChartToLatest };
   global.LPProgress = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global.document) {

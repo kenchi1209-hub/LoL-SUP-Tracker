@@ -166,10 +166,41 @@
     ));
   }
 
-  function renumberChampionSeries(champion, series) {
-    if (champion === "all") return series;
+  function recentMatchCount(value) {
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+  }
+
+  function limitRecentSeries(series, recentCount) {
+    if (!Number.isInteger(recentCount) || recentCount < 1) return series;
     const byId = new Map();
     Object.values(series).flat().forEach((item) => {
+      if (item?.match_id) byId.set(item.match_id, item);
+    });
+    const ids = new Set([...byId.values()]
+      .sort((left, right) => (
+        String(left.game_datetime_jst || left.timestamp_jst).localeCompare(String(right.game_datetime_jst || right.timestamp_jst))
+        || String(left.match_id).localeCompare(String(right.match_id))
+      ))
+      .slice(-recentCount)
+      .map((item) => item.match_id));
+    const limit = (items) => items.filter((item) => item?.match_id && ids.has(item.match_id));
+    return {
+      matches: limit(series.matches),
+      usable: limit(series.usable),
+      points: limit(series.points),
+      historical: limit(series.historical),
+      unresolved: limit(series.unresolved),
+    };
+  }
+
+  function renumberChampionSeries(champion, series, recentCount = null) {
+    const limited = limitRecentSeries(series, recentCount);
+    if (champion === "all" && recentCount === null) return limited;
+    const byId = new Map();
+    Object.values(limited).flat().forEach((item) => {
       if (item?.match_id && isChampion(item, champion)) byId.set(item.match_id, item);
     });
     const numbers = new Map([...byId.values()]
@@ -182,11 +213,11 @@
       .filter((item) => item?.match_id && numbers.has(item.match_id))
       .map((item) => ({ ...item, game_number: numbers.get(item.match_id) }));
     return {
-      matches: renumber(series.matches),
-      usable: renumber(series.usable),
-      points: renumber(series.points),
-      historical: renumber(series.historical),
-      unresolved: renumber(series.unresolved),
+      matches: renumber(limited.matches),
+      usable: renumber(limited.usable),
+      points: renumber(limited.points),
+      historical: renumber(limited.historical),
+      unresolved: renumber(limited.unresolved),
     };
   }
 
@@ -260,10 +291,13 @@
     const container = global.document.getElementById("lp-filtered");
     const metrics = usableMetrics(matches);
     const { result, coverage, start, peak, end } = metrics;
+    const recent = metrics.matches.slice(-10);
+    const recentCoverage = usableCoverage(recent);
     container.replaceChildren(
       statCard("LP delta", signed(coverage.delta), `${coverage.available.length} / ${metrics.result.games} games LP available`, Number.isFinite(coverage.delta) ? coverage.delta >= 0 ? "good" : "bad" : ""),
       statCard("Record", `${result.wins}W-${result.losses}L`, `${result.games} games`),
       statCard("Win Rate", percentage(result.wins, result.known), result.known === result.games ? "" : `${result.known}/${result.games} games available`),
+      statCard("Recent 10 LP", signed(recentCoverage.delta), `${recentCoverage.available.length} / ${recent.length} games LP available`, Number.isFinite(recentCoverage.delta) ? recentCoverage.delta >= 0 ? "good" : "bad" : ""),
       statCard("Start Rank", rankLabel(start), "表示中の利用可能point", "rank-value"),
       statCard("Peak Rank", rankLabel(peak), "表示中の利用可能point", "rank-value"),
       statCard("End Rank", rankLabel(end), "表示中の利用可能point", "rank-value")
@@ -529,7 +563,7 @@
     else apply();
   }
 
-  function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = [], champion = "all") {
+  function renderChart(officialPoints, historicalPoints, historicalGaps, unresolvedMatches = [], champion = "all", recentCount = null) {
     const chart = global.document.getElementById("lp-chart");
     const empty = global.document.getElementById("lp-empty");
     const tooltip = global.document.getElementById("lp-tooltip");
@@ -687,7 +721,7 @@
     [...tickValues].sort((left, right) => left - right).forEach((game) => {
       svg.append(el("text", { x: margin.left + ((game - first) / (last - first)) * chartWidth, y: height - 21, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, String(game)));
     });
-    const axisLabel = champion === "all" ? "累積ランク試合数（第N戦）" : `${champion}のランク試合数（第N戦）`;
+    const axisLabel = recentCount !== null ? "選択中の直近ランク試合数（第N戦）" : champion === "all" ? "累積ランク試合数（第N戦）" : `${champion}のランク試合数（第N戦）`;
     svg.append(el("text", { x: margin.left + chartWidth / 2, y: height - 5, fill: "#8a94a7", "font-size": 11, "text-anchor": "middle" }, axisLabel));
     const exact = chartOfficial.filter((point) => point.kind === "exact");
     let priorPatch = "";
@@ -870,7 +904,7 @@
   }
 
   function init(data) {
-    const controls = { period: global.document.getElementById("lp-period"), patch: global.document.getElementById("lp-patch"), champion: global.document.getElementById("lp-champion"), start: global.document.getElementById("lp-start"), end: global.document.getElementById("lp-end"), custom: global.document.getElementById("lp-custom") };
+    const controls = { period: global.document.getElementById("lp-period"), patch: global.document.getElementById("lp-patch"), champion: global.document.getElementById("lp-champion"), recent: global.document.getElementById("lp-recent"), start: global.document.getElementById("lp-start"), end: global.document.getElementById("lp-end"), custom: global.document.getElementById("lp-custom") };
     const historicalPoints = data.historical?.points || [];
     const patches = [...new Set([
       ...data.matches.map((match) => match.patch),
@@ -896,6 +930,7 @@
       controls.custom.hidden = controls.period.value !== "custom";
       const range = rangeFor(controls.period.value, data, controls);
       const champion = controls.champion.value;
+      const recentCount = recentMatchCount(controls.recent.value);
       const matches = filterMatches(data, range, controls.patch.value, champion);
       const usable = filterUsableMatches(data, range, controls.patch.value, champion);
       let points = filterPoints(data, range, controls.patch.value, champion);
@@ -903,16 +938,23 @@
       const historical = filterHistoricalPoints(data, range, controls.patch.value, champion);
       const historicalGaps = champion === "all" ? filterHistoricalGaps(data, range, controls.patch.value) : [];
       const unresolved = filterUnresolvedMatches(data, range, controls.patch.value, champion);
-      const series = renumberChampionSeries(champion, { matches, usable, points, historical, unresolved });
-      const summaryMatches = champion === "all" ? series.usable : [...series.usable, ...series.unresolved];
-      renderFiltered(summaryMatches); renderChart(series.points, series.historical, historicalGaps, series.unresolved, champion); renderChampionTable(series.usable, data.ddragon_version);
+      const series = renumberChampionSeries(champion, { matches, usable, points, historical, unresolved }, recentCount);
+      const summaryMatches = champion === "all" && recentCount === null ? series.usable : [...series.usable, ...series.unresolved];
+      renderFiltered(summaryMatches); renderChart(series.points, series.historical, historicalGaps, series.unresolved, champion, recentCount); renderChampionTable(series.usable, data.ddragon_version);
     }
+    controls.recent.addEventListener("change", () => {
+      const count = recentMatchCount(controls.recent.value);
+      if (controls.recent.value && count === null) controls.recent.value = "";
+      else if (count !== null) controls.recent.value = String(count);
+      render();
+    });
+    controls.recent.addEventListener("input", render);
     [controls.period, controls.patch, controls.champion, controls.start, controls.end].forEach((control) => control.addEventListener("change", render));
     global.addEventListener("resize", render);
     render();
   }
 
-  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, championOptions, filterMatches, filterPoints, filterHistoricalPoints, filterHistoricalGaps, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, renumberChampionSeries, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames, scrollLpChartToLatest };
+  const api = { rankLabel, record, exactCoverage, usableCoverage, usableMetrics, championSummary, championOptions, recentMatchCount, limitRecentSeries, filterMatches, filterPoints, filterHistoricalPoints, filterHistoricalGaps, filterUsableMatches, filterUnresolvedMatches, rankedMatchesForCoverage, renumberChampionSeries, pointMatchUrl, gapConnections, lpDeltaLabel, resultMarkerStyle, pointShape, tooltipDetails, tooltipPlacement, nearestChartPoint, chartWidthForGames, scrollLpChartToLatest };
   global.LPProgress = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global.document) {

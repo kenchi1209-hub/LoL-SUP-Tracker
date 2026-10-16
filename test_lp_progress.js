@@ -77,6 +77,30 @@ assert.deepStrictEqual(championMetrics.result, { games: 3, known: 3, wins: 2, lo
 assert.strictEqual(championMetrics.coverage.delta, -4);
 assert.strictEqual(championData.usable_matches[0].rank.score, 600);
 
+assert.strictEqual(lpProgress.recentMatchCount(""), null);
+assert.strictEqual(lpProgress.recentMatchCount("0"), null);
+assert.strictEqual(lpProgress.recentMatchCount("-3"), null);
+assert.strictEqual(lpProgress.recentMatchCount("word"), null);
+assert.strictEqual(lpProgress.recentMatchCount("1.9"), 1);
+assert.strictEqual(lpProgress.recentMatchCount("30"), 30);
+const allSeries = {
+  matches: championData.matches,
+  usable: championData.usable_matches,
+  points: championData.usable_matches,
+  historical: [],
+  unresolved: championData.unresolved_matches,
+};
+const recentTwo = lpProgress.renumberChampionSeries("all", allSeries, 2);
+assert.deepStrictEqual(recentTwo.usable.map((item) => [item.match_id, item.game_number]), [["L2", 1]]);
+assert.deepStrictEqual(recentTwo.unresolved.map((item) => [item.match_id, item.game_number]), [["Z1", 2]]);
+const leonaRecentOne = lpProgress.renumberChampionSeries("Leona", {
+  matches: championData.matches.filter((item) => item.champion === "Leona"),
+  usable: championData.usable_matches.filter((item) => item.champion === "Leona"),
+  points: championData.usable_matches.filter((item) => item.champion === "Leona"),
+  historical: [], unresolved: [],
+}, 1);
+assert.deepStrictEqual(leonaRecentOne.usable.map((item) => [item.match_id, item.game_number]), [["L2", 1]]);
+
 const manualTooltip = lpProgress.tooltipDetails({
   kind: "exact", game_number: 145, win: false, lp_delta: -20,
   champion_name: "ナミ", role: "SUP",

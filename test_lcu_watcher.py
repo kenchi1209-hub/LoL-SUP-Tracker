@@ -837,6 +837,21 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertTrue(watcher.pending["published"])
         self.assertIn("[DONE] automatic publish complete", self.logs)
 
+    def test_ranked_update_uses_queue_and_pending_time_not_lcu_session_id(self):
+        runner = RecordingRunner([FakeResult(0), FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(phases=["ChampSelect", "InProgress", "WaitingForStats"], sessions=[session(420, "lcu-id")] * 3),
+            runner,
+        )
+        watcher._uncaptured_solo_matches = lambda: [{"match_id": "JP1_TARGET"}]
+        for _ in range(3):
+            watcher.tick()
+        command = runner.calls[0][0]
+        self.assertIn("--target-queue-id", command)
+        self.assertEqual(command[command.index("--target-queue-id") + 1], "420")
+        self.assertIn("--target-not-before-jst", command)
+        self.assertNotIn("lcu-id", command)
+
     def test_auto_publish_allows_only_the_capture_declared_previous_correction(self):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])
         publisher = FakePublisher()
@@ -1114,6 +1129,25 @@ class LCUWatcherTest(unittest.TestCase):
         self.assertIn("[MATCH] match-only publish complete", joined)
         self.assertNotIn("[LP] exact capture", joined)
 
+    def test_match_only_update_uses_queue_and_pending_time_targeting(self):
+        runner = RecordingRunner([FakeResult(0)])
+        watcher = self.live_watcher(
+            FakeClient(
+                phases=["ChampSelect", "InProgress", "WaitingForStats"],
+                sessions=[session(400, "lcu-id")] * 3,
+            ),
+            runner,
+        )
+        watcher._raw_match_ids = lambda: set()
+        watcher._new_match_only_candidates = lambda _before, _queue: ["JP1_NORMAL"]
+        for _ in range(3):
+            watcher.tick()
+        command = runner.calls[0][0]
+        self.assertIn("--target-queue-id", command)
+        self.assertEqual(command[command.index("--target-queue-id") + 1], "400")
+        self.assertIn("--target-not-before-jst", command)
+        self.assertNotIn("lcu-id", command)
+
     def test_match_only_end_of_game_fallback_runs_once_and_preend_does_not_trigger(self):
         runner = RecordingRunner([FakeResult(0)])
         watcher = self.live_watcher(
@@ -1232,6 +1266,9 @@ class LCUWatcherTest(unittest.TestCase):
         runner = RecordingRunner([FakeResult(0), FakeResult(0)])
         watcher = self.live_watcher(FakeClient(unavailable=True), runner)
         watcher.pending = {
+            "queue_id": 420,
+            "detected_at_jst": "2026-10-28T01:12:46+09:00",
+            "mode": "ranked_lp",
             "processing_started": False,
             "capture_attempted": False,
             "completed": False,

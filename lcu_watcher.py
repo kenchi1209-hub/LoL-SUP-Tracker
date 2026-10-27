@@ -490,6 +490,20 @@ class LCUWatcher:
     def _command(self, script, *arguments):
         return [sys.executable, str(self.repo_root / script), *arguments]
 
+    def _targeted_main_command(self, pending):
+        """Build a one-match update command without trusting the LCU game ID.
+
+        LCU session IDs and Match-V5 IDs are intentionally not treated as the
+        same identifier.  ``main.py`` instead resolves one unpublished
+        Match-V5 result by queue and a watcher-observed lower time bound.
+        """
+        return self._command(
+            "main.py",
+            "--data-root", str(self.data_root),
+            "--target-queue-id", str(pending["queue_id"]),
+            "--target-not-before-jst", pending["detected_at_jst"],
+        )
+
     def _run_process(self, command, timeout):
         """Run an existing CLI safely without exposing its output in watcher logs."""
         return self.process_runner(
@@ -578,7 +592,7 @@ class LCUWatcher:
                 pending["match_update_attempts"] = attempt
                 self._log("[DATA] match update started")
                 result = self._run_process(
-                    self._command("main.py", "--data-root", str(self.data_root)),
+                    self._targeted_main_command(pending),
                     MAIN_TIMEOUT_SECONDS,
                 )
                 if result.returncode != 0:
@@ -686,7 +700,7 @@ class LCUWatcher:
                 pending["match_update_attempts"] = attempt
                 self._log("[MATCH] match data update started")
                 result = self._run_process(
-                    self._command("main.py", "--data-root", str(self.data_root)),
+                    self._targeted_main_command(pending),
                     MAIN_TIMEOUT_SECONDS,
                 )
                 if result.returncode != 0:

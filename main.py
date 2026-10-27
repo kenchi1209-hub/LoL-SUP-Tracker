@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import os
+from datetime import datetime
 from raw_paths import paths_for_match
 
 from config import (
@@ -138,7 +139,43 @@ def discover_new_eligible_matches(match_ids, published_ids=None, raw_root=None):
     return eligible, ineligible
 
 
-def run(data_root=None):
+def select_single_target_match(new_matches, target_queue_id, target_not_before_jst):
+    """Return one safely identified Match-V5 candidate for a watcher update.
+
+    ``main.py`` normally backfills every eligible unpublished match.  The LCU
+    watcher instead provides the queue it just observed and the timestamp at
+    which it started tracking that game.  This prevents an older backlog match
+    from being written into the current one-match publish transaction.
+    """
+    try:
+        cutoff = datetime.fromisoformat(str(target_not_before_jst))
+    except ValueError as error:
+        raise ValueError("target match timestamp must be ISO-8601") from error
+    if cutoff.tzinfo is None:
+        raise ValueError("target match timestamp must include a timezone")
+
+    candidates = {}
+    for match_id, detail in new_matches.items():
+        info = detail.get("info", {}) if isinstance(detail, dict) else {}
+        if str(info.get("queueId")) != str(target_queue_id):
+            continue
+        started_at = info.get("gameStartTimestamp")
+        if not isinstance(started_at, (int, float)) or isinstance(started_at, bool):
+            continue
+        game_start = datetime.fromtimestamp(started_at / 1000, tz=now_jst().tzinfo)
+        if game_start >= cutoff:
+            candidates[match_id] = detail
+
+    if len(candidates) > 1:
+        raise RuntimeError("multiple Match-V5 candidates found for watcher update")
+    return candidates
+
+
+def run(data_root=None, target_queue_id=None, target_not_before_jst=None):
+    if (target_queue_id is None) != (target_not_before_jst is None):
+        raise ValueError(
+            "--target-queue-id and --target-not-before-jst must be used together"
+        )
     paths = get_data_paths(data_root)
     puuid = get_puuid(GAME_NAME, TAG_LINE)
     print("PUUID")
@@ -159,6 +196,13 @@ def run(data_root=None):
     new_matches, ineligible_ids = discover_new_eligible_matches(
         match_ids, published_ids, paths.raw
     )
+    if target_queue_id is not None:
+        new_matches = select_single_target_match(
+            new_matches, target_queue_id, target_not_before_jst,
+        )
+        if not new_matches:
+            print("[INFO] Watched Match-V5 candidate is not reflected yet.")
+            return 0
     print(
         "\n新規Match確認: "
         f"eligible {len(new_matches)}件 / 対象外Queue {len(ineligible_ids)}件"
@@ -270,9 +314,15 @@ def run(data_root=None):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root")
+    parser.add_argument("--target-queue-id", type=int)
+    parser.add_argument("--target-not-before-jst")
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     args = parse_args()
-    raise SystemExit(run(args.data_root))
+    raise SystemExit(run(
+        args.data_root,
+        target_queue_id=args.target_queue_id,
+        target_not_before_jst=args.target_not_before_jst,
+    ))

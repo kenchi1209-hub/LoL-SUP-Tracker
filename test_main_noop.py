@@ -143,6 +143,44 @@ class MainNoopTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timezone"):
             main.select_single_target_match({}, 420, "2026-10-28T01:12:46")
 
+    def test_exact_target_selector_selects_only_the_requested_match(self):
+        matches = {
+            "JP1_TARGET": {"info": {"queueId": 400, "gameStartTimestamp": 1793117701000}},
+            "JP1_OTHER": {"info": {"queueId": 400, "gameStartTimestamp": 1793117820000}},
+        }
+        selected = main.select_exact_target_match(
+            matches,
+            "JP1_TARGET",
+            target_queue_id=400,
+            target_not_before_jst="2026-10-28T01:12:46+09:00",
+        )
+        self.assertEqual(list(selected), ["JP1_TARGET"])
+
+    def test_exact_target_selector_returns_no_match_when_target_is_absent(self):
+        selected = main.select_exact_target_match(
+            {"JP1_OTHER": {"info": {"queueId": 400, "gameStartTimestamp": 1793117701000}}},
+            "JP1_TARGET",
+            target_queue_id=400,
+        )
+        self.assertEqual(selected, {})
+
+    def test_exact_target_selector_rejects_queue_mismatch(self):
+        with self.assertRaisesRegex(RuntimeError, "queue does not match"):
+            main.select_exact_target_match(
+                {"JP1_TARGET": {"info": {"queueId": 400, "gameStartTimestamp": 1793117701000}}},
+                "JP1_TARGET",
+                target_queue_id=420,
+            )
+
+    def test_exact_target_selector_rejects_match_before_boundary(self):
+        with self.assertRaisesRegex(RuntimeError, "predates"):
+            main.select_exact_target_match(
+                {"JP1_TARGET": {"info": {"queueId": 400, "gameStartTimestamp": 1793114644000}}},
+                "JP1_TARGET",
+                target_queue_id=400,
+                target_not_before_jst="2026-10-28T01:12:46+09:00",
+            )
+
     def test_targeted_run_generates_only_the_watched_match(self):
         details = {
             "JP1_NORMAL": {"info": {"queueId": 400, "gameStartTimestamp": 1793114644000}},

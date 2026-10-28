@@ -171,8 +171,55 @@ def select_single_target_match(new_matches, target_queue_id, target_not_before_j
     return candidates
 
 
-def run(data_root=None, target_queue_id=None, target_not_before_jst=None):
-    if (target_queue_id is None) != (target_not_before_jst is None):
+def select_exact_target_match(
+    new_matches,
+    target_match_id,
+    target_queue_id=None,
+    target_not_before_jst=None,
+):
+    """Select one explicit, unpublished Match-V5 candidate for recovery.
+
+    ``new_matches`` is discovered from the configured account's Match-V5
+    history and filtered through the normal eligible-queue rules.  An explicit
+    ID therefore cannot introduce a match from another account or an excluded
+    queue.  Optional queue and timestamp inputs are additional guards for a
+    known interrupted transaction.
+    """
+    detail = new_matches.get(target_match_id)
+    if detail is None:
+        return {}
+
+    info = detail.get("info", {}) if isinstance(detail, dict) else {}
+    queue_id = info.get("queueId")
+    if not is_allowed_queue_id(queue_id):
+        raise RuntimeError("target Match-V5 candidate is not an eligible queue")
+    if target_queue_id is not None and str(queue_id) != str(target_queue_id):
+        raise RuntimeError("target Match-V5 candidate queue does not match")
+
+    if target_not_before_jst is not None:
+        try:
+            cutoff = datetime.fromisoformat(str(target_not_before_jst))
+        except ValueError as error:
+            raise ValueError("target match timestamp must be ISO-8601") from error
+        if cutoff.tzinfo is None:
+            raise ValueError("target match timestamp must include a timezone")
+        started_at = info.get("gameStartTimestamp")
+        if not isinstance(started_at, (int, float)) or isinstance(started_at, bool):
+            raise RuntimeError("target Match-V5 candidate has no valid start timestamp")
+        game_start = datetime.fromtimestamp(started_at / 1000, tz=now_jst().tzinfo)
+        if game_start < cutoff:
+            raise RuntimeError("target Match-V5 candidate predates the requested boundary")
+
+    return {target_match_id: detail}
+
+
+def run(
+    data_root=None,
+    target_queue_id=None,
+    target_not_before_jst=None,
+    target_match_id=None,
+):
+    if target_match_id is None and (target_queue_id is None) != (target_not_before_jst is None):
         raise ValueError(
             "--target-queue-id and --target-not-before-jst must be used together"
         )
@@ -196,7 +243,17 @@ def run(data_root=None, target_queue_id=None, target_not_before_jst=None):
     new_matches, ineligible_ids = discover_new_eligible_matches(
         match_ids, published_ids, paths.raw
     )
-    if target_queue_id is not None:
+    if target_match_id is not None:
+        new_matches = select_exact_target_match(
+            new_matches,
+            target_match_id,
+            target_queue_id=target_queue_id,
+            target_not_before_jst=target_not_before_jst,
+        )
+        if not new_matches:
+            print("[INFO] Explicit Match-V5 target is not reflected yet.")
+            return 0
+    elif target_queue_id is not None:
         new_matches = select_single_target_match(
             new_matches, target_queue_id, target_not_before_jst,
         )
@@ -314,6 +371,7 @@ def run(data_root=None, target_queue_id=None, target_not_before_jst=None):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root")
+    parser.add_argument("--target-match-id")
     parser.add_argument("--target-queue-id", type=int)
     parser.add_argument("--target-not-before-jst")
     return parser.parse_args(argv)
@@ -323,6 +381,7 @@ if __name__ == "__main__":
     args = parse_args()
     raise SystemExit(run(
         args.data_root,
+        target_match_id=args.target_match_id,
         target_queue_id=args.target_queue_id,
         target_not_before_jst=args.target_not_before_jst,
     ))

@@ -181,6 +181,38 @@ class MainNoopTest(unittest.TestCase):
                 target_not_before_jst="2026-10-28T01:12:46+09:00",
             )
 
+    def test_exact_target_discovery_uses_match_v5_membership_not_dirty_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw_root = Path(directory) / "raw"
+            detail_path = raw_root / "JP1_TARGET" / "match.json"
+            detail_path.parent.mkdir(parents=True)
+            detail_path.write_text(json.dumps({
+                "metadata": {"matchId": "JP1_TARGET"},
+                "info": {"queueId": 400},
+            }), encoding="utf-8")
+            selected = main.discover_exact_target_match(
+                ["JP1_TARGET"], "JP1_TARGET", raw_root,
+            )
+        self.assertEqual(list(selected), ["JP1_TARGET"])
+
+    def test_exact_target_discovery_rejects_id_outside_account_match_history(self):
+        selected = main.discover_exact_target_match(
+            ["JP1_OTHER"], "JP1_TARGET",
+        )
+        self.assertEqual(selected, {})
+
+    def test_exact_target_discovery_rejects_mismatched_detail_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw_root = Path(directory) / "raw"
+            detail_path = raw_root / "JP1_TARGET" / "match.json"
+            detail_path.parent.mkdir(parents=True)
+            detail_path.write_text(json.dumps({
+                "metadata": {"matchId": "JP1_OTHER"},
+                "info": {"queueId": 400},
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                main.discover_exact_target_match(["JP1_TARGET"], "JP1_TARGET", raw_root)
+
     def test_targeted_run_generates_only_the_watched_match(self):
         details = {
             "JP1_NORMAL": {"info": {"queueId": 400, "gameStartTimestamp": 1793114644000}},

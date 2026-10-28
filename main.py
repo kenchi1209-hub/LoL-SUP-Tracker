@@ -213,6 +213,28 @@ def select_exact_target_match(
     return {target_match_id: detail}
 
 
+def discover_exact_target_match(match_ids, target_match_id, raw_root=None):
+    """Load an explicit target from the configured account's Match-V5 history.
+
+    Recovery can begin after an interrupted export has already written the ID
+    into a dirty ``my_matches.csv``.  Do not use that transient CSV state to
+    reject the target; account ownership is instead proved by the Match-V5 ID
+    list just fetched for the configured PUUID.
+    """
+    if target_match_id not in set(match_ids):
+        return {}
+    detail_path = paths_for_match(target_match_id, raw_root).detail
+    if detail_path.exists():
+        with detail_path.open("r", encoding="utf-8") as file:
+            detail = json.load(file)
+    else:
+        detail = get_match_detail(target_match_id)
+    metadata = detail.get("metadata", {}) if isinstance(detail, dict) else {}
+    if metadata.get("matchId") != target_match_id:
+        raise RuntimeError("target Match-V5 detail does not match the requested ID")
+    return {target_match_id: detail}
+
+
 def run(
     data_root=None,
     target_queue_id=None,
@@ -239,11 +261,10 @@ def run(
     for match_id in match_ids:
         print(match_id)
 
-    published_ids = load_published_match_ids(paths.csv / "my_matches.csv")
-    new_matches, ineligible_ids = discover_new_eligible_matches(
-        match_ids, published_ids, paths.raw
-    )
     if target_match_id is not None:
+        new_matches = discover_exact_target_match(
+            match_ids, target_match_id, paths.raw,
+        )
         new_matches = select_exact_target_match(
             new_matches,
             target_match_id,
@@ -253,7 +274,13 @@ def run(
         if not new_matches:
             print("[INFO] Explicit Match-V5 target is not reflected yet.")
             return 0
-    elif target_queue_id is not None:
+        ineligible_ids = []
+    else:
+        published_ids = load_published_match_ids(paths.csv / "my_matches.csv")
+        new_matches, ineligible_ids = discover_new_eligible_matches(
+            match_ids, published_ids, paths.raw
+        )
+    if target_match_id is None and target_queue_id is not None:
         new_matches = select_single_target_match(
             new_matches, target_queue_id, target_not_before_jst,
         )

@@ -40,6 +40,12 @@ function Invoke-DailyUpdate {
     return $LASTEXITCODE
 }
 
+function Invoke-LoLWithWatcher {
+    Set-Location -LiteralPath $PublicRoot
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start_lol_with_watcher.ps1
+    return $LASTEXITCODE
+}
+
 try {
     $shouldExit = $false
     while (-not $shouldExit) {
@@ -48,6 +54,7 @@ try {
         Write-Host ("[1] Ranked Watcher {0}" -f $LabelStart)
         Write-Host '[2] Daily Update'
         Write-Host '[3] Watcher dry-run'
+        Write-Host ("[4] LoL + Ranked Watcher {0}" -f $LabelStart)
         Write-Host ("[0] {0}" -f $LabelExit)
 
         $selection = Read-Host ("{0} [1]" -f $LabelChoice)
@@ -80,12 +87,20 @@ try {
                 }
                 Wait-ForLauncherInput
             }
+            '4' {
+                Write-Host 'Starting League Client and Ranked Watcher.'
+                $exitCode = Invoke-LoLWithWatcher
+                if ($exitCode -ne 0) {
+                    Write-Host "Combined launcher exited with code $exitCode." -ForegroundColor Red
+                }
+                Wait-ForLauncherInput
+            }
             '0' {
                 Write-Host 'Exiting.'
                 $shouldExit = $true
             }
             default {
-                Write-Host 'Invalid selection. Enter 0, 1, 2, or 3.' -ForegroundColor Yellow
+                Write-Host 'Invalid selection. Enter 0, 1, 2, 3, or 4.' -ForegroundColor Yellow
                 Wait-ForLauncherInput
             }
         }

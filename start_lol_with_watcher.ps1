@@ -1,24 +1,34 @@
 [CmdletBinding()]
-param(
-    [switch]$DryRun
-)
+param([switch]$DryRun)
 
-# PowerShell 5.1-compatible combined League Client and watcher launcher.
+# Use the Riot-installed shortcut so its target, arguments and working directory
+# stay the same as the user's normal League of Legends launch.
 $PublicRoot = 'C:\Users\kissx\Desktop\LoL-Analytics'
 $PrivateDataRoot = 'C:\Users\kissx\Desktop\LoL-SUP-Tracker-PrivateData'
-$LeagueClientPath = 'C:\Riot Games\League of Legends\LeagueClient.exe'
-$LeagueClientProcessName = 'LeagueClient'
+$LeagueLockfile = 'C:\Riot Games\League of Legends\lockfile'
+$ShortcutCandidates = @(
+    'C:\Users\Public\Desktop\League of Legends.lnk',
+    'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Riot Games\League of Legends.lnk'
+)
 
-function Convert-CodePoints {
-    param([int[]]$CodePoints)
-
-    return -join ($CodePoints | ForEach-Object { [char]$_ })
+function Get-LeagueShortcut {
+    $shell = New-Object -ComObject WScript.Shell
+    foreach ($path in $ShortcutCandidates) {
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $shortcut = $shell.CreateShortcut($path)
+            if (-not $shortcut.TargetPath -or -not (Test-Path -LiteralPath $shortcut.TargetPath -PathType Leaf)) {
+                throw "League shortcut target is unavailable: $path"
+            }
+            return [pscustomobject]@{
+                Path = $path
+                Target = $shortcut.TargetPath
+                Arguments = $shortcut.Arguments
+                WorkingDirectory = $shortcut.WorkingDirectory
+            }
+        }
+    }
+    throw 'League of Legends shortcut not found; refusing to guess launch arguments.'
 }
-
-$TextStarted = Convert-CodePoints 0x3092, 0x8D77, 0x52D5, 0x3057, 0x307E, 0x3057, 0x305F
-$TextWouldStart = Convert-CodePoints 0x3092, 0x8D77, 0x52D5, 0x3057, 0x307E, 0x3059
-$TextAlreadyRunning = Convert-CodePoints 0x306F, 0x3059, 0x3067, 0x306B, 0x8D77, 0x52D5, 0x4E2D, 0x3067, 0x3059
-$TextNotFound = Convert-CodePoints 0x304C, 0x898B, 0x3064, 0x304B, 0x308A, 0x307E, 0x305B, 0x3093
 
 function Get-RunningRankedWatcher {
     return @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
@@ -30,59 +40,67 @@ function Get-RunningRankedWatcher {
 }
 
 function Test-LeagueClientRunning {
-    return [bool](Get-Process -Name $LeagueClientProcessName -ErrorAction SilentlyContinue)
+    return [bool](Get-Process -Name 'LeagueClient', 'LeagueClientUx' -ErrorAction SilentlyContinue)
+}
+
+function Test-LeagueClientReady {
+    $ux = Get-Process -Name 'LeagueClientUx' -ErrorAction SilentlyContinue
+    return [bool]($ux -and (Test-Path -LiteralPath $LeagueLockfile -PathType Leaf))
 }
 
 function Start-RankedWatcher {
     $watcherCommand = "Set-Location -LiteralPath '$PublicRoot'; & python .\lcu_watcher.py --data-root '$PrivateDataRoot' --live --auto-publish"
-
-    if ($DryRun) {
-        Write-Host ("[DRY-RUN] Ranked Watcher {0}." -f $TextWouldStart)
-        return
-    }
-
-    Start-Process -FilePath 'powershell.exe' `
-        -WorkingDirectory $PublicRoot `
-        -ArgumentList @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $watcherCommand)
-    Write-Host ("[OK] Ranked Watcher {0}." -f $TextStarted) -ForegroundColor Green
-}
-
-function Start-LeagueClient {
-    if (-not (Test-Path -LiteralPath $LeagueClientPath -PathType Leaf)) {
-        Write-Host ("[ERROR] League Client {0}: {1}" -f $TextNotFound, $LeagueClientPath) -ForegroundColor Red
-        return
-    }
-
-    if ($DryRun) {
-        Write-Host ("[DRY-RUN] League Client {0}: {1}" -f $TextStarted, $LeagueClientPath)
-        return
-    }
-
-    Start-Process -FilePath $LeagueClientPath
-    Write-Host ("[OK] League Client {0}." -f $TextStarted) -ForegroundColor Green
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($watcherCommand))
+    Start-Process -FilePath 'powershell.exe' -WorkingDirectory $PublicRoot `
+        -ArgumentList @('-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand) -ErrorAction Stop
+    Write-Host '[OK] Ranked Watcher started.' -ForegroundColor Green
 }
 
 try {
-    Set-Location -LiteralPath $PublicRoot
+    Set-Location -LiteralPath $PublicRoot -ErrorAction Stop
+    $shortcut = Get-LeagueShortcut
+    $running = Test-LeagueClientRunning
+    $ready = Test-LeagueClientReady
 
-    $watchers = Get-RunningRankedWatcher
-    if ($watchers.Count -gt 0) {
-        Write-Host ("[INFO] Ranked Watcher {0}." -f $TextAlreadyRunning) -ForegroundColor Cyan
+    if ($DryRun) {
+        Write-Host "[DRY-RUN] Shortcut: $($shortcut.Path)"
+        Write-Host "[DRY-RUN] Target: $($shortcut.Target)"
+        Write-Host "[DRY-RUN] Arguments: $($shortcut.Arguments)"
+        Write-Host "[DRY-RUN] WorkingDirectory: $($shortcut.WorkingDirectory)"
+        Write-Host "[DRY-RUN] Launch: open shortcut $($shortcut.Path)"
+        Write-Host "[DRY-RUN] LeagueClient or LeagueClientUx running: $running"
+        Write-Host "[DRY-RUN] LCU ready (LeagueClientUx AND lockfile $LeagueLockfile): $ready"
+        Write-Host "[DRY-RUN] Ranked Watcher already running: $(@(Get-RunningRankedWatcher).Count -gt 0)"
+        Write-Host "[DRY-RUN] After LCU ready: python .\lcu_watcher.py --data-root `"$PrivateDataRoot`" --live --auto-publish"
+        return
+    }
+
+    if ($running) {
+        Write-Host '[INFO] League Client already running.'
+    }
+    else {
+        Start-Process -FilePath $shortcut.Path -ErrorAction Stop
+        Write-Host '[OK] League Client launch requested.'
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    while (-not (Test-LeagueClientReady)) {
+        if ([DateTime]::UtcNow -ge $deadline) {
+            throw 'League Client did not become ready within 120 seconds; Watcher was not started.'
+        }
+        Write-Host '[INFO] Waiting for League Client (LeagueClientUx and lockfile)...'
+        Start-Sleep -Seconds 3
+    }
+
+    Write-Host '[OK] League Client ready.'
+    if (@(Get-RunningRankedWatcher).Count -gt 0) {
+        Write-Host '[INFO] Ranked Watcher already running.'
     }
     else {
         Start-RankedWatcher
     }
-
-    if (Test-LeagueClientRunning) {
-        Write-Host ("[INFO] League Client {0}." -f $TextAlreadyRunning) -ForegroundColor Cyan
-    }
-    else {
-        Start-LeagueClient
-    }
 }
 catch [System.Management.Automation.PipelineStoppedException] {
-    # Exit quietly when Ctrl+C stops this launcher.
-    Write-Host ''
     Write-Host 'Launcher stopped.'
 }
 catch {

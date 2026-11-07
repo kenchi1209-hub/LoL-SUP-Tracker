@@ -40,7 +40,7 @@ def seconds_to_mmss(seconds):
     return f"{minutes}:{remaining_seconds:02d}"
 
 
-def load_matches():
+def load_matches(include_short=False):
     if not os.path.exists(MATCHES_CSV):
         return []
     with open(MATCHES_CSV, encoding="utf-8-sig", newline="") as f:
@@ -56,7 +56,8 @@ def load_matches():
         r["_vspm"] = to_float(r.get("vision_score_per_min"))
         r["_dmg"] = to_int(r.get("total_damage_to_champions"))
     # 5分未満の試合はリメイク/即終了扱いとしてサイト集計から除外
-    rows = [r for r in rows if to_int(r.get("game_duration_seconds")) >= 300]
+    if not include_short:
+        rows = [r for r in rows if to_int(r.get("game_duration_seconds")) >= 300]
     # 日付降順（新しい順）
     rows.sort(key=lambda x: x.get("date", ""), reverse=True)
     return rows

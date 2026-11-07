@@ -21,7 +21,6 @@
   const clock = (milliseconds) => duration((Number(milliseconds) || 0) / 1000);
   const savedLpDelta = (match) => (
     String(match?.queue_id || "") === "420"
-      && Number(match?.game_duration_seconds) >= 300
       && Number.isFinite(match?.lp_delta)
       ? match.lp_delta
       : null
@@ -31,9 +30,12 @@
     return String(match?.queue_id || "") === "420"
       && Number.isFinite(seconds) && seconds > 0 && seconds < 300;
   };
+  const isRemake = (match) => {
+    const seconds = Number(match?.game_duration_seconds);
+    return Number.isFinite(seconds) && seconds > 0 && seconds < 300;
+  };
   const matchResultTokens = (match) => {
-    if (isRankedRemake(match)) return { result: "REMAKE", lp: "(±0)" };
-    const result = match?.win ? "WIN" : "LOSS";
+    const result = isRemake(match) ? "REMAKE" : match?.win ? "WIN" : "LOSS";
     const delta = savedLpDelta(match);
     return {
       result,
@@ -1247,7 +1249,7 @@
 
   function card(match, version) {
     const metrics = global.MatchHistoryMetrics;
-    const element = text("article", "", `match ${match.win ? "win" : "loss"}`);
+    const element = text("article", "", `match ${isRemake(match) ? "remake" : match.win ? "win" : "loss"}`);
     element.id = matchAnchorId(match.match_id);
     element.tabIndex = -1;
     element.dataset.matchId = match.match_id || "";

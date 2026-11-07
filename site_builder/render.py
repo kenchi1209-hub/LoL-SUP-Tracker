@@ -117,16 +117,6 @@ def load_lp_deltas():
     return deltas
 
 
-def ranked_non_remake(row):
-    """Whether a Match History row may expose its saved Queue 420 LP delta."""
-    if str(row.get("queue_id", "")) != "420":
-        return False
-    try:
-        return int(float(row.get("game_duration_seconds", 0) or 0)) >= 300
-    except (TypeError, ValueError):
-        return False
-
-
 def load_match_detail(match_id):
     detail = load_match_details().get(match_id, {})
     if not isinstance(detail, dict):
@@ -216,11 +206,10 @@ def match_history_data(rows):
             "champion_icon_id": champion_icon_id(row.get("champion", "")),
             "queue_id": str(row.get("queue_id", "")),
             "queue_name": queue_id_to_name(row.get("queue_id", "")),
-            # Only Queue 420 may display an LP delta, and only when it was
-            # explicitly persisted in lp_history.json.  Remakes are excluded
-            # even if malformed legacy data happened to contain a record.
+            # Only Queue 420 may display an LP delta, including a remake,
+            # and only when it was explicitly persisted in lp_history.json.
             "lp_delta": lp_deltas.get(str(row.get("match_id", "")))
-            if ranked_non_remake(row) else None,
+            if str(row.get("queue_id", "")) == "420" else None,
             "role": row.get("role", ""),
             "win": row.get("_win", False),
             "kills": row.get("_k", 0),

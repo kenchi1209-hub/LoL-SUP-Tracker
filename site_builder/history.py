@@ -11,9 +11,9 @@ from site_builder.render import (
 HISTORY_PAGE_TEMPLATE = load_template("history.html")
 
 
-def build_history_html(rows, version):
+def build_history_html(rows, version, summary_rows=None):
     return HISTORY_PAGE_TEMPLATE.format(
-        **page_header_context(rows),
+        **page_header_context(rows if summary_rows is None else summary_rows),
         navigation=render_navigation("history"),
         match_history=render_match_history(rows, version, "top"),
     )

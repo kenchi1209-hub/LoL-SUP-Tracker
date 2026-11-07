@@ -37,6 +37,7 @@ def main(data_root=None):
     configure_render_data(data_root)
     configure_lp_data(data_root)
     rows = load_matches()
+    history_rows = load_matches(include_short=True)
     if not rows:
         print("警告: 試合データが空です。プレースホルダを生成します。")
     version = get_ddragon_version()
@@ -47,10 +48,10 @@ def main(data_root=None):
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_out)
     with open(os.path.join(OUT_DIR, "history.html"), "w", encoding="utf-8") as f:
-        f.write(build_history_html(rows, version))
+        f.write(build_history_html(history_rows, version, summary_rows=rows))
     detail_dir = os.path.join(OUT_DIR, "match-details")
     os.makedirs(detail_dir, exist_ok=True)
-    for row in rows:
+    for row in history_rows:
         match_id = str(row.get("match_id", ""))
         if not match_id:
             continue

@@ -46,6 +46,17 @@ class FightDetailShardTests(unittest.TestCase):
         write_shards(details, self.raw, self.output)
         self.assertEqual(before, {x.name: (x.read_bytes(), x.stat().st_mtime_ns) for x in self.output.iterdir()})
 
+    def test_windows_crlf_checkout_validates_and_does_not_rewrite(self):
+        self.match("JP1_A", "2026-11-02T00:00:00+09:00")
+        details = {"JP1_A": [{"description": "line\\r\\ninside"}]}
+        write_shards(details, self.raw, self.output)
+        for path in self.output.glob("*.json"):
+            path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        before = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.output.iterdir()}
+        self.assertEqual(ShardReader(self.output, self.raw).get("JP1_A"), details["JP1_A"])
+        write_shards(details, self.raw, self.output)
+        self.assertEqual(before, {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.output.iterdir()})
+
     def test_missing_corrupt_duplicate_and_stale_fail_closed(self):
         self.match("JP1_A", "2026-11-02T00:00:00+09:00")
         write_shards({"JP1_A": []}, self.raw, self.output)

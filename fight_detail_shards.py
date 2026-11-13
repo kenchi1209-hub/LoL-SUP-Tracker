@@ -60,6 +60,13 @@ def _json_bytes(value):
     return (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def _canonical_bytes(content):
+    # Git for Windows may check text out with CRLF even though Git stores LF.
+    # Compact JSON escapes string newlines, so only formatting line endings
+    # are normalized; the parsed Fight values are unchanged.
+    return content.replace(b"\r\n", b"\n")
+
+
 def prepare_shards(details, raw_root):
     if not isinstance(details, dict):
         raise ShardError("fight details root must be an object")
@@ -104,7 +111,7 @@ def validate_shards(directory, raw_root=None):
             content = (directory / week).read_bytes()
         except OSError as error:
             raise ShardError("missing weekly file: " + week) from error
-        if hashlib.sha256(content).hexdigest() != digest:
+        if hashlib.sha256(_canonical_bytes(content)).hexdigest() != digest:
             raise ShardError("weekly checksum mismatch: " + week)
         shard = _parse(content)
         if not isinstance(shard, dict):
@@ -169,7 +176,7 @@ def write_shards(details, raw_root, directory):
         incoming = _parse(files[MANIFEST_NAME])
         if set(existing["matches"]) - set(incoming["matches"]):
             raise ShardError("weekly export would remove existing matches")
-    changed = [name for name in files if old.get(name) != files[name]]
+    changed = [name for name in files if name not in old or _canonical_bytes(old[name]) != files[name]]
     stale = sorted(set(old) - set(files))
     if not changed and not stale:
         return directory
@@ -203,7 +210,7 @@ class ShardReader:
     @lru_cache(maxsize=2)
     def _week(self, name):
         content = (self.directory / name).read_bytes()
-        if hashlib.sha256(content).hexdigest() != self.manifest["weeks"][name]:
+        if hashlib.sha256(_canonical_bytes(content)).hexdigest() != self.manifest["weeks"][name]:
             raise ShardError("weekly file changed after validation")
         return _parse(content)
 

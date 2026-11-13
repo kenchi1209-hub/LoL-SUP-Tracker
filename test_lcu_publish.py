@@ -403,7 +403,7 @@ class PrivateDataPublisherTest(unittest.TestCase):
         self.assertEqual(publisher.publish(self.match_id), "commit-sha")
         commands = [" ".join(command) for command in runner.calls]
         self.assertIn("git add -- " + " ".join(self.expected_paths), commands)
-        self.assertIn("git --no-pager diff --cached --name-status", commands)
+        self.assertIn("git --no-pager diff --cached --name-status --no-renames", commands)
         self.assertIn(
             "git -c core.whitespace=cr-at-eol --no-pager diff --cached --check", commands,
         )

@@ -94,9 +94,8 @@ jobs:
           fi
           deleted=$(git diff --name-only --diff-filter=D -- raw csv excel)
           if [ -n "$deleted" ]; then
-            echo "PrivateData files were deleted; refusing to commit" >&2
-            printf '%s\n' "$deleted" >&2
-            exit 1
+            mapfile -t deleted_paths <<< "$deleted"
+            python ../tracker/fight_detail_shards.py --validate-root "$PWD" --deleted "${deleted_paths[@]}"
           fi
           outside_data=$(git status --porcelain -- . ':(exclude)raw' ':(exclude)csv' ':(exclude)excel')
           if [ -n "$outside_data" ]; then

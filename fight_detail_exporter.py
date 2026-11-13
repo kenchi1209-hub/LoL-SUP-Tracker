@@ -10,6 +10,7 @@ from analyze_timeline import analyze_combat, build_all_fight_context_from_timeli
 from champion_registry import champion_name_ja
 from raw_paths import DEFAULT_RAW_ROOT, iter_combat_timeline_paths, match_id_from_path
 from data_paths import CSV_ROOT
+from fight_detail_shards import ShardError, write_shards
 
 
 OUTPUT_PATH = CSV_ROOT / "fight_details.json"
@@ -452,12 +453,18 @@ def export_all_fight_details(
         raise FightDetailExportError(
             f"all Fight解析失敗が{len(failures)}件あるため、出力を中止しました"
         )
-    write_json_atomic(details, output_path)
-    print(
-        f"all_fight_details.json 出力完了: {len(details)}件 / "
-        f"失敗 {len(failures)}件 / {output_path}"
-    )
-    return output_path
+    output_path = Path(output_path)
+    if output_path.suffix == ".json" and output_path.exists():
+        existing = load_existing_fight_details(output_path)
+        if set(existing) - set(details):
+            raise FightDetailExportError("既存の全体FightからMatchが減少するため出力を中止しました")
+    directory = output_path.with_suffix("") if output_path.suffix == ".json" else output_path
+    try:
+        write_shards(details, raw_root, directory)
+    except (OSError, ShardError) as error:
+        raise FightDetailExportError("週別Fight Detail出力に失敗しました") from error
+    print(f"all_fight_details weekly output: {len(details)} matches / {directory}")
+    return directory
 
 
 def parse_args():

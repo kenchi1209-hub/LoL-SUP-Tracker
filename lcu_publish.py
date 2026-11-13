@@ -7,6 +7,7 @@ directories.  It is only invoked by ``lcu_watcher --live --auto-publish``.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -14,6 +15,16 @@ import subprocess
 
 class PublishError(RuntimeError):
     """The automatic publish safety checks refused to continue."""
+
+
+def is_weekly_fight_path(path):
+    """Only direct manifest/ISO-week files, never other CSVs or traversal."""
+    normalized = path.replace("\\", "/")
+    return bool(re.fullmatch(r"csv/all_fight_details/(?:manifest|\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3]))\.json", normalized))
+
+
+def is_weekly_fight_data_path(path):
+    return is_weekly_fight_path(path) and not path.replace("\\", "/").endswith("/manifest.json")
 
 
 GENERATED_SHARED_PATHS = frozenset({
@@ -63,7 +74,7 @@ def is_allowed_match_path(
     path, match_id, correction_match_id=None, confirmation_match_id=None,
 ):
     """Allow generated exports, this match, and explicitly verified predecessors."""
-    if path in GENERATED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+    if path in GENERATED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES) or is_weekly_fight_path(path):
         return True
     raw_prefix = f"raw/{match_id}/"
     if path.startswith(raw_prefix):
@@ -78,7 +89,7 @@ def is_allowed_match_path(
 
 def is_allowed_unresolved_match_path(path, match_id):
     """Allow one normal match update, but never allocate or revise LP data."""
-    if path in UNRESOLVED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+    if path in UNRESOLVED_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES) or is_weekly_fight_path(path):
         return True
     raw_prefix = f"raw/{match_id}/"
     return path.startswith(raw_prefix) and path[len(raw_prefix):] in UNRESOLVED_RAW_MATCH_FILENAMES
@@ -86,7 +97,7 @@ def is_allowed_unresolved_match_path(path, match_id):
 
 def is_allowed_match_only_path(path, match_id):
     """Allow one non-LP eligible match update, never LP allocation data."""
-    if path in MATCH_ONLY_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+    if path in MATCH_ONLY_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES) or is_weekly_fight_path(path):
         return True
     raw_prefix = f"raw/{match_id}/"
     return path.startswith(raw_prefix) and path[len(raw_prefix):] in MATCH_ONLY_RAW_MATCH_FILENAMES
@@ -94,7 +105,7 @@ def is_allowed_match_only_path(path, match_id):
 
 def is_allowed_ranked_remake_path(path, match_id, confirmation_match_id=None):
     """Allow one verified Queue 420 remake and an optional status-only confirmation."""
-    if path in RANKED_REMAKE_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES):
+    if path in RANKED_REMAKE_SHARED_PATHS or path.startswith(GENERATED_DIRECTORY_PREFIXES) or is_weekly_fight_path(path):
         return True
     if confirmation_match_id and path == "csv/lp_history.json":
         return True
@@ -151,7 +162,7 @@ class PrivateDataPublisher:
                 continue
             fields = line.split("\t")
             status = fields[0]
-            if status not in {"A", "M"} or len(fields) != 2 or not fields[1]:
+            if len(fields) != 2 or not fields[1] or (status not in {"A", "M"} and not (status == "D" and is_weekly_fight_data_path(fields[1]))):
                 raise PublishError("staged changes include rename, copy, deletion, or unreadable status")
             paths.append(fields[1])
         return paths
@@ -166,14 +177,22 @@ class PrivateDataPublisher:
             if len(line) < 4:
                 raise PublishError("unreadable PrivateData git status")
             status, path = line[:2], line[3:]
-            if "R" in status or "C" in status or "D" in status or path.startswith("../"):
+            if "R" in status or "C" in status or ("D" in status and not is_weekly_fight_data_path(path)) or path.startswith("../"):
                 raise PublishError("PrivateData has rename, copy, or deletion; publish stopped")
             paths.append(path)
         return paths
 
     def _status_paths(self):
-        result = self._git("status", "--porcelain=v1", "--untracked-files=all")
-        return self._paths_from_status(result.stdout)
+        result = self._git("status", "--porcelain=v1", "--untracked-files=all", "--no-renames")
+        paths = self._paths_from_status(result.stdout)
+        deleted = [line[3:] for line in result.stdout.splitlines() if "D" in line[:2]]
+        if any(is_weekly_fight_path(path) for path in paths):
+            from fight_detail_shards import ShardError, validate_data_root
+            try:
+                validate_data_root(self.private_root, deleted)
+            except (OSError, ShardError) as error:
+                raise PublishError("could not verify deleted weekly fight data") from error
+        return paths
 
     def _remote_state(self):
         self._git("fetch", "origin", "main")
@@ -474,7 +493,7 @@ class PrivateDataPublisher:
         """Stage an already validated path set, then commit, push, and dispatch."""
         self._git("add", "--", *paths)
         staged = self._paths_from_name_status(
-            self._git("--no-pager", "diff", "--cached", "--name-status").stdout
+            self._git("--no-pager", "diff", "--cached", "--name-status", "--no-renames").stdout
         )
         if sorted(staged) != sorted(paths) or any(not allowed_path(path) for path in staged):
             raise PublishError("staged paths failed validation; publish stopped")

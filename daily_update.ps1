@@ -145,7 +145,9 @@ try {
             throw "PrivateDataの削除確認に失敗しました。"
         }
         if ($deletedFiles.Count -ne 0) {
-            throw "PrivateDataのraw/csv/excelに削除があります。commitせず停止します。"
+            # Only obsolete, fully validated weekly Fight shards may disappear.
+            $validator = Join-Path $PublicRepo 'fight_detail_shards.py'
+            Invoke-Checked -Command $PythonCommand -CommandArguments (@($validator, '--validate-root', $PrivateRepo, '--deleted') + $deletedFiles)
         }
 
         $outsideData = @(git status --porcelain=v1 -- . ":(exclude)raw" ":(exclude)csv" ":(exclude)excel")

@@ -18,6 +18,7 @@ from site_builder.data import (
 from site_builder.patches import normalize_patch
 from timezone_utils import now_jst
 from data_paths import get_data_paths
+from fight_detail_shards import ShardError, ShardReader
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,6 +38,7 @@ def configure_data_root(data_root=None):
     LP_HISTORY_PATH = paths.csv / "lp_history.json"
     load_fight_details.cache_clear()
     load_all_fight_details.cache_clear()
+    load_all_fight_shards.cache_clear()
     load_match_details.cache_clear()
     load_lp_deltas.cache_clear()
 
@@ -75,10 +77,20 @@ def load_all_fight_details():
 
 
 def load_all_fights(match_id):
+    if ALL_FIGHT_DETAILS_PATH.with_suffix("").exists():
+        return load_all_fight_shards().get(match_id)
     fights = load_all_fight_details().get(match_id, [])
     if not isinstance(fights, list):
         return []
     return fights
+
+
+@lru_cache(maxsize=1)
+def load_all_fight_shards():
+    reader = ShardReader(ALL_FIGHT_DETAILS_PATH.with_suffix(""), ALL_FIGHT_DETAILS_PATH.parent.parent / "raw")
+    if set(reader.manifest["matches"]) != set(load_fight_details()):
+        raise ShardError("weekly fights do not match self-fight match IDs")
+    return reader
 
 
 @lru_cache(maxsize=1)

@@ -21,6 +21,40 @@ if ([string]::IsNullOrWhiteSpace($PrivateRepo)) {
     $PrivateRepo = Join-Path (Split-Path -Parent $scriptDirectory) "LoL-SUP-Tracker-PrivateData"
 }
 
+# Log only predefined facts through the helper; never redirect or persist the
+# native process streams, which may contain credentials or account identifiers.
+$script:AuditHelper = Join-Path $scriptDirectory 'daily_update_observability.py'
+$script:AuditLog = $null
+$script:DataStatus = 'UNKNOWN'
+$script:FightStatus = 'UNKNOWN'
+$script:PushStatus = 'SKIPPED'
+$script:PrivateSha = 'UNKNOWN'
+$script:PagesStatus = 'UNKNOWN'
+$script:PagesDetail = 'PUSH_NOT_SUCCESS'
+$script:ActiveStage = ''
+$script:StartedAt = [DateTimeOffset]::UtcNow
+$script:ExitCode = 1
+
+function Write-Audit {
+    param([string]$Event, [string]$State, [string]$Value = '')
+    if (-not $script:AuditLog) { return }
+    try {
+        $arguments = @($script:AuditHelper, 'append', '--log-file', $script:AuditLog, '--event', $Event, '--state', $State)
+        if ($Value) { $arguments += @('--value', $Value) }
+        & $PythonCommand @arguments 2>$null
+        if ($LASTEXITCODE -ne 0) { Write-Warning 'Daily Update log write failed; raw output was not saved.' }
+    }
+    catch { Write-Warning 'Daily Update log write failed; raw output was not saved.' }
+}
+
+try {
+    $auditDir = Join-Path $PublicRepo 'logs\daily_update'
+    $created = & $PythonCommand $script:AuditHelper init --directory $auditDir 2>$null
+    if ($LASTEXITCODE -eq 0 -and $created) { $script:AuditLog = [string]$created }
+    else { Write-Warning 'Daily Update log creation failed; raw output will not be saved.' }
+}
+catch { Write-Warning 'Daily Update log creation failed; raw output will not be saved.' }
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)]
@@ -29,9 +63,21 @@ function Invoke-Checked {
         [string[]]$CommandArguments
     )
 
-    & $Command @CommandArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed ($LASTEXITCODE): $Command $($CommandArguments -join ' ')"
+    # Windows PowerShell can wrap native stderr as a non-terminating error.
+    # It must not turn a successful native exit into a failure.
+    $commandInfo = Get-Command -Name $Command -ErrorAction Stop | Select-Object -First 1
+    $previousPreference = $ErrorActionPreference
+    try {
+        if ($commandInfo.CommandType -eq 'Application') { $ErrorActionPreference = 'Continue' }
+        & $Command @CommandArguments
+        $nativeExitCode = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousPreference }
+    if ($script:ActiveStage -in @('DATA_UPDATE', 'FIGHT_VALIDATION', 'COMMIT', 'PUSH')) {
+        Write-Audit $script:ActiveStage $(if ($nativeExitCode -eq 0) { 'SUCCESS' } else { 'FAILED' }) ([string]$nativeExitCode)
+    }
+    if ($nativeExitCode -ne 0) {
+        throw "Command failed ($nativeExitCode): $Command $($CommandArguments -join ' ')"
     }
 }
 
@@ -126,8 +172,17 @@ try {
 
     Push-Location $PublicRepo
     try {
+        $script:ActiveStage = 'DATA_UPDATE'
+        Write-Audit 'DATA_UPDATE' 'STARTED'
         Invoke-Checked $PythonCommand main.py --data-root $PrivateRepo
+        $script:DataStatus = 'SUCCESS'
+        Write-Audit 'DATA_UPDATE' 'SUCCESS'
+        $script:ActiveStage = 'FIGHT_VALIDATION'
+        Write-Audit 'FIGHT_VALIDATION' 'STARTED'
         Invoke-Checked $PythonCommand verify_fight_raw_completeness.py --data-root $PrivateRepo
+        $script:FightStatus = 'SUCCESS'
+        Write-Audit 'FIGHT_VALIDATION' 'SUCCESS'
+        $script:ActiveStage = ''
         Assert-CleanWorkingTree "Public"
     }
     finally {
@@ -174,14 +229,30 @@ try {
         git diff --cached --quiet
         $privateDiffExitCode = $LASTEXITCODE
         if ($privateDiffExitCode -eq 1) {
+            $script:ActiveStage = 'COMMIT'
+            Write-Audit 'COMMIT' 'STARTED'
             Invoke-Checked git commit -m "Update LoL data $lolDate"
+            Write-Audit 'COMMIT' 'SUCCESS'
+            $script:ActiveStage = 'PUSH'
+            $script:PushStatus = 'FAILED'
+            Write-Audit 'PUSH' 'STARTED'
             Invoke-Checked git push origin main
+            $script:PushStatus = 'SUCCESS'
+            Write-Audit 'PUSH' 'SUCCESS'
+            $script:ActiveStage = ''
         }
         elseif ($privateDiffExitCode -eq 0) {
             Write-Host "PrivateData: コミットする変更はありません"
+            Write-Audit 'COMMIT' 'SKIPPED'
+            Write-Audit 'PUSH' 'SKIPPED'
         }
         else {
             throw "PrivateDataの差分確認に失敗しました (exit $privateDiffExitCode)。"
+        }
+        $candidateSha = (git rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $candidateSha -match '^[0-9a-fA-F]{40}$') {
+            $script:PrivateSha = $candidateSha
+            Write-Audit 'PRIVATE_SHA' 'SUCCESS' $candidateSha
         }
     }
     finally {
@@ -198,9 +269,51 @@ try {
     }
 
     Write-Host "LoLデータ更新が正常に完了しました。"
-    exit 0
+    $script:ExitCode = 0
 }
 catch {
-    Write-Error $_
-    exit 1
+    if ($script:ActiveStage -eq 'DATA_UPDATE') { $script:DataStatus = 'FAILED' }
+    if ($script:ActiveStage -eq 'FIGHT_VALIDATION') { $script:FightStatus = 'FAILED' }
+    if ($script:ActiveStage) { Write-Audit $script:ActiveStage 'FAILED' }
+    Write-Host $_ -ForegroundColor Red
+    $script:ExitCode = 1
 }
+finally {
+    if ($script:PushStatus -eq 'SUCCESS' -and $script:PrivateSha -match '^[0-9a-fA-F]{40}$') {
+        try {
+            $pagesJson = & $PythonCommand $script:AuditHelper pages --sha $script:PrivateSha 2>$null
+            if ($LASTEXITCODE -ne 0) { throw 'Pages query unavailable' }
+            $pages = $pagesJson | ConvertFrom-Json -ErrorAction Stop
+            $states = @('SUCCESS', 'PENDING', 'FAILED', 'UNKNOWN')
+            $reasons = @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH','SHA_INVALID','API_FAILURE','API_TIMEOUT','METADATA_MISSING','MALFORMED_RESPONSE','EVIDENCE_MISMATCH','PUSH_NOT_SUCCESS')
+            if ($pages.state -notin $states -or $pages.reason -notin $reasons) { throw 'Invalid Pages response' }
+            if (($pages.state -eq 'SUCCESS' -and $pages.reason -ne 'DEPLOY_SUCCESS') -or
+                ($pages.state -eq 'FAILED' -and $pages.reason -ne 'DEPLOY_FAILED') -or
+                ($pages.state -eq 'PENDING' -and $pages.reason -notin @('RUN_PENDING','NO_MATCH')) -or
+                ($pages.state -eq 'UNKNOWN' -and $pages.reason -in @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH'))) { throw 'Inconsistent Pages response' }
+            $script:PagesStatus = $pages.state
+            $script:PagesDetail = $pages.reason
+        }
+        catch { $script:PagesStatus = 'UNKNOWN'; $script:PagesDetail = 'API_FAILURE' }
+    }
+    $elapsedSeconds = [int][Math]::Floor(([DateTimeOffset]::UtcNow - $script:StartedAt).TotalSeconds)
+    Write-Audit 'DATA_UPDATE' $script:DataStatus
+    Write-Audit 'FIGHT_VALIDATION' $script:FightStatus
+    Write-Audit 'PUSH' $script:PushStatus
+    if ($script:PrivateSha -eq 'UNKNOWN') { Write-Audit 'PRIVATE_SHA' 'UNKNOWN' }
+    Write-Audit 'PAGES' $script:PagesStatus $script:PagesDetail
+    Write-Audit 'DURATION_SECONDS' 'SUCCESS' ([string]$elapsedSeconds)
+    Write-Audit 'END' $(if ($script:ExitCode -eq 0) { 'SUCCESS' } else { 'FAILED' }) ([string]$script:ExitCode)
+    Write-Host '========================================'
+    Write-Host 'Daily Update Result'
+    Write-Host "Data Update      : $script:DataStatus"
+    Write-Host "Fight Validation : $script:FightStatus"
+    Write-Host "PrivateData Push : $script:PushStatus"
+    Write-Host "PrivateData SHA  : $script:PrivateSha"
+    Write-Host "Pages Deploy     : $script:PagesStatus"
+    Write-Host "Pages Detail     : $script:PagesDetail"
+    Write-Host "Duration         : $elapsedSeconds seconds"
+    Write-Host "Log File         : $(if ($script:AuditLog) { $script:AuditLog } else { 'UNKNOWN' })"
+    Write-Host '========================================'
+}
+exit $script:ExitCode

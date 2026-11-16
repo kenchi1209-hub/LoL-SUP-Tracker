@@ -165,6 +165,11 @@ jobs:
             git push origin HEAD:build
           fi
 
+      - name: Record Pages build inputs
+        run: |
+          set -euo pipefail
+          printf 'PAGES_INPUT_PRIVATE_SHA=%s PUBLIC_SHA=%s RUN_ID=%s\n' "$(git -C private-data rev-parse HEAD)" "$(git -C tracker rev-parse HEAD)" '${{ github.run_id }}'
+
       - name: Build static site from PrivateData
         working-directory: tracker
         env:

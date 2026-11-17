@@ -15,9 +15,9 @@ from pathlib import Path
 
 JST = timezone(timedelta(hours=9))
 LOG_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}(?:_\d+)?\.log$")
-ALLOWED_EVENTS = {"START", "DATA_UPDATE", "FIGHT_VALIDATION", "COMMIT", "PUSH", "PRIVATE_SHA", "PAGES", "DURATION_SECONDS", "END"}
-ALLOWED_STATES = {"STARTED", "SUCCESS", "FAILED", "SKIPPED", "PENDING", "UNKNOWN"}
-PAGE_REASONS = {"DEPLOY_SUCCESS", "DEPLOY_FAILED", "RUN_PENDING", "NO_MATCH", "SHA_INVALID", "API_FAILURE", "API_TIMEOUT", "METADATA_MISSING", "MALFORMED_RESPONSE", "EVIDENCE_MISMATCH", "PUSH_NOT_SUCCESS"}
+ALLOWED_EVENTS = {"START", "DATA_UPDATE", "FIGHT_VALIDATION", "COMMIT", "PUSH", "PRIVATE_SHA", "PAGES", "PAGES_TRIGGER", "PAGES_RUN_ID", "DURATION_SECONDS", "END"}
+ALLOWED_STATES = {"STARTED", "SUCCESS", "FAILED", "SKIPPED", "PENDING", "UNKNOWN", "TRIGGERED", "ALREADY_RUNNING", "ALREADY_DEPLOYED"}
+PAGE_REASONS = {"DEPLOY_SUCCESS", "DEPLOY_FAILED", "RUN_PENDING", "NO_MATCH", "SHA_INVALID", "API_FAILURE", "API_TIMEOUT", "METADATA_MISSING", "MALFORMED_RESPONSE", "EVIDENCE_MISMATCH", "PUSH_NOT_SUCCESS", "AUTH_FAILURE", "DISPATCH_FAILED", "RUN_NOT_FOUND", "WAIT_TIMEOUT", "CONDITIONS_NOT_MET"}
 
 
 def create_log(directory, now=None):
@@ -49,6 +49,9 @@ def append_event(log_file, event, state, value=None, now=None):
         if event == "PRIVATE_SHA":
             if not re.fullmatch(r"[0-9a-fA-F]{40}", value):
                 raise ValueError("invalid SHA")
+        elif event == "PAGES_RUN_ID":
+            if not re.fullmatch(r"[0-9]{1,20}", value):
+                raise ValueError("invalid run ID")
         elif event == "PAGES":
             if value not in PAGE_REASONS:
                 raise ValueError("invalid Pages reason")
@@ -149,7 +152,7 @@ _PAGES_MARKER = re.compile(
 )
 
 
-def check_pages_status(target_sha, repo, *, runner=subprocess.run, clock=time.monotonic, max_seconds=20):
+def check_pages_status(target_sha, repo, *, runner=subprocess.run, clock=time.monotonic, max_seconds=20, expected_run=None):
     """Read GH run logs and jobs; never persist or expose the API response.
 
     Completed logs provide the build-input marker. If a newer run's evidence
@@ -175,7 +178,7 @@ def check_pages_status(target_sha, repo, *, runner=subprocess.run, clock=time.mo
         return response.stdout
 
     try:
-        runs = json.loads(gh("run", "list", "--repo", repo, "--workflow", "deploy.yml", "--branch", "build", "--limit", "5", "--json", "databaseId,status,conclusion,headSha"))
+        runs = [expected_run] if expected_run is not None else json.loads(gh("run", "list", "--repo", repo, "--workflow", "deploy.yml", "--branch", "build", "--limit", "5", "--json", "databaseId,status,conclusion,headSha"))
         if not isinstance(runs, list) or any(not isinstance(x, dict) for x in runs):
             return result("UNKNOWN", "MALFORMED_RESPONSE")
         for run in runs:

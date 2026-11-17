@@ -29,6 +29,9 @@ $script:DataStatus = 'UNKNOWN'
 $script:FightStatus = 'UNKNOWN'
 $script:PushStatus = 'SKIPPED'
 $script:PrivateSha = 'UNKNOWN'
+$script:PagesTrigger = 'SKIPPED'
+$script:PagesRunId = ''
+$script:PrivateUnchanged = $false
 $script:PagesStatus = 'UNKNOWN'
 $script:PagesDetail = 'PUSH_NOT_SUCCESS'
 $script:ActiveStage = ''
@@ -242,6 +245,8 @@ try {
             $script:ActiveStage = ''
         }
         elseif ($privateDiffExitCode -eq 0) {
+            # HEAD was confirmed equal to origin/main above; no commit was needed.
+            $script:PrivateUnchanged = $true
             Write-Host "PrivateData: コミットする変更はありません"
             Write-Audit 'COMMIT' 'SKIPPED'
             Write-Audit 'PUSH' 'SKIPPED'
@@ -279,28 +284,37 @@ catch {
     $script:ExitCode = 1
 }
 finally {
-    if ($script:PushStatus -eq 'SUCCESS' -and $script:PrivateSha -match '^[0-9a-fA-F]{40}$') {
+    if ($script:DataStatus -eq 'SUCCESS' -and $script:FightStatus -eq 'SUCCESS' -and ($script:PushStatus -eq 'SUCCESS' -or $script:PrivateUnchanged) -and $script:PrivateSha -match '^[0-9a-fA-F]{40}$') {
         try {
-            $pagesJson = & $PythonCommand $script:AuditHelper pages --sha $script:PrivateSha 2>$null
+            $pagesHelper = Join-Path $scriptDirectory 'daily_update_pages.py'
+            $pagesArguments = @($pagesHelper, '--sha', $script:PrivateSha, '--data', $script:DataStatus, '--fight', $script:FightStatus, '--push', $script:PushStatus, '--lock-directory', (Join-Path $PublicRepo 'logs\daily_update'))
+            if ($script:PrivateUnchanged) { $pagesArguments += '--unchanged' }
+            $pagesJson = & $PythonCommand @pagesArguments 2>$null
             if ($LASTEXITCODE -ne 0) { throw 'Pages query unavailable' }
             $pages = $pagesJson | ConvertFrom-Json -ErrorAction Stop
             $states = @('SUCCESS', 'PENDING', 'FAILED', 'UNKNOWN')
-            $reasons = @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH','SHA_INVALID','API_FAILURE','API_TIMEOUT','METADATA_MISSING','MALFORMED_RESPONSE','EVIDENCE_MISMATCH','PUSH_NOT_SUCCESS')
+            $reasons = @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH','SHA_INVALID','API_FAILURE','API_TIMEOUT','METADATA_MISSING','MALFORMED_RESPONSE','EVIDENCE_MISMATCH','PUSH_NOT_SUCCESS','AUTH_FAILURE','DISPATCH_FAILED','RUN_NOT_FOUND','WAIT_TIMEOUT','CONDITIONS_NOT_MET')
             if ($pages.state -notin $states -or $pages.reason -notin $reasons) { throw 'Invalid Pages response' }
             if (($pages.state -eq 'SUCCESS' -and $pages.reason -ne 'DEPLOY_SUCCESS') -or
                 ($pages.state -eq 'FAILED' -and $pages.reason -ne 'DEPLOY_FAILED') -or
-                ($pages.state -eq 'PENDING' -and $pages.reason -notin @('RUN_PENDING','NO_MATCH')) -or
-                ($pages.state -eq 'UNKNOWN' -and $pages.reason -in @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH'))) { throw 'Inconsistent Pages response' }
+                ($pages.state -eq 'PENDING' -and $pages.reason -notin @('RUN_PENDING','NO_MATCH','WAIT_TIMEOUT','RUN_NOT_FOUND')) -or
+                ($pages.state -eq 'UNKNOWN' -and $pages.reason -in @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH','WAIT_TIMEOUT','RUN_NOT_FOUND'))) { throw 'Inconsistent Pages response' }
+            if ($pages.trigger -notin @('TRIGGERED','ALREADY_RUNNING','ALREADY_DEPLOYED','SKIPPED','UNKNOWN')) { throw 'Invalid trigger' }
+            if ($null -ne $pages.run_id -and [string]$pages.run_id -notmatch '^\d{1,20}$') { throw 'Invalid run ID' }
+            $script:PagesTrigger = $pages.trigger
+            if ($null -ne $pages.run_id) { $script:PagesRunId = [string]$pages.run_id }
             $script:PagesStatus = $pages.state
             $script:PagesDetail = $pages.reason
         }
-        catch { $script:PagesStatus = 'UNKNOWN'; $script:PagesDetail = 'API_FAILURE' }
+        catch { $script:PagesTrigger = 'UNKNOWN'; $script:PagesStatus = 'UNKNOWN'; $script:PagesDetail = 'API_FAILURE' }
     }
     $elapsedSeconds = [int][Math]::Floor(([DateTimeOffset]::UtcNow - $script:StartedAt).TotalSeconds)
     Write-Audit 'DATA_UPDATE' $script:DataStatus
     Write-Audit 'FIGHT_VALIDATION' $script:FightStatus
     Write-Audit 'PUSH' $script:PushStatus
     if ($script:PrivateSha -eq 'UNKNOWN') { Write-Audit 'PRIVATE_SHA' 'UNKNOWN' }
+    Write-Audit 'PAGES_TRIGGER' $script:PagesTrigger
+    if ($script:PagesRunId) { Write-Audit 'PAGES_RUN_ID' 'SUCCESS' $script:PagesRunId }
     Write-Audit 'PAGES' $script:PagesStatus $script:PagesDetail
     Write-Audit 'DURATION_SECONDS' 'SUCCESS' ([string]$elapsedSeconds)
     Write-Audit 'END' $(if ($script:ExitCode -eq 0) { 'SUCCESS' } else { 'FAILED' }) ([string]$script:ExitCode)
@@ -310,6 +324,8 @@ finally {
     Write-Host "Fight Validation : $script:FightStatus"
     Write-Host "PrivateData Push : $script:PushStatus"
     Write-Host "PrivateData SHA  : $script:PrivateSha"
+    Write-Host "Pages Trigger    : $script:PagesTrigger"
+    Write-Host "Pages Run ID     : $script:PagesRunId"
     Write-Host "Pages Deploy     : $script:PagesStatus"
     Write-Host "Pages Detail     : $script:PagesDetail"
     Write-Host "Duration         : $elapsedSeconds seconds"

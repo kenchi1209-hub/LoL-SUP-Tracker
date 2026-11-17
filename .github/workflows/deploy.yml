@@ -1,5 +1,7 @@
 name: Build & Deploy site
 
+run-name: ${{ inputs.private_data_pushed && inputs.private_data_sha && format('Pages PrivateData | {0}', inputs.private_data_sha) || format('Pages | {0}', github.sha) }}
+
 on:
   push:
     branches: [build]
@@ -12,6 +14,12 @@ on:
         required: false
         default: false
         type: boolean
+
+      private_data_sha:
+        description: "Optional full PrivateData commit SHA for build-only mode"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -31,13 +39,34 @@ jobs:
         with:
           path: tracker
 
+      - name: Validate requested PrivateData SHA
+        env:
+          REQUESTED_SHA: ${{ inputs.private_data_sha }}
+          BUILD_ONLY: ${{ inputs.private_data_pushed }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED_SHA" ]; then
+            test "$BUILD_ONLY" = 'true'
+            [[ "$REQUESTED_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+          fi
+
       - name: Checkout PrivateData
         uses: actions/checkout@v4
         with:
           repository: kenchi1209-hub/LoL-SUP-Tracker-PrivateData
-          ref: main
+          ref: ${{ inputs.private_data_pushed && inputs.private_data_sha || 'main' }}
           token: ${{ secrets.PRIVATE_DATA_TOKEN }}
           path: private-data
+
+      - name: Verify requested PrivateData SHA
+        env:
+          REQUESTED_SHA: ${{ inputs.private_data_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED_SHA" ]; then
+            actual=$(git -C private-data rev-parse HEAD)
+            test "${actual,,}" = "${REQUESTED_SHA,,}"
+          fi
 
       - name: Record base revisions
         id: bases

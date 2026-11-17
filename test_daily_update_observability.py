@@ -228,18 +228,18 @@ function global:git {
         }
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; return
     }
-    if ($args[0] -eq 'diff' -and $args -contains '--cached' -and $args -contains '--quiet') { $global:LASTEXITCODE=1; return }
+    if ($args[0] -eq 'diff' -and $args -contains '--cached' -and $args -contains '--quiet') { $global:LASTEXITCODE=$(if ($env:FIXTURE_FAILURE -like 'nochange-*') { 0 } else { 1 }); return }
     if ($args[0] -eq 'commit' -and $env:FIXTURE_FAILURE -eq 'commit') { $global:LASTEXITCODE=3; return }
     if ($args[0] -eq 'push' -and $env:FIXTURE_FAILURE -eq 'push') { $global:LASTEXITCODE=4; return }
 }
 function global:FixturePython {
-    if ($args[0] -like '*daily_update_observability.py' -and $args[1] -eq 'pages') {
+    if ($args[0] -like '*daily_update_pages.py') {
         Write-Host 'FIXTURE_PAGES_QUERY'
         switch ($env:FIXTURE_FAILURE) {
-            'pages-success' { '{"state":"SUCCESS","reason":"DEPLOY_SUCCESS"}' }
-            'pages-pending' { '{"state":"PENDING","reason":"RUN_PENDING"}' }
-            'pages-failed' { '{"state":"FAILED","reason":"DEPLOY_FAILED"}' }
-            default { '{"state":"UNKNOWN","reason":"API_FAILURE"}' }
+            { $_ -in @('pages-success','nochange-success') } { '{"state":"SUCCESS","reason":"DEPLOY_SUCCESS","trigger":"TRIGGERED","run_id":123}' }
+            { $_ -in @('pages-pending','nochange-pending') } { '{"state":"PENDING","reason":"RUN_PENDING","trigger":"TRIGGERED","run_id":123}' }
+            'pages-failed' { '{"state":"FAILED","reason":"DEPLOY_FAILED","trigger":"TRIGGERED","run_id":123}' }
+            default { '{"state":"UNKNOWN","reason":"API_FAILURE","trigger":"UNKNOWN","run_id":null}' }
         }
         $global:LASTEXITCODE=0; return
     }
@@ -254,7 +254,7 @@ function global:FixturePython {
 $global:fixtureHeadCount=0
 & $env:FIXTURE_SCRIPT -PublicRepo $env:FIXTURE_PUBLIC -PrivateRepo $env:FIXTURE_PRIVATE -PythonCommand FixturePython
 '''
-        for failure in ("", "main", "fight", "commit", "push", "sha", "pages-success", "pages-pending", "pages-failed"):
+        for failure in ("", "main", "fight", "commit", "push", "sha", "pages-success", "pages-pending", "pages-failed", "nochange-success", "nochange-pending"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 private = root / "private"
@@ -275,10 +275,10 @@ $global:fixtureHeadCount=0
                 else:
                     self.assertIn("DATA_UPDATE SUCCESS", content)
                     self.assertIn("FIGHT_VALIDATION SUCCESS", content)
-                    self.assertIn("PUSH SUCCESS", content)
+                    self.assertIn("PUSH " + ("SKIPPED" if failure.startswith("nochange-") else "SUCCESS"), content)
                     if failure == 'sha': self.assertIn("PRIVATE_SHA UNKNOWN", content)
                     else: self.assertIn("PRIVATE_SHA SUCCESS " + "a" * 40, content)
-                pages_state = {'pages-success':'SUCCESS', 'pages-pending':'PENDING', 'pages-failed':'FAILED'}.get(failure, 'UNKNOWN')
+                pages_state = {'nochange-success':'SUCCESS','nochange-pending':'PENDING','pages-success':'SUCCESS', 'pages-pending':'PENDING', 'pages-failed':'FAILED'}.get(failure, 'UNKNOWN')
                 self.assertIn("PAGES " + pages_state, content)
 
 

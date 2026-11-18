@@ -6,12 +6,17 @@ import subprocess
 import time
 from pathlib import Path
 
-from daily_update_observability import _SHA, check_pages_status
+from daily_update_observability import _SHA, append_event, check_pages_status
+
+RUN_LIMIT = 20
+ACTIVE = ('queued', 'in_progress', 'waiting', 'pending', 'requested')
+RUN_FIELDS = 'databaseId,status,conclusion,headSha,displayTitle,event'
 
 
 def publish(sha, repo='kenchi1209-hub/LoL-SUP-Tracker', *, data='UNKNOWN',
             fight='UNKNOWN', push='SKIPPED', unchanged=False, runner=subprocess.run,
-            clock=time.monotonic, sleep=time.sleep, max_seconds=180, interval=10):
+            clock=time.monotonic, sleep=time.sleep, max_seconds=180, interval=10,
+            preflight_seconds=30, dispatch_seconds=10, diagnostic=None):
     def result(state='UNKNOWN', reason='CONDITIONS_NOT_MET', trigger='SKIPPED', run_id=None):
         return dict(state=state, reason=reason, trigger=trigger, run_id=run_id)
 
@@ -22,45 +27,57 @@ def publish(sha, repo='kenchi1209-hub/LoL-SUP-Tracker', *, data='UNKNOWN',
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
         return result(reason='MALFORMED_RESPONSE')
     sha = sha.lower()
-    deadline = clock() + max_seconds
+    deadline = clock() + preflight_seconds
 
-    def gh(*args):
+    def record(stage, started, code):
+        if diagnostic is not None:
+            diagnostic(stage, max(0, int((clock() - started) * 1000)), code)
+
+    def gh(stage, *args):
+        started = clock()
+        code = 'FAILED'
         remaining = deadline - clock()
-        if remaining <= 0:
-            raise subprocess.TimeoutExpired('gh', max_seconds)
-        response = runner(['gh', *args], capture_output=True, text=True, encoding='utf-8',
-                          errors='replace', timeout=min(remaining, 10), check=False)
-        if response.returncode:
-            raise OSError('GitHub command failed')
-        return response.stdout
+        try:
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired('gh', 0)
+            response = runner(['gh', *args], capture_output=True, text=True, encoding='utf-8',
+                              errors='replace', timeout=min(remaining, 10), check=False)
+            if response.returncode:
+                raise OSError('GitHub command failed')
+            code = 'SUCCESS'
+            return response.stdout
+        except subprocess.TimeoutExpired:
+            code = 'API_TIMEOUT'
+            raise
+        finally:
+            record(stage, started, code)
 
     prior_ids = set()
 
-    def discover():
-        runs = json.loads(gh('run', 'list', '--repo', repo, '--workflow', 'deploy.yml',
-                             '--branch', 'build', '--limit', '1000', '--json',
-                             'databaseId,status,conclusion,headSha,displayTitle,event'))
-        if not isinstance(runs, list) or len(runs) >= 1000:
-            return result(reason='METADATA_MISSING', trigger='UNKNOWN')
-        if not triggered:
-            prior_ids.update(run.get('databaseId') for run in runs if isinstance(run, dict) and type(run.get('databaseId')) is int)
-        for run in runs:
-            if (not isinstance(run, dict) or type(run.get('databaseId')) is not int
-                    or not _SHA.fullmatch(str(run.get('headSha', '')))):
-                return result(reason='MALFORMED_RESPONSE', trigger='UNKNOWN')
-            if triggered and run['databaseId'] in prior_ids:
-                continue
-            if run.get('status') not in ('queued', 'in_progress', 'completed', 'waiting', 'pending', 'requested'):
-                return result(reason='MALFORMED_RESPONSE', trigger='UNKNOWN')
+    def list_runs(stage, *filters):
+        runs = json.loads(gh(stage, 'run', 'list', '--repo', repo, '--workflow', 'deploy.yml',
+                             '--branch', 'build', '--limit', str(RUN_LIMIT), '--json', RUN_FIELDS, *filters))
+        if not isinstance(runs, list) or len(runs) > RUN_LIMIT or any(
+            not isinstance(run, dict) or type(run.get('databaseId')) is not int
+            or not _SHA.fullmatch(str(run.get('headSha', '')))
+            or run.get('status') not in (*ACTIVE, 'completed') for run in runs
+        ):
+            raise ValueError('Invalid run list')
+        return runs
+
+    def requested_sha(run):
             title = re.fullmatch(r'Pages PrivateData \| ([0-9a-fA-F]{40})', str(run.get('displayTitle', '')))
-            # Only workflow_dispatch titles carry a requested PrivateData SHA.
-            requested = title.group(1).lower() if title and run.get('event') == 'workflow_dispatch' else None
-            if requested and requested != sha:
-                continue
-            if requested == sha and run.get('status') != 'completed':
-                return result('PENDING', 'RUN_PENDING', 'ALREADY_RUNNING', run['databaseId'])
-            if requested == sha and run.get('status') == 'completed' and run.get('conclusion') in ('failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure'):
-                info = json.loads(gh('run', 'view', str(run['databaseId']), '--repo', repo,
+            return title.group(1).lower() if title and run.get('event') == 'workflow_dispatch' else None
+
+    def verify(run, *, tracking):
+        started = clock()
+        evidence = verify_run(run, tracking=tracking)
+        record('SHA_MATCH', started, evidence['reason'])
+        return evidence
+
+    def verify_run(run, *, tracking):
+            if tracking and run.get('conclusion') in ('failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure'):
+                info = json.loads(gh('TRACKING', 'run', 'view', str(run['databaseId']), '--repo', repo,
                                      '--json', 'databaseId,headSha,status,conclusion,jobs'))
                 if (info.get('databaseId') != run['databaseId'] or info.get('headSha') != run['headSha']
                         or info.get('status') != 'completed' or info.get('conclusion') != run['conclusion']):
@@ -74,51 +91,85 @@ def publish(sha, repo='kenchi1209-hub/LoL-SUP-Tracker', *, data='UNKNOWN',
             evidence.update(trigger='UNKNOWN', run_id=run['databaseId'])
             if evidence['state'] == 'UNKNOWN':
                 return evidence
-            if evidence['reason'] == 'NO_MATCH':
-                # A requested SHA must agree with actual checkout evidence.
-                if requested == sha:
-                    return result(reason='EVIDENCE_MISMATCH', trigger='UNKNOWN')
-                continue
+            if evidence['reason'] == 'NO_MATCH' and requested_sha(run) == sha:
+                return result(reason='EVIDENCE_MISMATCH', trigger='UNKNOWN')
             evidence['trigger'] = {'SUCCESS': 'ALREADY_DEPLOYED', 'PENDING': 'ALREADY_RUNNING'}.get(evidence['state'], 'SKIPPED')
             return evidence
+
+    def preflight():
+        runs = list_runs('RUN_LIST')
+        prior_ids.update(run['databaseId'] for run in runs)
+        active = [run for run in runs if run['status'] != 'completed']
+        if len(runs) == RUN_LIMIT:
+            # Older active runs can outlive the recent history window.
+            for status in ACTIVE:
+                batch = list_runs('RUN_LIST', '--status', status)
+                if len(batch) == RUN_LIMIT:
+                    return result(reason='METADATA_MISSING', trigger='UNKNOWN')
+                prior_ids.update(run['databaseId'] for run in batch)
+                active.extend(run for run in batch if run['status'] != 'completed')
+        for run in active:
+            if requested_sha(run) == sha:
+                return result('PENDING', 'RUN_PENDING', 'ALREADY_RUNNING', run['databaseId'])
+        if any(requested_sha(run) is None for run in active):
+            return result(reason='METADATA_MISSING', trigger='UNKNOWN')
+        # Only the newest successful workflow can establish current publication.
+        for run in runs:
+            if run['status'] == 'completed' and run['conclusion'] == 'success':
+                if requested_sha(run) in (None, sha):
+                    evidence = verify(run, tracking=False)
+                    if evidence['state'] in ('SUCCESS', 'UNKNOWN'):
+                        return evidence
+                break
         return result('PENDING', 'NO_MATCH')
 
     triggered = False
     run_id = None
     try:
         try:
-            gh('auth', 'status', '--hostname', 'github.com')
-            permissions = json.loads(gh('api', f'repos/{repo}')).get('permissions', {})
-            workflow = json.loads(gh('api', f'repos/{repo}/actions/workflows/deploy.yml'))
+            gh('AUTH', 'auth', 'status', '--hostname', 'github.com')
+            permissions = json.loads(gh('PERMISSIONS', 'api', f'repos/{repo}')).get('permissions', {})
+            workflow = json.loads(gh('WORKFLOW', 'api', f'repos/{repo}/actions/workflows/deploy.yml'))
             if not permissions.get('push') or workflow.get('state') != 'active':
                 return result(reason='AUTH_FAILURE', trigger='UNKNOWN')
         except (OSError, ValueError, AttributeError):
             return result(reason='AUTH_FAILURE', trigger='UNKNOWN')
-        current = discover()
+        current = preflight()
         if current['state'] in ('SUCCESS', 'UNKNOWN'):
             return current
         if current['trigger'] != 'ALREADY_RUNNING':
+            deadline = clock() + dispatch_seconds
             try:
-                gh('workflow', 'run', 'deploy.yml', '--repo', repo, '--ref', 'build',
+                gh('DISPATCH', 'workflow', 'run', 'deploy.yml', '--repo', repo, '--ref', 'build',
                    '-f', 'private_data_pushed=true', '-f', f'private_data_sha={sha}')
                 triggered = True
             except (OSError, subprocess.TimeoutExpired):
                 # Dispatch may have reached GitHub even if the response was lost.
-                return result(reason='DISPATCH_FAILED', trigger='UNKNOWN')
+                return result(reason='DISPATCH_UNKNOWN', trigger='UNKNOWN')
         else:
             run_id = current['run_id']
+        deadline = clock() + max_seconds
+        trigger = 'TRIGGERED' if triggered else 'ALREADY_RUNNING'
         while clock() < deadline:
-            current = discover()
-            if current['run_id'] is not None:
-                run_id = current['run_id']
-            current['trigger'] = 'TRIGGERED' if triggered else 'ALREADY_RUNNING'
-            if current['state'] in ('SUCCESS', 'FAILED', 'UNKNOWN'):
-                return current
+            for run in list_runs('TRACKING'):
+                if requested_sha(run) != sha or (run_id is not None and run['databaseId'] != run_id):
+                    continue
+                if run_id is None and run['databaseId'] in prior_ids:
+                    continue
+                run_id = run['databaseId']
+                if run['status'] == 'completed':
+                    current = verify(run, tracking=True)
+                    if current['reason'] == 'API_TIMEOUT':
+                        return result('PENDING', 'WAIT_TIMEOUT', trigger, run_id)
+                    return dict(current, trigger=trigger)
+                break
             sleep(min(interval, max(0, deadline-clock())))
         return result('PENDING', 'WAIT_TIMEOUT' if run_id else 'RUN_NOT_FOUND',
                       'TRIGGERED' if triggered else 'ALREADY_RUNNING', run_id)
     except subprocess.TimeoutExpired:
-        return result(reason='API_TIMEOUT', trigger='TRIGGERED' if triggered else 'UNKNOWN', run_id=run_id)
+        if triggered or run_id is not None:
+            return result('PENDING', 'WAIT_TIMEOUT', 'TRIGGERED' if triggered else 'ALREADY_RUNNING', run_id)
+        return result(reason='API_TIMEOUT', trigger='UNKNOWN')
     except (OSError, ValueError, TypeError, AttributeError):
         return result(reason='API_FAILURE', trigger='TRIGGERED' if triggered else 'UNKNOWN', run_id=run_id)
 
@@ -131,7 +182,15 @@ def main():
     parser.add_argument('--push', required=True)
     parser.add_argument('--unchanged', action='store_true')
     parser.add_argument('--lock-directory', required=True)
+    parser.add_argument('--log-file')
     args = parser.parse_args()
+
+    def diagnostic(stage, elapsed_ms, code):
+        if args.log_file:
+            try:
+                append_event(args.log_file, 'PAGES_DIAGNOSTIC', 'UNKNOWN', f'{stage} {elapsed_ms} {code}')
+            except (ValueError, OSError):
+                pass
     # OS lock is released on process exit, including interruption. Serialize
     # all local Daily Update dispatch checks, without stale lock cleanup races.
     try:
@@ -147,7 +206,7 @@ def main():
                 import fcntl
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             output = publish(args.sha, data=args.data, fight=args.fight,
-                             push=args.push, unchanged=args.unchanged)
+                             push=args.push, unchanged=args.unchanged, diagnostic=diagnostic)
     except OSError:
         output = dict(state='UNKNOWN', reason='API_FAILURE', trigger='UNKNOWN', run_id=None)
     print(json.dumps(output, separators=(',', ':')))

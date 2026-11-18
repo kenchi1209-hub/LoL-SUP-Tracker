@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -58,6 +59,36 @@ class Fixture:
 
 
 class DispatchTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('powershell.exe'), 'Windows PowerShell required')
+    def test_launcher_returns_only_native_exit_code(self):
+        command = r"""
+        $ErrorActionPreference = 'Stop'
+        $tokens = $null
+        $errors = $null
+        foreach ($file in @('daily_update.ps1', 'lol_launcher.ps1')) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                (Join-Path $PWD $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { exit 1 }
+        }
+        $function = $ast.Find({param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq 'Invoke-DailyUpdate'
+        }, $true)
+        . ([scriptblock]::Create($function.Extent.Text))
+        function Set-Location { param($LiteralPath) }
+        function powershell.exe {
+            'fixture output 1'
+            'fixture output 2'
+            $global:LASTEXITCODE = 17
+        }
+        $output = @(Invoke-DailyUpdate)
+        if ($PSVersionTable.PSVersion.Major -ne 5 -or $output.Count -ne 1 -or
+            $output[0] -isnot [int] -or $output[0] -ne 17) { exit 2 }
+        """
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-Command', command],
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_success_dispatch_and_verified_completion(self):
         f=Fixture(); out=f.publish()
         self.assertEqual((out['state'],out['trigger'],out['run_id']),('SUCCESS','TRIGGERED',124))
@@ -83,7 +114,7 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(out['trigger'],expected); self.assertFalse(f.dispatched)
 
     def test_api_auth_dispatch_failure_fail_closed(self):
-        for command, reason in [('auth status','AUTH_FAILURE'),('api repos/kenchi1209-hub/LoL-SUP-Tracker','AUTH_FAILURE'),('run list','API_FAILURE'),('workflow run','DISPATCH_FAILED')]:
+        for command, reason in [('auth status','AUTH_FAILURE'),('api repos/kenchi1209-hub/LoL-SUP-Tracker','AUTH_FAILURE'),('run list','API_FAILURE'),('workflow run','DISPATCH_UNKNOWN')]:
             with self.subTest(command=command):
                 f=Fixture(fail=command); out=f.publish()
                 self.assertEqual(out['state'],'UNKNOWN'); self.assertEqual(out['reason'],reason)
@@ -151,6 +182,49 @@ class DispatchTests(unittest.TestCase):
         out=f.publish(runner=runner)
         self.assertEqual((out['state'],out['trigger']),('UNKNOWN','TRIGGERED'))
         self.assertNotIn('secret',str(out))
+
+    def test_timeouts_have_distinct_outcomes_and_safe_diagnostics(self):
+        for target, reason, state in [('AUTH', 'API_TIMEOUT', 'UNKNOWN'),
+                                      ('DISPATCH', 'DISPATCH_UNKNOWN', 'UNKNOWN'),
+                                      ('TRACKING', 'WAIT_TIMEOUT', 'PENDING')]:
+            with self.subTest(stage=target):
+                f = Fixture()
+                diagnostics = []
+                def runner(args, **kwargs):
+                    stage = {('auth', 'status'): 'AUTH', ('workflow', 'run'): 'DISPATCH'}.get(tuple(args[1:3]))
+                    if f.dispatched and args[1:3] == ['run', 'list']:
+                        stage = 'TRACKING'
+                    if stage == target:
+                        f.calls.append(args)
+                        f.now += 2
+                        raise subprocess.TimeoutExpired(args, 2, output='secret')
+                    return f.runner(args, **kwargs)
+                out = f.publish(runner=runner, diagnostic=lambda *args: diagnostics.append(args))
+                self.assertEqual((out['state'], out['reason']), (state, reason))
+                self.assertIn((target, 2000, 'API_TIMEOUT'), diagnostics)
+                self.assertNotIn('secret', str(diagnostics))
+                self.assertEqual(sum(c[1:3] == ['workflow', 'run'] for c in f.calls), target != 'AUTH')
+
+    def test_large_history_checks_one_success_and_older_active_runs(self):
+        for active in (False, True):
+            with self.subTest(active=active):
+                f = Fixture(before='other')
+                history = [dict(databaseId=i, headSha=PUBLIC, status='completed', conclusion='success',
+                                displayTitle='Pages PrivateData | '+OTHER, event='workflow_dispatch')
+                           for i in range(2000, 1000, -1)]
+                def runner(args, **kwargs):
+                    response = f.runner(args, **kwargs)
+                    if not f.dispatched and args[1:3] == ['run', 'list']:
+                        limit = int(args[args.index('--limit') + 1])
+                        if '--status' in args:
+                            rows = [dict(history[-1], status='in_progress', displayTitle='Pages PrivateData | '+SHA)] if active and args[-1] == 'in_progress' else []
+                        else:
+                            rows = history[:limit]
+                        response.stdout = json.dumps(rows)
+                    return response
+                result = f.publish(runner=runner)
+                self.assertEqual(result['trigger'], 'ALREADY_RUNNING' if active else 'TRIGGERED')
+                self.assertEqual(sum('--log' in call for call in f.calls), 0 if active else 1)
 
     def test_workflow_sha_validation_and_build_only_guards(self):
         workflow=yaml.safe_load(Path('.github/workflows/deploy.yml').read_text())

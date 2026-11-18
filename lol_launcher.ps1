@@ -36,8 +36,8 @@ function Invoke-Watcher {
 
 function Invoke-DailyUpdate {
     Set-Location -LiteralPath $PublicRoot
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\daily_update.ps1
-    return $LASTEXITCODE
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\daily_update.ps1 | Out-Host
+    return [int]$LASTEXITCODE
 }
 
 function Invoke-LoLWithWatcher {

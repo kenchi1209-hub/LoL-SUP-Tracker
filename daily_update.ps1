@@ -289,12 +289,13 @@ finally {
             $pagesHelper = Join-Path $scriptDirectory 'daily_update_pages.py'
             $pagesArguments = @($pagesHelper, '--sha', $script:PrivateSha, '--data', $script:DataStatus, '--fight', $script:FightStatus, '--push', $script:PushStatus, '--lock-directory', (Join-Path $PublicRepo 'logs\daily_update'))
             if ($script:PrivateUnchanged) { $pagesArguments += '--unchanged' }
+            if ($script:AuditLog) { $pagesArguments += @('--log-file', $script:AuditLog) }
             $pagesJson = & $PythonCommand @pagesArguments 2>$null
             if ($LASTEXITCODE -ne 0) { throw 'Pages query unavailable' }
             $pages = $pagesJson | ConvertFrom-Json -ErrorAction Stop
             $states = @('SUCCESS', 'PENDING', 'FAILED', 'UNKNOWN')
             $reasons = @('DEPLOY_SUCCESS','DEPLOY_FAILED','RUN_PENDING','NO_MATCH','SHA_INVALID','API_FAILURE','API_TIMEOUT','METADATA_MISSING','MALFORMED_RESPONSE','EVIDENCE_MISMATCH','PUSH_NOT_SUCCESS','AUTH_FAILURE','DISPATCH_FAILED','RUN_NOT_FOUND','WAIT_TIMEOUT','CONDITIONS_NOT_MET')
-            if ($pages.state -notin $states -or $pages.reason -notin $reasons) { throw 'Invalid Pages response' }
+            if ($pages.state -notin $states -or $pages.reason -notin ($reasons + 'DISPATCH_UNKNOWN')) { throw 'Invalid Pages response' }
             if (($pages.state -eq 'SUCCESS' -and $pages.reason -ne 'DEPLOY_SUCCESS') -or
                 ($pages.state -eq 'FAILED' -and $pages.reason -ne 'DEPLOY_FAILED') -or
                 ($pages.state -eq 'PENDING' -and $pages.reason -notin @('RUN_PENDING','NO_MATCH','WAIT_TIMEOUT','RUN_NOT_FOUND')) -or

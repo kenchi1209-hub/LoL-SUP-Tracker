@@ -43,7 +43,7 @@ def create_log(directory, now=None):
 
 def append_event(log_file, event, state, value=None, now=None):
     """Persist only predefined facts, never child output or arbitrary errors."""
-    if event not in ALLOWED_EVENTS or state not in ALLOWED_STATES:
+    if (event not in ALLOWED_EVENTS and event != "PAGES_DIAGNOSTIC") or state not in ALLOWED_STATES:
         raise ValueError("event or state is not allowlisted")
     if value is not None:
         if event == "PRIVATE_SHA":
@@ -52,8 +52,12 @@ def append_event(log_file, event, state, value=None, now=None):
         elif event == "PAGES_RUN_ID":
             if not re.fullmatch(r"[0-9]{1,20}", value):
                 raise ValueError("invalid run ID")
+        elif event == "PAGES_DIAGNOSTIC":
+            match = re.fullmatch(r"(AUTH|PERMISSIONS|WORKFLOW|RUN_LIST|SHA_MATCH|DISPATCH|TRACKING) [0-9]{1,10} ([A-Z_]+)", value)
+            if not match or match[2] not in PAGE_REASONS | {"SUCCESS", "FAILED"}:
+                raise ValueError("invalid Pages diagnostic")
         elif event == "PAGES":
-            if value not in PAGE_REASONS:
+            if value not in PAGE_REASONS | {"DISPATCH_UNKNOWN"}:
                 raise ValueError("invalid Pages reason")
         elif event in {"DATA_UPDATE", "FIGHT_VALIDATION", "COMMIT", "PUSH", "END", "DURATION_SECONDS"}:
             if not re.fullmatch(r"-?\d{1,10}", value):
